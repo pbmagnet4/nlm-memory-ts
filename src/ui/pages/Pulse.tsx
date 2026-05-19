@@ -5,6 +5,7 @@ import type { DatasetAlert, DatasetEntity, DatasetSession } from "../lib/dataset
 import { postAction } from "../lib/actions.js";
 import { SessionDrawer } from "../components/SessionDrawer.js";
 import { PromoteOpenButton } from "../components/PromoteOpenButton.js";
+import { PulseSkeleton } from "../components/Skeleton.js";
 
 type SeverityFilter = "all" | "high" | "medium";
 type AlertSort = "oldest" | "recent";
@@ -44,7 +45,7 @@ export function PulsePage() {
       .slice(0, 20);
   }, [data]);
 
-  if (loading && !data) return <div className="page-pad"><div className="muted">Loading dataset…</div></div>;
+  if (loading && !data) return <PulseSkeleton />;
   if (error && !data) return <div className="page-pad"><div className="muted error">{error}</div></div>;
   if (!data) return null;
 

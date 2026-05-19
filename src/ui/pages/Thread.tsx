@@ -4,6 +4,7 @@ import { useDataset, relativeAge } from "../lib/dataset.js";
 import type { DatasetSession } from "../lib/dataset.js";
 import { SessionDrawer } from "../components/SessionDrawer.js";
 import { PromoteOpenButton } from "../components/PromoteOpenButton.js";
+import { SessionListSkeleton, Skeleton } from "../components/Skeleton.js";
 
 export function ThreadPage() {
   const { data, loading, error, refetch } = useDataset();
@@ -48,7 +49,12 @@ export function ThreadPage() {
     setParams(next);
   };
 
-  if (loading && !data) return <div className="page-pad"><div className="muted">Loading dataset…</div></div>;
+  if (loading && !data) return (
+    <div className="page-pad">
+      <Skeleton h={22} w={220} />
+      <div style={{ marginTop: 16 }}><SessionListSkeleton rows={8} /></div>
+    </div>
+  );
   if (error && !data) return <div className="page-pad"><div className="muted error">{error}</div></div>;
   if (!data) return null;
 

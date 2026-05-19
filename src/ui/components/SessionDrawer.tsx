@@ -6,6 +6,7 @@
 
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import { SessionDrawerSkeleton } from "./Skeleton.js";
 
 interface SessionDetail {
   id: string;
@@ -74,7 +75,7 @@ export function SessionDrawer({ sessionId, onClose, entityColor }: SessionDrawer
           <button type="button" className="drawer-close" onClick={onClose} aria-label="Close">×</button>
         </header>
         {error && <div className="muted error drawer-body">{error}</div>}
-        {!session && !error && <div className="muted drawer-body">Loading session…</div>}
+        {!session && !error && <SessionDrawerSkeleton />}
         {session && (
           <div className="drawer-body">
             <dl className="kv-list">

@@ -112,6 +112,27 @@ body {
   }
 }
 
+/* ── Skeleton ────────────────────────────────────────────────────────────── */
+.skeleton {
+  display: inline-block;
+  background: linear-gradient(
+    90deg,
+    var(--surface-1) 0%,
+    var(--surface-2) 50%,
+    var(--surface-1) 100%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.2s ease-in-out infinite;
+  vertical-align: middle;
+}
+@keyframes skeleton-shimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .skeleton { animation: none; background: var(--surface-2); }
+}
+
 /* ── Card ────────────────────────────────────────────────────────────────── */
 /* Base surface. Combine with .card-lift for interactive tiles. */
 .card {

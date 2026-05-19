@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { SettingsSubnav } from "./SettingsSubnav.js";
 import { useDataset } from "../../lib/dataset.js";
 import { postAction } from "../../lib/actions.js";
+import { TableRowSkeleton } from "../../components/Skeleton.js";
 
 const LABEL_OPTIONS = ["candidate", "project", "tool", "contact", "service", "concept"];
 const STATUS_OPTIONS = ["all", "active", "snoozed", "retired"] as const;
@@ -140,7 +141,6 @@ export function SettingsLabelsPage() {
         <span className="muted small">{filtered.length} match{filtered.length === 1 ? "" : "es"}</span>
       </div>
 
-      {loading && !data && <div className="muted">Loading…</div>}
       {error && <div className="muted error">{error}</div>}
       <table className="data-table">
         <thead>
@@ -153,6 +153,7 @@ export function SettingsLabelsPage() {
             <th>Actions</th>
           </tr>
         </thead>
+        {loading && !data && <TableRowSkeleton rows={8} cols={6} />}
         <tbody>
           {slice.map((e) => {
             const busy = busyEntity === e.canonical;
