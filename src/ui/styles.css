@@ -1504,3 +1504,14 @@ a.session-label:hover { color: var(--accent); }
   flex: 1;
   min-width: 200px;
 }
+
+/* Compact pagination — used inside drawers / narrow panels */
+.pagination.pagination-compact {
+  gap: 10px;
+  padding: 10px 0 4px;
+  font-size: var(--text-xs);
+  flex-wrap: wrap;
+}
+.pagination.pagination-compact .page-indicator { min-width: 40px; padding: 0 4px; font-size: var(--text-xs); }
+.pagination.pagination-compact .chip { padding: 1px 6px; font-size: var(--text-xs); }
+.pagination.pagination-compact .form-label { font-size: 9px; }

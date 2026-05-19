@@ -183,13 +183,26 @@ interface AlertDrawerProps {
   onPromoted: () => Promise<void> | void;
 }
 
+const DRAWER_PAGE_SIZES = [10, 25, 50] as const;
+
 function AlertDrawer({ alert, entity, entityColor, sessions, onClose, onDismiss, onSnooze, onPromoted }: AlertDrawerProps) {
   const navigate = useNavigate();
+  const [pageSize, setPageSize] = useState<number>(10);
+  const [page, setPage] = useState(0);
+
   const related = useMemo(() => {
     return sessions
       .filter((s) => s.entities.includes(alert.entity))
       .sort((a, b) => (b.started_at ?? "").localeCompare(a.started_at ?? ""));
   }, [sessions, alert.entity]);
+
+  // Reset page when alert changes (drawer opened for a different entity) or page size changes.
+  useEffect(() => { setPage(0); }, [alert.id, pageSize]);
+
+  const pageCount = Math.max(1, Math.ceil(related.length / pageSize));
+  const currentPage = Math.min(page, pageCount - 1);
+  const start = currentPage * pageSize;
+  const sessionSlice = related.slice(start, start + pageSize);
 
   const openQuestions = useMemo(
     () => related.flatMap((s) => s.open_questions.map((q) => ({ id: q.id, text: q.text, sid: s.id, when: s.started_at }))),
@@ -279,7 +292,7 @@ function AlertDrawer({ alert, entity, entityColor, sessions, onClose, onDismiss,
 
           <h4 className="drawer-section">Recent sessions ({related.length})</h4>
           <ul className="session-list">
-            {related.slice(0, 10).map((s) => (
+            {sessionSlice.map((s) => (
               <li key={s.id} className="session-row">
                 <span className={`chip-inline status-${s.status}`}>{s.status}</span>
                 <div className="session-row-main">
@@ -290,7 +303,31 @@ function AlertDrawer({ alert, entity, entityColor, sessions, onClose, onDismiss,
               </li>
             ))}
           </ul>
-          {related.length > 10 && <p className="muted small">Showing 10 most recent of {related.length}.</p>}
+          {related.length > 0 && (
+            <div className="pagination pagination-compact">
+              <div className="page-size">
+                <label className="form-label">Per page</label>
+                <select
+                  className="form-input form-input-inline"
+                  value={pageSize}
+                  onChange={(e) => setPageSize(Number.parseInt(e.target.value, 10))}
+                >
+                  {DRAWER_PAGE_SIZES.map((n) => <option key={n} value={n}>{n}</option>)}
+                </select>
+              </div>
+              <span className="header-spacer" />
+              <span className="muted small">
+                {start + 1}–{Math.min(start + pageSize, related.length)} of {related.length}
+              </span>
+              <div className="page-nav">
+                <button type="button" className="chip" disabled={currentPage === 0} onClick={() => setPage(0)}>«</button>
+                <button type="button" className="chip" disabled={currentPage === 0} onClick={() => setPage((p) => Math.max(0, p - 1))}>‹</button>
+                <span className="page-indicator mono">{currentPage + 1} / {pageCount}</span>
+                <button type="button" className="chip" disabled={currentPage >= pageCount - 1} onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))}>›</button>
+                <button type="button" className="chip" disabled={currentPage >= pageCount - 1} onClick={() => setPage(pageCount - 1)}>»</button>
+              </div>
+            </div>
+          )}
         </div>
       </aside>
     </>
