@@ -925,9 +925,9 @@ code, .code-block {
   border-bottom: 1px solid var(--border-1);
 }
 
-.alert-entity { color: var(--text-1); text-decoration: none; }
+.alert-entity { color: var(--text-1); text-decoration: none; font-size: var(--text-sm); }
 .alert-entity:hover { color: var(--accent); }
-.alert-summary { color: var(--text-3); font-size: var(--text-sm); }
+.alert-summary { color: var(--text-3); font-size: var(--text-xs); letter-spacing: 0.04em; }
 
 .session-list { list-style: none; }
 .session-list.compact .session-row { padding: 6px 0; border-bottom: 1px solid var(--border-1); }
