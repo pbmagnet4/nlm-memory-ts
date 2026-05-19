@@ -1,0 +1,5 @@
+{"type":"session","version":3,"id":"019e3c80-0000-0000-0000-000000000001","timestamp":"2026-05-18T19:12:20.749Z","cwd":"/private/tmp"}
+{"type":"model_change","id":"727bf32b","parentId":null,"timestamp":"2026-05-18T19:12:20.800Z","provider":"macpro","modelId":"qwen3.5-4b"}
+{"type":"thinking_level_change","id":"0ff6a420","parentId":"727bf32b","timestamp":"2026-05-18T19:12:20.800Z","thinkingLevel":"off"}
+{"type":"message","id":"2ab5d9d4","parentId":"0ff6a420","timestamp":"2026-05-18T19:12:20.803Z","message":{"role":"user","content":[{"type":"text","text":"Say OK"}],"timestamp":1779131540802}}
+{"type":"message","id":"a2c2402a","parentId":"2ab5d9d4","timestamp":"2026-05-18T19:13:04.551Z","message":{"role":"assistant","content":[{"type":"text","text":"OK"}],"api":"openai-completions","provider":"macpro","model":"qwen3.5-4b","usage":{"input":415,"output":2,"cacheRead":0,"cacheWrite":0,"totalTokens":417,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"stop","timestamp":1779131540848,"responseId":"chatcmpl-[REDACTED]"}}
