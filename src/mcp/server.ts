@@ -222,10 +222,10 @@ Args:
            predicate / kind is set.
   - subject: exact-match normalized (lowercase-kebab) entity or topic name.
   - predicate: exact-match predicate from the closed vocabulary (framework,
-               endpoint, model, port, host, owner, pricing, deadline, status,
-               stack, runtime, library, version, dependency, schema,
-               integration, deployment, repo, branch, decided-on, assumption,
-               blocker, other).
+               endpoint, model, port, host, owner, pricing, cost, deadline,
+               status, stack, runtime, library, version, dependency, schema,
+               integration, deployment, repo, branch, commit, description,
+               decided-on, assumption, blocker).
   - kind: "decision" | "open" | "attribute". Optional.
   - mode: "keyword" (default), "semantic", or "hybrid".
   - includeSuperseded: true to include outdated facts. Default false.

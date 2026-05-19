@@ -45,14 +45,22 @@ describe("coerceClassifyResult — facts", () => {
     ]);
   });
 
-  it("maps unknown predicate values to 'other'", () => {
+  it("drops facts with predicates outside the closed vocabulary (no 'other' escape hatch)", () => {
     const out = coerceClassifyResult({
       ...baseFields(),
       facts: [
         { kind: "decision", subject: "x", predicate: "color-of-the-bikeshed", value: "blue" },
+        { kind: "decision", subject: "x", predicate: "framework", value: "Hono" },
       ],
     });
-    expect(out.facts[0]?.predicate).toBe("other");
+    expect(out.facts.map((f) => f.predicate)).toEqual(["framework"]);
+  });
+
+  it("PREDICATE_VOCABULARY does not include 'other'", () => {
+    // Removed in Phase B.5 after pilot showed `other` was 43% of writes and
+    // almost all slop. Off-vocab facts now get dropped by the coercer rather
+    // than forced into a catch-all bucket.
+    expect(PREDICATE_VOCABULARY).not.toContain("other");
   });
 
   it("drops facts missing required fields (subject, predicate, value)", () => {

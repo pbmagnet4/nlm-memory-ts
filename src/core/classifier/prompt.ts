@@ -15,16 +15,24 @@
  */
 
 /**
- * Closed predicate vocabulary. Approximately 20 high-leverage predicates
+ * Closed predicate vocabulary. Approximately 25 high-leverage predicates
  * covering the most common (subject, predicate, value) shapes Edward
- * actually writes about in sessions. "other" is the escape hatch for cases
- * the classifier can't fit elsewhere — those facts will accumulate without
- * deterministic supersedence until the vocabulary is iterated.
+ * actually writes about in sessions.
+ *
+ * Vocab evolution (Phase B.5 backfill, 2026-05-19): the 168-session pilot
+ * showed `other` getting used 43% of the time — it became a catch-all for
+ * narrative observations that don't fit the (subject, predicate, value)
+ * shape at all. Removed. The classifier prompt now instructs the model to
+ * SKIP facts that don't fit (leave them in decisions[]/open[] instead).
+ * Added `description`, `commit`, `cost` from observed high-frequency
+ * patterns in the pilot batch's `other` bucket.
  *
  * Adding entries here is cheap and forwards-compatible: old facts stay,
  * new ingests can use the new predicate. Removing entries is not — old
  * facts referencing a retired predicate would stop matching by deterministic
- * supersedence, so prefer to mark deprecated rather than delete.
+ * supersedence, so prefer to mark deprecated rather than delete. (Existing
+ * `other`-predicate facts from the pilot stay in the DB and are filterable
+ * at query time; the coercer will drop new `other` writes.)
  */
 export const PREDICATE_VOCABULARY = [
   "framework",
@@ -34,6 +42,7 @@ export const PREDICATE_VOCABULARY = [
   "host",
   "owner",
   "pricing",
+  "cost",
   "deadline",
   "status",
   "stack",
@@ -46,10 +55,11 @@ export const PREDICATE_VOCABULARY = [
   "deployment",
   "repo",
   "branch",
+  "commit",
+  "description",
   "decided-on",
   "assumption",
   "blocker",
-  "other",
 ] as const;
 
 export type PredicateVocab = (typeof PREDICATE_VOCABULARY)[number];
@@ -74,11 +84,13 @@ Field requirements:
 - facts: array of objects. Each object has exactly these keys: kind, subject, predicate, value, sourceQuote (optional).
     - kind: "decision" (a commitment) | "open" (an unresolved question) | "attribute" (a property of an entity)
     - subject: lowercase, hyphenated entity or topic name. Examples: "nle-memory-ts", "mac-pro-llm-host", "goat-home-services"
-    - predicate: MUST be one of these exact strings: ${PREDICATE_VOCABULARY.join(", ")}. Use "other" only if nothing fits.
+    - predicate: MUST be one of these exact strings: ${PREDICATE_VOCABULARY.join(", ")}.
     - value: the answer, as a short phrase or sentence. Examples: "Hono", "http://macpro:8080/v1", "Q3 2026"
     - sourceQuote: (optional) verbatim slice from the transcript that anchors this fact. Keep under 200 chars.
 
-Facts are derived from the same content as decisions and open. The same commitment should appear both as a string in decisions[] AND as a structured object in facts[] with kind="decision". Use facts[] only when the commitment or attribute is concrete enough to have a clear subject and predicate. Skip vague or hedged statements.
+The predicate list is CLOSED — there is no "other" or catch-all. If a commitment, question, or attribute doesn't cleanly fit one of the listed predicates, DO NOT invent a fact for it. Put it in decisions[] or open[] as a string instead. Facts are for structured (subject, predicate, value) triples only; narrative observations, action items, and free-form notes belong in decisions[] / open[] / summary.
+
+Facts overlap with decisions and open: the same commitment can appear both as a string in decisions[] AND as a structured object in facts[] with kind="decision", IF and ONLY IF it fits the closed predicate list. Skip the fact (keep just the string in decisions[]) when no predicate fits.
 
 Return ONLY the JSON object. No markdown code fences. No prose before or after.`;
 
@@ -139,7 +151,13 @@ function coerceFacts(raw: unknown): CoercedFact[] {
     const predicateRaw = String(o["predicate"] ?? "").toLowerCase().trim();
     const value = String(o["value"] ?? "").trim();
     if (!subject || !predicateRaw || !value) continue;
-    const predicate = VOCAB_SET.has(predicateRaw) ? predicateRaw : "other";
+    // Closed vocab — drop the fact entirely if the predicate isn't recognized.
+    // Pilot data (Phase B.5) showed `other` was 43% of writes and almost all
+    // slop; the prompt now instructs the model to leave such observations in
+    // decisions[]/open[] strings. This coercer enforces the policy
+    // defensively in case the model emits an off-vocab predicate anyway.
+    if (!VOCAB_SET.has(predicateRaw)) continue;
+    const predicate = predicateRaw;
     const sourceQuoteRaw = o["sourceQuote"];
     const sourceQuote =
       typeof sourceQuoteRaw === "string" && sourceQuoteRaw.trim().length > 0
