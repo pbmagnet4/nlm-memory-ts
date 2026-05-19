@@ -927,7 +927,35 @@ code, .code-block {
 
 .alert-entity { color: var(--text-1); text-decoration: none; font-size: var(--text-sm); }
 .alert-entity:hover { color: var(--accent); }
-.alert-summary { color: var(--text-3); font-size: var(--text-xs); letter-spacing: 0.04em; }
+
+.alert-summary {
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: left;
+  color: var(--text-3);
+  font-size: var(--text-xs);
+  letter-spacing: 0.04em;
+  font-family: var(--font-mono);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  min-width: 0;
+  line-height: var(--lh-base);
+  transition: color var(--ease);
+}
+
+.alert-summary:hover { color: var(--text-2); }
+
+.alert-summary.is-expanded {
+  -webkit-line-clamp: unset;
+  overflow: visible;
+  white-space: normal;
+  color: var(--text-2);
+}
 
 .session-list { list-style: none; }
 .session-list.compact .session-row { padding: 6px 0; border-bottom: 1px solid var(--border-1); }

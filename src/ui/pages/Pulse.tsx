@@ -1,10 +1,20 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useDataset, relativeAge } from "../lib/dataset.js";
 import { postAction } from "../lib/actions.js";
 
 export function PulsePage() {
   const { data, loading, error, refetch } = useDataset();
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+
+  const toggleExpand = (alertId: string) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(alertId)) next.delete(alertId);
+      else next.add(alertId);
+      return next;
+    });
+  };
 
   const dismissAlert = async (alertId: string) => {
     await postAction({ kind: "dismiss", subject_type: "alert", subject_id: alertId });
@@ -56,17 +66,27 @@ export function PulsePage() {
           <header className="card-head"><h3>Stale alerts</h3><span className="muted small">{data.alerts.length}</span></header>
           <div className="pulse-scroll-body">
             <ul className="alert-list">
-              {data.alerts.map((a) => (
-                <li key={a.id} className="alert-row">
-                  <span className={`chip-inline severity-${a.severity}`}>{a.severity}</span>
-                  <Link to={`/thread?entity=${encodeURIComponent(a.entity)}`} className="alert-entity">{a.entity}</Link>
-                  <span className="alert-summary">{a.summary}</span>
-                  <div className="alert-actions">
-                    <button type="button" className="chip" onClick={() => void snoozeAlert(a.id, 7)}>snooze 7d</button>
-                    <button type="button" className="chip" onClick={() => void dismissAlert(a.id)}>dismiss</button>
-                  </div>
-                </li>
-              ))}
+              {data.alerts.map((a) => {
+                const isExpanded = expanded.has(a.id);
+                return (
+                  <li key={a.id} className="alert-row">
+                    <span className={`chip-inline severity-${a.severity}`}>{a.severity}</span>
+                    <Link to={`/thread?entity=${encodeURIComponent(a.entity)}`} className="alert-entity">{a.entity}</Link>
+                    <button
+                      type="button"
+                      className={`alert-summary${isExpanded ? " is-expanded" : ""}`}
+                      onClick={() => toggleExpand(a.id)}
+                      title={isExpanded ? "Click to collapse" : a.summary}
+                    >
+                      {a.summary}
+                    </button>
+                    <div className="alert-actions">
+                      <button type="button" className="chip" onClick={() => void snoozeAlert(a.id, 7)}>snooze 7d</button>
+                      <button type="button" className="chip" onClick={() => void dismissAlert(a.id)}>dismiss</button>
+                    </div>
+                  </li>
+                );
+              })}
               {data.alerts.length === 0 && <li className="muted alert-row-empty">No stale alerts.</li>}
             </ul>
           </div>
