@@ -92,6 +92,11 @@ The predicate list is CLOSED — there is no "other" or catch-all. If a commitme
 
 Facts overlap with decisions and open: the same commitment can appear both as a string in decisions[] AND as a structured object in facts[] with kind="decision", IF and ONLY IF it fits the closed predicate list. Skip the fact (keep just the string in decisions[]) when no predicate fits.
 
+Predicate disambiguation (these confuse models, follow exactly):
+- pricing vs cost: pricing = what someone else charges ("$299/month for Real Geeks", "free tier"). cost = what we pay or spent ("$0 per run on local Ollama", "$750 invoice"). Never use pricing for colors, dimensions, or anything not a price.
+- commit vs version: commit = git SHA (7+ hex chars, e.g. "cb5b940", "63596c3"). version = semver / release tag ("v4", "DSM 7.2.2", "Postgres 15", "0.3.6"). Use commit for any explicit git reference even if short-form.
+- description vs status: description = what a thing IS ("rich text editor framework by Meta"). status = what state it's in right now ("running via pm2", "not yet started", "blocked on review").
+
 Return ONLY the JSON object. No markdown code fences. No prose before or after.`;
 
 export const MAX_TRANSCRIPT_CHARS = 15_000;
