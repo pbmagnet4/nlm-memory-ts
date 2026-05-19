@@ -15,6 +15,7 @@ import { Hono } from "hono";
 import type { RecallService } from "@core/recall/recall-service.js";
 import { logQuery, recallStats } from "@core/recall/query-log.js";
 import { recentQueryLog } from "@core/recall/recent-log.js";
+import { buildDataset } from "@core/dataset/build-dataset.js";
 import type { SessionStore } from "@ports/session-store.js";
 import type { SqliteSessionStore } from "@core/storage/sqlite-session-store.js";
 import type {
@@ -30,6 +31,10 @@ export interface HttpDeps {
   readonly liveStore?: SqliteSessionStore;
   /** Optional override for the query log path. Defaults to ~/.nle/query_log.jsonl or $NLE_QUERY_LOG. */
   readonly queryLogPath?: string;
+  /** Path to canonical.sqlite for the /api/dataset endpoint. */
+  readonly dbPath?: string;
+  /** Active classifier provider + model for /api/classifier/info. */
+  readonly classifierInfo?: { provider: string; model: string };
   /** Directory containing the built UI (dist/ui). When set, /ui/* serves the SPA. */
   readonly uiDist?: string;
 }
@@ -141,6 +146,29 @@ export function createApp(deps: HttpDeps): Hono {
     if (!deps.liveStore) return c.json({ markers: [] });
     const limit = parseLimit(c.req.query("limit"), 50, 200);
     return c.json({ markers: deps.liveStore.recentMarkers(limit) });
+  });
+
+  app.get("/api/dataset", (c) => {
+    if (!deps.dbPath) return c.json({ error: "dataset endpoint requires dbPath" }, 503);
+    return c.json(buildDataset(deps.dbPath));
+  });
+
+  app.get("/api/classifier/info", (c) => {
+    const provider = deps.classifierInfo?.provider ?? "deepseek";
+    const model = deps.classifierInfo?.model ?? "deepseek-v4-flash";
+    return c.json({
+      provider,
+      model,
+      available_providers: ["deepseek", "ollama"],
+      env_present: {
+        deepseek: Boolean(process.env["DEEPSEEK_API_KEY"]),
+        ollama: true,
+      },
+      default_models: {
+        deepseek: ["deepseek-v4-flash", "deepseek-v4-pro"],
+        ollama: ["phi4-mini:latest", "qwen2.5:3b-instruct"],
+      },
+    });
   });
 
   app.get("/api/session/:id", async (c) => {

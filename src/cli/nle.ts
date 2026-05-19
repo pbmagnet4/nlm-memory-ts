@@ -116,10 +116,16 @@ program
   .action(async (opts) => {
     const { store, recall, embedder, classifier } = buildStack();
     const { existsSync } = await import("node:fs");
+    const classifierProvider = (process.env["NLE_CLASSIFIER"] ?? "deepseek").toLowerCase();
     const app = createApp({
       recall,
       store,
       liveStore: store,
+      dbPath: dbPath(),
+      classifierInfo: {
+        provider: classifierProvider,
+        model: classifierProvider === "ollama" ? "phi4-mini:latest" : "deepseek-v4-flash",
+      },
       ...(existsSync(UI_DIST) ? { uiDist: UI_DIST } : {}),
     });
     const p = port();

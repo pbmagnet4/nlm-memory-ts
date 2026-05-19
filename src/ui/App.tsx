@@ -1,6 +1,15 @@
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { SideNav } from "./components/SideNav.js";
 import { LivePage } from "./pages/Live.js";
+import { PulsePage } from "./pages/Pulse.js";
+import { RiverPage } from "./pages/River.js";
+import { SearchPage } from "./pages/Search.js";
+import { ThreadPage } from "./pages/Thread.js";
+import { SettingsIndexPage } from "./pages/settings/Index.js";
+import { SettingsDataPage } from "./pages/settings/Data.js";
+import { SettingsViewsPage } from "./pages/settings/Views.js";
+import { SettingsLabelsPage } from "./pages/settings/Labels.js";
+import { SettingsClassifierPage } from "./pages/settings/Classifier.js";
 import { StubPage } from "./pages/Stub.js";
 
 export function App() {
@@ -11,17 +20,17 @@ export function App() {
         <AppHeader />
         <Routes>
           <Route path="/" element={<Navigate to="/live" replace />} />
-          <Route path="/live"               element={<LivePage />} />
-          <Route path="/pulse"              element={<StubPage page="pulse" />} />
-          <Route path="/river"              element={<StubPage page="river" />} />
-          <Route path="/thread"             element={<StubPage page="thread" />} />
-          <Route path="/search"             element={<StubPage page="search" />} />
-          <Route path="/settings"           element={<StubPage page="settings" />} />
-          <Route path="/settings/labels"    element={<StubPage page="settings/labels" />} />
-          <Route path="/settings/classifier" element={<StubPage page="settings/classifier" />} />
-          <Route path="/settings/data"      element={<StubPage page="settings/data" />} />
-          <Route path="/settings/views"     element={<StubPage page="settings/views" />} />
-          <Route path="*"                   element={<StubPage page="not found" />} />
+          <Route path="/live"                element={<LivePage />} />
+          <Route path="/pulse"               element={<PulsePage />} />
+          <Route path="/river"               element={<RiverPage />} />
+          <Route path="/thread"              element={<ThreadPage />} />
+          <Route path="/search"              element={<SearchPage />} />
+          <Route path="/settings"            element={<SettingsIndexPage />} />
+          <Route path="/settings/labels"     element={<SettingsLabelsPage />} />
+          <Route path="/settings/classifier" element={<SettingsClassifierPage />} />
+          <Route path="/settings/data"       element={<SettingsDataPage />} />
+          <Route path="/settings/views"      element={<SettingsViewsPage />} />
+          <Route path="*"                    element={<StubPage page="not found" />} />
         </Routes>
       </div>
     </div>
