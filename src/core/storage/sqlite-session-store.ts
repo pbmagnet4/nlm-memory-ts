@@ -259,31 +259,7 @@ export class SqliteSessionStore implements SessionStore {
       // session, deleting our prior fact unlinks the chain; the loop below
       // re-establishes it with the freshly-inserted row.
       if (factSink !== null) {
-        db.prepare("DELETE FROM facts WHERE source_session_id = ?").run(record.id);
-        factSink.factStore.insertManyInTxn(factSink.facts);
-
-        if (factSink.facts.length > 0) {
-          const findCollisionStmt = db.prepare<
-            [string, string, string],
-            { id: string }
-          >(`
-            SELECT id
-            FROM facts
-            WHERE subject = ?
-              AND predicate = ?
-              AND superseded_by IS NULL
-              AND id != ?
-            ORDER BY created_at DESC
-            LIMIT 1
-          `);
-          const markSupersededStmt = db.prepare(
-            "UPDATE facts SET superseded_by = ? WHERE id = ?",
-          );
-          for (const fact of factSink.facts) {
-            const prior = findCollisionStmt.get(fact.subject, fact.predicate, fact.id);
-            if (prior) markSupersededStmt.run(fact.id, prior.id);
-          }
-        }
+        this.applyFactsInTxn(record.id, factSink.factStore, factSink.facts);
       }
     });
     txn();
@@ -309,23 +285,107 @@ export class SqliteSessionStore implements SessionStore {
         }
       }
 
-      // Fact embeddings — one per fact, best-effort. Cost is N round trips
-      // to Ollama; future optimization could batch via the embedder's batch
-      // endpoint when sessions average more than a handful of facts. For now
-      // the per-fact cost (~50ms) is acceptable relative to the classifier
-      // call (~3-8s) that produced them.
       if (factSink !== null) {
-        for (const fact of factSink.facts) {
-          const factText = `${fact.subject} ${fact.predicate} ${fact.value}`.trim();
-          if (!factText) continue;
-          try {
-            const { vector } = await embedder.embed(factText, "document");
-            factSink.factStore.upsertEmbedding(fact.id, vector);
-          } catch {
-            // Per-fact embedding failure must not roll the ingest back, and
-            // must not abort embedding of subsequent facts.
-          }
-        }
+        await this.embedFacts(factSink.factStore, factSink.facts, embedder);
+      }
+    }
+  }
+
+  /**
+   * Phase B.5 — backfill entry point. Writes facts (with deterministic
+   * supersedence + best-effort embeddings) for an EXISTING session row
+   * without touching it. Opens its own transaction; callers must not be
+   * inside one. The session row must already exist in `sessions` or the
+   * FK on facts.source_session_id rejects.
+   *
+   * Use this when ingesting facts after the fact — e.g. running the
+   * classifier across a historical corpus that predates the B.2 ingest
+   * write path. The live ingest path (`insertSession`) keeps using the
+   * internal helpers directly so session+facts commit together.
+   */
+  async insertFactsForSession(
+    sessionId: string,
+    factStore: SqliteFactStore,
+    facts: ReadonlyArray<Fact>,
+    embedder: import("@ports/llm-client.js").LLMClient | null = null,
+  ): Promise<void> {
+    const db = this.db;
+    const txn = db.transaction(() => {
+      this.applyFactsInTxn(sessionId, factStore, facts);
+    });
+    txn();
+    if (embedder) {
+      await this.embedFacts(factStore, facts, embedder);
+    }
+  }
+
+  /**
+   * Sync core of the fact-ingest block. Runs inside an EXISTING transaction
+   * — opens no txn of its own. Used by both `insertSession` (Phase B.2
+   * atomic ingest) and `insertFactsForSession` (Phase B.5 backfill).
+   *
+   * Behavior (mirrored across both callers):
+   *   1. DELETE prior facts attributed to this session (idempotent on
+   *      backfill, drops stale rows on re-ingest).
+   *   2. Insert all new facts atomically.
+   *   3. For each, mark the prior current (subject, predicate) fact as
+   *      superseded — Phase B.4 deterministic supersedence policy.
+   *
+   * Ordering: inserts before updates so the supersedence FK target exists.
+   * CASCADE-SET-NULL on `superseded_by` handles chain repair on re-ingest.
+   */
+  private applyFactsInTxn(
+    sessionId: string,
+    factStore: SqliteFactStore,
+    facts: ReadonlyArray<Fact>,
+  ): void {
+    const db = this.db;
+    db.prepare("DELETE FROM facts WHERE source_session_id = ?").run(sessionId);
+    factStore.insertManyInTxn(facts);
+    if (facts.length === 0) return;
+
+    const findCollisionStmt = db.prepare<
+      [string, string, string],
+      { id: string }
+    >(`
+      SELECT id
+      FROM facts
+      WHERE subject = ?
+        AND predicate = ?
+        AND superseded_by IS NULL
+        AND id != ?
+      ORDER BY created_at DESC
+      LIMIT 1
+    `);
+    const markSupersededStmt = db.prepare(
+      "UPDATE facts SET superseded_by = ? WHERE id = ?",
+    );
+    for (const fact of facts) {
+      const prior = findCollisionStmt.get(fact.subject, fact.predicate, fact.id);
+      if (prior) markSupersededStmt.run(fact.id, prior.id);
+    }
+  }
+
+  /**
+   * Best-effort per-fact embedding. Writes `${subject} ${predicate} ${value}`
+   * embeddings to fact_embeddings via FactStore.upsertEmbedding. Per-fact
+   * failures don't abort the batch, and never affect committed fact rows.
+   */
+  private async embedFacts(
+    factStore: SqliteFactStore,
+    facts: ReadonlyArray<Fact>,
+    embedder: import("@ports/llm-client.js").LLMClient,
+  ): Promise<void> {
+    for (const fact of facts) {
+      const factText = `${fact.subject} ${fact.predicate} ${fact.value}`.trim();
+      if (!factText) continue;
+      try {
+        const { vector } = await embedder.embed(factText, "document");
+        factStore.upsertEmbedding(fact.id, vector);
+      } catch {
+        // Per-fact embedding failure must not abort embedding of subsequent
+        // facts. The fact row stays current; semantic recall just misses it
+        // until a future re-ingest.
       }
     }
   }

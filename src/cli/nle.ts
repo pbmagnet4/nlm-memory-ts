@@ -31,6 +31,7 @@ import { OllamaClient } from "../llm/ollama-client.js";
 import { autoloadEnv } from "../llm/env-autoload.js";
 import { runParity } from "./classify-parity.js";
 import { reembedCorpus } from "../core/embedding/embed-backfill.js";
+import { backfillFacts } from "../core/facts/backfill-facts.js";
 import { normalizeEmbeddings } from "../core/embedding/embed-normalize.js";
 import { ScanScheduler } from "../core/scheduler/scheduler.js";
 import { ClaudeCodeAdapter } from "../core/adapters/claude-code.js";
@@ -252,6 +253,44 @@ program
         : {}),
     });
     process.stdout.write(JSON.stringify(report, null, 2) + "\n");
+  });
+
+program
+  .command("backfill-facts")
+  .description("One-shot: classify historical sessions and populate the FactStore (Phase B.5)")
+  .option("-l, --limit <n>", "max sessions to process this run", (v) => Number.parseInt(v, 10))
+  .option("--from <session-id>", "skip sessions with id <= this value (operator-resume)")
+  .option("--state <path>", "resume state file (default ~/.nle/backfill_facts.state)")
+  .option("--dry-run", "count what would happen without writing facts")
+  .option("--reprocess", "re-classify sessions that already have facts")
+  .option("--no-embed", "skip per-fact embedding (faster but disables semantic recall)")
+  .option("-v, --verbose", "per-session progress on stderr")
+  .action(async (opts) => {
+    const { store, facts, embedder, classifier } = buildStack();
+    try {
+      const report = await backfillFacts({
+        store,
+        factStore: facts,
+        classifier,
+        embedder: opts.embed === false ? null : embedder,
+        ...(opts.state ? { statePath: opts.state } : {}),
+        ...(opts.limit ? { limit: opts.limit } : {}),
+        ...(opts.from ? { from: opts.from } : {}),
+        dryRun: Boolean(opts.dryRun),
+        reprocess: Boolean(opts.reprocess),
+        ...(opts.verbose
+          ? {
+              onProgress: (i, n, sid, status, detail) => {
+                const tail = detail ? `  ${detail}` : "";
+                process.stderr.write(`  [${i}/${n}] ${sid}  ${status}${tail}\n`);
+              },
+            }
+          : {}),
+      });
+      process.stdout.write(JSON.stringify(report, null, 2) + "\n");
+    } finally {
+      store.close();
+    }
   });
 
 program
