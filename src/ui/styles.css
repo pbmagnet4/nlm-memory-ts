@@ -881,6 +881,21 @@ code, .code-block {
 
 .pulse-scroll-card .card-head { flex-shrink: 0; }
 
+/* Hover affordance for the major blocks on the Pulse view — KPI tiles
+   and the three pulse-grid cards get a clean white outline so it's
+   obvious they're interactive zones. */
+.kpi,
+.pulse-grid > .card {
+  transition: outline-color var(--ease), border-color var(--ease);
+  outline: 1px solid transparent;
+  outline-offset: -1px;
+}
+
+.kpi:hover,
+.pulse-grid > .card:hover {
+  outline-color: rgba(255, 255, 255, 0.55);
+}
+
 .pulse-scroll-body {
   flex: 1;
   min-height: 0;
