@@ -25,6 +25,7 @@ import { SqliteSessionStore } from "../core/storage/sqlite-session-store.js";
 import { createApp } from "../http/app.js";
 import { createMcpServer } from "../mcp/server.js";
 import { OllamaClient } from "../llm/ollama-client.js";
+import { runParity } from "./classify-parity.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -114,6 +115,23 @@ program
     } finally {
       store.close();
     }
+  });
+
+program
+  .command("classify-parity")
+  .description("Run TS classifier against ~/.nle/canonical.sqlite and diff vs persisted Python output")
+  .option("-l, --limit <n>", "sessions to sample", (v) => Number.parseInt(v, 10), 10)
+  .option("-m, --model <name>", "Ollama model tag", "phi4-mini:latest")
+  .option("-v, --verbose", "per-session diff lines on stderr")
+  .action(async (opts) => {
+    const report = await runParity({
+      limit: opts.limit,
+      dbPath: dbPath(),
+      ollamaUrl: ollamaUrl(),
+      classifyModel: opts.model,
+      verbose: Boolean(opts.verbose),
+    });
+    process.stdout.write(JSON.stringify(report, null, 2) + "\n");
   });
 
 program

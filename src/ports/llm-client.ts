@@ -18,6 +18,7 @@ export interface ClassifyResult {
   readonly entities: ReadonlyArray<string>;
   readonly decisions: ReadonlyArray<string>;
   readonly open: ReadonlyArray<string>;
+  readonly confidence: number;
 }
 
 export class LLMUnreachableError extends Error {
