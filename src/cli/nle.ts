@@ -21,6 +21,7 @@ import { Command } from "commander";
 import { serve } from "@hono/node-server";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { RecallService } from "../core/recall/recall-service.js";
+import { SqliteFactStore } from "../core/storage/sqlite-fact-store.js";
 import { SqliteSessionStore } from "../core/storage/sqlite-session-store.js";
 import { createApp } from "../http/app.js";
 import { createMcpServer } from "../mcp/server.js";
@@ -94,12 +95,15 @@ function buildStack() {
     dbPath: dbPath(),
     migrationsDir: MIGRATIONS_DIR,
   });
+  // FactStore shares the SessionStore's connection so session+facts ingest
+  // can commit in one transaction. Phase B.1 wires it in; no callers yet.
+  const facts = new SqliteFactStore(store.rawDb());
   // Recall only uses embed(). Embeddings live on Ollama; DeepSeek doesn't
   // expose them. Classifier is wired separately for Phase D ingest.
   const embedder = new OllamaClient({ baseUrl: ollamaUrl() });
   const classifier = buildClassifier();
   const recall = new RecallService({ store, llm: embedder });
-  return { store, recall, embedder, classifier };
+  return { store, facts, recall, embedder, classifier };
 }
 
 const program = new Command();
