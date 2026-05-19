@@ -23,6 +23,8 @@
     "lint": "eslint src tests"
   },
   "dependencies": {
+    "@hono/node-server": "^2.0.3",
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "better-sqlite3": "^11.5.0",
     "commander": "^12.1.0",
     "hono": "^4.6.0",
