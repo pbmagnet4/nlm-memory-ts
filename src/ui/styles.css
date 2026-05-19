@@ -1246,11 +1246,17 @@ a.session-label:hover { color: var(--accent); }
 }
 
 .river-cell {
-  transition: transform 0.08s ease;
+  transition: transform 0.08s ease, outline-color var(--ease);
+  outline: 1px solid transparent;
+  outline-offset: 1px;
+  position: relative;
+  z-index: 0;
 }
 
 .river-cell:hover {
   transform: scale(1.3);
+  outline-color: rgba(255, 255, 255, 0.7);
+  z-index: 1;
 }
 
 .river-hover {
