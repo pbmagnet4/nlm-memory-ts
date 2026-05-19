@@ -65,6 +65,7 @@ describe("HTTP adapter", () => {
   let tmp: string;
   let store: SqliteSessionStore;
   let app: Hono;
+  let queryLogPath: string;
 
   beforeEach(() => {
     tmp = mkdtempSync(join(tmpdir(), "nle-http-"));
@@ -80,7 +81,8 @@ describe("HTTP adapter", () => {
       store,
       llm: new FixedEmbedder(unit([0, 1, 0])),
     });
-    app = createApp({ recall, store });
+    queryLogPath = join(tmp, "query_log.jsonl");
+    app = createApp({ recall, store, queryLogPath });
   });
 
   afterEach(() => {
@@ -145,11 +147,41 @@ describe("HTTP adapter", () => {
     expect(res.status).toBe(404);
   });
 
-  it("GET /api/recall/stats returns the stub shape", async () => {
+  it("GET /api/recall/stats returns zero-totals when log is absent", async () => {
     const res = await app.request("/api/recall/stats?days=14");
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { days: number; not_implemented: boolean };
+    const body = (await res.json()) as {
+      days: number;
+      total: number;
+      log_present: boolean;
+    };
     expect(body.days).toBe(14);
-    expect(body.not_implemented).toBe(true);
+    expect(body.total).toBe(0);
+    expect(body.log_present).toBe(false);
+  });
+
+  it("GET /api/recall writes a query-log entry; /api/recall/stats aggregates it", async () => {
+    // Drive two recall calls
+    await app.request("/api/recall?q=pgvector&mode=keyword", {
+      headers: { "x-recall-source": "test-source" },
+    });
+    await app.request("/api/recall?q=hono&mode=keyword");
+    // logQuery is fire-and-forget; small await so the appendFile lands
+    await new Promise((r) => setTimeout(r, 50));
+
+    const res = await app.request("/api/recall/stats?days=7");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      total: number;
+      with_results: number;
+      hit_rate: number;
+      by_source: Record<string, number>;
+      log_present: boolean;
+    };
+    expect(body.log_present).toBe(true);
+    expect(body.total).toBe(2);
+    expect(body.with_results).toBeGreaterThanOrEqual(1);
+    expect(body.by_source["test-source"]).toBe(1);
+    expect(body.by_source["http"]).toBe(1);
   });
 });

@@ -11,6 +11,7 @@
 
 import { Hono } from "hono";
 import type { RecallService } from "@core/recall/recall-service.js";
+import { logQuery, recallStats } from "@core/recall/query-log.js";
 import type { SessionStore } from "@ports/session-store.js";
 import type {
   RecallKindFilter,
@@ -21,6 +22,8 @@ import type {
 export interface HttpDeps {
   readonly recall: RecallService;
   readonly store: SessionStore;
+  /** Optional override for the query log path. Defaults to ~/.nle/query_log.jsonl or $NLE_QUERY_LOG. */
+  readonly queryLogPath?: string;
 }
 
 const VALID_MODES: ReadonlyArray<RecallMode> = ["keyword", "semantic", "hybrid"];
@@ -59,26 +62,37 @@ export function createApp(deps: HttpDeps): Hono {
       ...(kind !== undefined ? { kind: kind as RecallKindFilter } : {}),
     };
     const result = await deps.recall.search(query);
+
+    // Fire-and-forget telemetry — never blocks the response.
+    const source = c.req.header("x-recall-source") ?? "http";
+    void logQuery(
+      {
+        source,
+        query: q || null,
+        entity: entity ?? null,
+        kind: (kind as RecallKindFilter | undefined) ?? null,
+        mode: mode as RecallMode,
+        limit,
+        nResults: result.total,
+        returnedIds: result.results.map((r) => r.id),
+      },
+      ...(deps.queryLogPath !== undefined ? [deps.queryLogPath] : []),
+    );
+
     return c.json(result);
   });
 
-  // Stats endpoint stub. Real implementation lives in Phase B once the
-  // query log (~/.nle/query_log.jsonl) is ported. For now we return an
-  // empty-shape response so UI clients don't crash.
-  app.get("/api/recall/stats", (c) => {
+  app.get("/api/recall/stats", async (c) => {
     const daysStr = c.req.query("days") ?? "7";
     const days = Number.parseInt(daysStr, 10);
     if (!Number.isFinite(days) || days < 1 || days > 365) {
       return c.json({ error: "days must be 1..365" }, 400);
     }
-    return c.json({
+    const stats = await recallStats(
       days,
-      total: 0,
-      by_mode: {},
-      by_source: {},
-      empty_rate: 0,
-      not_implemented: true,
-    });
+      ...(deps.queryLogPath !== undefined ? [deps.queryLogPath] : []),
+    );
+    return c.json(stats);
   });
 
   app.get("/api/session/:id", async (c) => {

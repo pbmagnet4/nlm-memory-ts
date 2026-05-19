@@ -25,6 +25,7 @@ import type {
   Session,
   SessionStatus,
 } from "@shared/types.js";
+import { liveSessionStatus } from "./live-status.js";
 import { runMigrations } from "./migrate.js";
 
 export interface SqliteSessionStoreOptions {
@@ -273,7 +274,7 @@ export class SqliteSessionStore implements SessionStore {
       durationMin: row.duration_min,
       label: row.label,
       summary: row.summary,
-      status: row.status,
+      status: liveSessionStatus(row.transcript_path, row.status),
       transcriptKind: row.transcript_kind ?? "",
       transcriptPath: row.transcript_path,
       body: row.body ?? "",
