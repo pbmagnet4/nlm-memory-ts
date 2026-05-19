@@ -23,6 +23,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { FactRecallService } from "../core/recall-facts/fact-recall-service.js";
 import { RecallService } from "../core/recall/recall-service.js";
 import { SqliteFactStore } from "../core/storage/sqlite-fact-store.js";
+import { SourceRegistry } from "../core/sources/source-registry.js";
 import { SqliteSessionStore } from "../core/storage/sqlite-session-store.js";
 import { createApp } from "../http/app.js";
 import { createMcpServer } from "../mcp/server.js";
@@ -99,13 +100,15 @@ function buildStack() {
   // FactStore shares the SessionStore's connection so session+facts ingest
   // can commit in one transaction. Phase B.1 wires it in; no callers yet.
   const facts = new SqliteFactStore(store.rawDb());
+  const sources = new SourceRegistry(store.rawDb());
+  sources.seedDefaults();
   // Recall only uses embed(). Embeddings live on Ollama; DeepSeek doesn't
   // expose them. Classifier is wired separately for Phase D ingest.
   const embedder = new OllamaClient({ baseUrl: ollamaUrl() });
   const classifier = buildClassifier();
   const recall = new RecallService({ store, llm: embedder });
   const factRecall = new FactRecallService({ factStore: facts, llm: embedder });
-  return { store, facts, recall, factRecall, embedder, classifier };
+  return { store, facts, sources, recall, factRecall, embedder, classifier };
 }
 
 const program = new Command();
@@ -120,7 +123,7 @@ program
   .option("--no-scheduler", "HTTP only; skip the ingest tick loop")
   .option("--interval-min <n>", "scheduler tick interval (min, default 30)", (v) => Number.parseInt(v, 10), 30)
   .action(async (opts) => {
-    const { store, facts, recall, embedder, classifier } = buildStack();
+    const { store, facts, sources, recall, embedder, classifier } = buildStack();
     const { existsSync } = await import("node:fs");
     const app = createApp({
       recall,
@@ -128,6 +131,7 @@ program
       liveStore: store,
       dbPath: dbPath(),
       classifier,
+      sources,
       embedderInfo: { provider: "ollama", model: "nomic-embed-text", dims: 768 },
       ...(existsSync(UI_DIST) ? { uiDist: UI_DIST } : {}),
     });

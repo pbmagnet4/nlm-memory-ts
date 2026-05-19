@@ -18,6 +18,12 @@ import { recentQueryLog } from "@core/recall/recent-log.js";
 import { buildDataset } from "@core/dataset/build-dataset.js";
 import { ClassifierBox, type ClassifierProvider } from "../llm/classifier-box.js";
 import {
+  SourceRegistry,
+  type SourceInsert,
+  type SourceKind,
+  type SourceUpdate,
+} from "@core/sources/source-registry.js";
+import {
   listActions,
   undoAction,
   writeAction,
@@ -42,6 +48,8 @@ export interface HttpDeps {
   readonly dbPath?: string;
   /** Mutable classifier — read by /api/classifier/info, swapped by POST /api/classifier. */
   readonly classifier?: ClassifierBox;
+  /** Sources registry — exposes /api/sources CRUD for the desktop UI. */
+  readonly sources?: SourceRegistry;
   /** Static embedder info — embeddings are always Ollama in this build (DeepSeek has no /embed). */
   readonly embedderInfo?: { provider: string; model: string; dims: number };
   /** Directory containing the built UI (dist/ui). When set, /ui/* serves the SPA. */
@@ -247,6 +255,47 @@ export function createApp(deps: HttpDeps): Hono {
     return c.json({ provider: deps.classifier.provider, model: deps.classifier.model });
   });
 
+  // ── Sources registry ────────────────────────────────────────────
+  // Each row = one transcript origin the daemon scans. UI uses these
+  // endpoints to surface existing sources + let users add custom ones.
+
+  app.get("/api/sources", (c) => {
+    if (!deps.sources) return c.json({ sources: [] });
+    return c.json({ sources: deps.sources.list() });
+  });
+
+  app.post("/api/sources", async (c) => {
+    if (!deps.sources) return c.json({ error: "sources registry unavailable" }, 503);
+    const body = (await c.req.json().catch(() => null)) as Partial<SourceInsert> | null;
+    const parsed = parseSourceInsert(body);
+    if (!parsed) return c.json({ error: "invalid source payload" }, 400);
+    if (deps.sources.getByName(parsed.name)) {
+      return c.json({ error: `source named '${parsed.name}' already exists` }, 409);
+    }
+    return c.json(deps.sources.insert(parsed), 201);
+  });
+
+  app.patch("/api/sources/:id", async (c) => {
+    if (!deps.sources) return c.json({ error: "sources registry unavailable" }, 503);
+    const id = Number.parseInt(c.req.param("id"), 10);
+    if (!Number.isFinite(id)) return c.json({ error: "invalid id" }, 400);
+    const body = (await c.req.json().catch(() => null)) as Partial<SourceUpdate> | null;
+    const patch = parseSourceUpdate(body);
+    if (!patch) return c.json({ error: "invalid patch payload" }, 400);
+    const updated = deps.sources.update(id, patch);
+    if (!updated) return c.json({ error: `source ${id} not found` }, 404);
+    return c.json(updated);
+  });
+
+  app.delete("/api/sources/:id", (c) => {
+    if (!deps.sources) return c.json({ error: "sources registry unavailable" }, 503);
+    const id = Number.parseInt(c.req.param("id"), 10);
+    if (!Number.isFinite(id)) return c.json({ error: "invalid id" }, 400);
+    const ok = deps.sources.delete(id);
+    if (!ok) return c.json({ error: `source ${id} not found` }, 404);
+    return c.json({ deleted: id });
+  });
+
   app.get("/api/session/:id", async (c) => {
     const id = c.req.param("id");
     const session = await deps.store.getById(id);
@@ -287,6 +336,53 @@ function parseActionInput(raw: unknown): {
     ...(typeof r["actor"] === "string" ? { actor: r["actor"] } : {}),
     ...(typeof r["runtime"] === "string" ? { runtime: r["runtime"] } : {}),
   };
+}
+
+const VALID_SOURCE_KINDS: ReadonlyArray<SourceKind> = [
+  "claude-code", "hermes", "pi", "jsonl-generic", "webhook",
+];
+
+function parseSourceInsert(raw: unknown): SourceInsert | null {
+  if (!raw || typeof raw !== "object") return null;
+  const r = raw as Record<string, unknown>;
+  const kind = r["kind"];
+  const name = r["name"];
+  const runtimeLabel = r["runtimeLabel"] ?? r["runtime_label"];
+  if (typeof kind !== "string" || !VALID_SOURCE_KINDS.includes(kind as SourceKind)) return null;
+  if (typeof name !== "string" || name.length === 0) return null;
+  if (typeof runtimeLabel !== "string" || runtimeLabel.length === 0) return null;
+  const pathOrUrl = r["pathOrUrl"] ?? r["path_or_url"];
+  const parseConfig = r["parseConfig"] ?? r["parse_config"];
+  const enabled = r["enabled"];
+  const out: SourceInsert = { kind: kind as SourceKind, name, runtimeLabel };
+  if (typeof pathOrUrl === "string" || pathOrUrl === null) {
+    (out as { pathOrUrl?: string | null }).pathOrUrl = pathOrUrl;
+  }
+  if (parseConfig && typeof parseConfig === "object") {
+    (out as { parseConfig?: Record<string, unknown> }).parseConfig = parseConfig as Record<string, unknown>;
+  }
+  if (typeof enabled === "boolean") {
+    (out as { enabled?: boolean }).enabled = enabled;
+  }
+  return out;
+}
+
+function parseSourceUpdate(raw: unknown): SourceUpdate | null {
+  if (!raw || typeof raw !== "object") return null;
+  const r = raw as Record<string, unknown>;
+  const patch: SourceUpdate = {};
+  if (typeof r["name"] === "string") (patch as { name?: string }).name = r["name"];
+  if ("pathOrUrl" in r || "path_or_url" in r) {
+    const v = r["pathOrUrl"] ?? r["path_or_url"];
+    if (typeof v === "string" || v === null) (patch as { pathOrUrl?: string | null }).pathOrUrl = v;
+  }
+  const rt = r["runtimeLabel"] ?? r["runtime_label"];
+  if (typeof rt === "string") (patch as { runtimeLabel?: string }).runtimeLabel = rt;
+  const cfg = r["parseConfig"] ?? r["parse_config"];
+  if (cfg && typeof cfg === "object") (patch as { parseConfig?: Record<string, unknown> }).parseConfig = cfg as Record<string, unknown>;
+  if (typeof r["enabled"] === "boolean") (patch as { enabled?: boolean }).enabled = r["enabled"] as boolean;
+  if (Object.keys(patch).length === 0) return null;
+  return patch;
 }
 
 function mountSpa(app: Hono, dist: string): void {
