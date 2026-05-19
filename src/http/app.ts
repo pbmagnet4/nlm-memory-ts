@@ -24,6 +24,12 @@ import {
   type SourceUpdate,
 } from "@core/sources/source-registry.js";
 import {
+  ProviderRegistry,
+  type ProviderInsert,
+  type ProviderKind,
+  type ProviderUpdate,
+} from "@core/providers/provider-registry.js";
+import {
   listActions,
   undoAction,
   writeAction,
@@ -50,6 +56,8 @@ export interface HttpDeps {
   readonly classifier?: ClassifierBox;
   /** Sources registry — exposes /api/sources CRUD for the desktop UI. */
   readonly sources?: SourceRegistry;
+  /** Providers registry — exposes /api/providers CRUD for the desktop UI. */
+  readonly providers?: ProviderRegistry;
   /** Static embedder info — embeddings are always Ollama in this build (DeepSeek has no /embed). */
   readonly embedderInfo?: { provider: string; model: string; dims: number };
   /** Directory containing the built UI (dist/ui). When set, /ui/* serves the SPA. */
@@ -296,6 +304,47 @@ export function createApp(deps: HttpDeps): Hono {
     return c.json({ deleted: id });
   });
 
+  // ── Providers registry ──────────────────────────────────────────
+  // Each row = one LLM endpoint. Keys are redacted on every response
+  // (rows carry hasApiKey:boolean instead).
+
+  app.get("/api/providers", (c) => {
+    if (!deps.providers) return c.json({ providers: [] });
+    return c.json({ providers: deps.providers.list() });
+  });
+
+  app.post("/api/providers", async (c) => {
+    if (!deps.providers) return c.json({ error: "providers registry unavailable" }, 503);
+    const body = (await c.req.json().catch(() => null)) as Partial<ProviderInsert> | null;
+    const parsed = parseProviderInsert(body);
+    if (!parsed) return c.json({ error: "invalid provider payload" }, 400);
+    if (deps.providers.getByName(parsed.name)) {
+      return c.json({ error: `provider named '${parsed.name}' already exists` }, 409);
+    }
+    return c.json(deps.providers.insert(parsed), 201);
+  });
+
+  app.patch("/api/providers/:id", async (c) => {
+    if (!deps.providers) return c.json({ error: "providers registry unavailable" }, 503);
+    const id = Number.parseInt(c.req.param("id"), 10);
+    if (!Number.isFinite(id)) return c.json({ error: "invalid id" }, 400);
+    const body = (await c.req.json().catch(() => null)) as Partial<ProviderUpdate> | null;
+    const patch = parseProviderUpdate(body);
+    if (!patch) return c.json({ error: "invalid patch payload" }, 400);
+    const updated = deps.providers.update(id, patch);
+    if (!updated) return c.json({ error: `provider ${id} not found` }, 404);
+    return c.json(updated);
+  });
+
+  app.delete("/api/providers/:id", (c) => {
+    if (!deps.providers) return c.json({ error: "providers registry unavailable" }, 503);
+    const id = Number.parseInt(c.req.param("id"), 10);
+    if (!Number.isFinite(id)) return c.json({ error: "invalid id" }, 400);
+    const ok = deps.providers.delete(id);
+    if (!ok) return c.json({ error: `provider ${id} not found` }, 404);
+    return c.json({ deleted: id });
+  });
+
   app.get("/api/session/:id", async (c) => {
     const id = c.req.param("id");
     const session = await deps.store.getById(id);
@@ -380,6 +429,58 @@ function parseSourceUpdate(raw: unknown): SourceUpdate | null {
   if (typeof rt === "string") (patch as { runtimeLabel?: string }).runtimeLabel = rt;
   const cfg = r["parseConfig"] ?? r["parse_config"];
   if (cfg && typeof cfg === "object") (patch as { parseConfig?: Record<string, unknown> }).parseConfig = cfg as Record<string, unknown>;
+  if (typeof r["enabled"] === "boolean") (patch as { enabled?: boolean }).enabled = r["enabled"] as boolean;
+  if (Object.keys(patch).length === 0) return null;
+  return patch;
+}
+
+const VALID_PROVIDER_KINDS: ReadonlyArray<ProviderKind> = [
+  "deepseek", "ollama", "openai", "anthropic", "openrouter", "openai-compatible",
+];
+
+function parseProviderInsert(raw: unknown): ProviderInsert | null {
+  if (!raw || typeof raw !== "object") return null;
+  const r = raw as Record<string, unknown>;
+  const kind = r["kind"];
+  const name = r["name"];
+  if (typeof kind !== "string" || !VALID_PROVIDER_KINDS.includes(kind as ProviderKind)) return null;
+  if (typeof name !== "string" || name.length === 0) return null;
+  const out: ProviderInsert = { kind: kind as ProviderKind, name };
+  const baseUrl = r["baseUrl"] ?? r["base_url"];
+  if (typeof baseUrl === "string" || baseUrl === null) {
+    (out as { baseUrl?: string | null }).baseUrl = baseUrl;
+  }
+  const apiKey = r["apiKey"] ?? r["api_key"];
+  if (typeof apiKey === "string" || apiKey === null) {
+    (out as { apiKey?: string | null }).apiKey = apiKey;
+  }
+  const defaultModel = r["defaultModel"] ?? r["default_model"];
+  if (typeof defaultModel === "string" || defaultModel === null) {
+    (out as { defaultModel?: string | null }).defaultModel = defaultModel;
+  }
+  if (typeof r["enabled"] === "boolean") {
+    (out as { enabled?: boolean }).enabled = r["enabled"] as boolean;
+  }
+  return out;
+}
+
+function parseProviderUpdate(raw: unknown): ProviderUpdate | null {
+  if (!raw || typeof raw !== "object") return null;
+  const r = raw as Record<string, unknown>;
+  const patch: ProviderUpdate = {};
+  if (typeof r["name"] === "string") (patch as { name?: string }).name = r["name"];
+  if ("baseUrl" in r || "base_url" in r) {
+    const v = r["baseUrl"] ?? r["base_url"];
+    if (typeof v === "string" || v === null) (patch as { baseUrl?: string | null }).baseUrl = v;
+  }
+  if ("apiKey" in r || "api_key" in r) {
+    const v = r["apiKey"] ?? r["api_key"];
+    if (typeof v === "string" || v === null) (patch as { apiKey?: string | null }).apiKey = v;
+  }
+  if ("defaultModel" in r || "default_model" in r) {
+    const v = r["defaultModel"] ?? r["default_model"];
+    if (typeof v === "string" || v === null) (patch as { defaultModel?: string | null }).defaultModel = v;
+  }
   if (typeof r["enabled"] === "boolean") (patch as { enabled?: boolean }).enabled = r["enabled"] as boolean;
   if (Object.keys(patch).length === 0) return null;
   return patch;
