@@ -1,0 +1,38 @@
+{
+  "session_id": "20260401_090000_def456",
+  "model": "synthetic-model-v1",
+  "base_url": "http://localhost:11434",
+  "platform": "ollama",
+  "session_start": "2026-04-01T09:00:00+00:00",
+  "last_updated": "2026-04-01T09:08:00+00:00",
+  "system_prompt": "You are a helpful coding assistant.",
+  "tools": [],
+  "message_count": 3,
+  "messages": [
+    {
+      "role": "system",
+      "content": "You are a helpful coding assistant.",
+      "timestamp": 1743498000
+    },
+    {
+      "role": "user",
+      "content": "How do I parse command-line arguments in Python?",
+      "timestamp": 1743498060
+    },
+    {
+      "role": "assistant",
+      "content": "Use the built-in `argparse` module. Create an `ArgumentParser`, add arguments with `add_argument()`, and call `parse_args()`. For more complex CLIs consider `click` or `typer`.",
+      "timestamp": 1743498300
+    },
+    {
+      "role": "user",
+      "content": "Give me a minimal argparse example.",
+      "timestamp": 1743498360
+    },
+    {
+      "role": "assistant",
+      "content": "Here is a minimal example:\n\n```python\nimport argparse\n\nparser = argparse.ArgumentParser(description='A synthetic CLI demo')\nparser.add_argument('--name', type=str, required=True)\nargs = parser.parse_args()\nprint(f'Hello, {args.name}')\n```",
+      "timestamp": 1743498480
+    }
+  ]
+}

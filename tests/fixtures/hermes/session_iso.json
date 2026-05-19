@@ -1,0 +1,38 @@
+{
+  "session_id": "20260310_100000_abc123",
+  "model": "synthetic-model-v1",
+  "base_url": "http://localhost:11434",
+  "platform": "ollama",
+  "session_start": "2026-03-10T10:00:00+00:00",
+  "last_updated": "2026-03-10T10:05:30+00:00",
+  "system_prompt": "You are a helpful assistant for the Widget Project team.",
+  "tools": [],
+  "message_count": 4,
+  "messages": [
+    {
+      "role": "system",
+      "content": "You are a helpful assistant for the Widget Project team.",
+      "timestamp": "2026-03-10T10:00:00+00:00"
+    },
+    {
+      "role": "user",
+      "content": "What is the recommended way to structure environment variables in a Python project?",
+      "timestamp": "2026-03-10T10:01:00+00:00"
+    },
+    {
+      "role": "assistant",
+      "content": "The recommended approach is to use a `.env` file at the project root and load it with `python-dotenv`. Keep secrets out of version control by adding `.env` to `.gitignore`. Provide a `.env.example` with placeholder values for new developers.",
+      "timestamp": "2026-03-10T10:02:45+00:00"
+    },
+    {
+      "role": "user",
+      "content": "Should we use a secrets manager in production instead?",
+      "timestamp": "2026-03-10T10:04:00+00:00"
+    },
+    {
+      "role": "assistant",
+      "content": "Yes. In production, prefer a secrets manager such as AWS Secrets Manager, HashiCorp Vault, or your cloud provider's equivalent. `.env` files are fine for local development but should never reach a production host.",
+      "timestamp": "2026-03-10T10:05:30+00:00"
+    }
+  ]
+}

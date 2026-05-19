@@ -1,0 +1,23 @@
+{
+  "session_id": "synthetic-test-001",
+  "model": "synthetic-model-v1",
+  "base_url": "http://localhost:11434",
+  "platform": "ollama",
+  "session_start": "2026-04-15T08:00:00+00:00",
+  "last_updated": "2026-04-15T08:10:00+00:00",
+  "system_prompt": "You are a helpful assistant.",
+  "tools": [],
+  "message_count": 2,
+  "messages": [
+    {
+      "role": "user",
+      "content": "Summarize the key benefits of containerisation for deployment.",
+      "timestamp": "2026-04-15T08:01:00+00:00"
+    },
+    {
+      "role": "assistant",
+      "content": "Containerisation provides environment consistency across dev, staging, and production; fast startup times compared to virtual machines; efficient resource utilisation via process-level isolation; and simplified dependency management through images.",
+      "timestamp": "2026-04-15T08:10:00+00:00"
+    }
+  ]
+}

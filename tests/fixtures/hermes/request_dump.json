@@ -1,0 +1,28 @@
+{
+  "timestamp": "2026-04-05T14:30:00+00:00",
+  "session_id": "20260405_143000_ghi789",
+  "reason": "request_captured",
+  "request": {
+    "url": "http://localhost:11434/api/chat",
+    "method": "POST",
+    "body": {
+      "model": "synthetic-model-v1",
+      "messages": [
+        {
+          "role": "system",
+          "content": "You are an assistant helping with data analysis."
+        },
+        {
+          "role": "user",
+          "content": "What is the median of the following numbers: 3, 7, 2, 9, 5?"
+        },
+        {
+          "role": "assistant",
+          "content": "Sort the values: 2, 3, 5, 7, 9. The median (middle value of five elements) is 5."
+        }
+      ],
+      "stream": false
+    }
+  },
+  "error": null
+}

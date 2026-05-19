@@ -1,0 +1,18 @@
+{
+  "session_id": "20260420_120000_jkl000",
+  "model": "synthetic-model-v1",
+  "base_url": "http://localhost:11434",
+  "platform": "ollama",
+  "session_start": "2026-04-20T12:00:00+00:00",
+  "last_updated": "2026-04-20T12:00:01+00:00",
+  "system_prompt": "You are a careful and methodical assistant.",
+  "tools": [],
+  "message_count": 1,
+  "messages": [
+    {
+      "role": "system",
+      "content": "You are a careful and methodical assistant. Always reason step by step before providing your final answer.",
+      "timestamp": "2026-04-20T12:00:00+00:00"
+    }
+  ]
+}
