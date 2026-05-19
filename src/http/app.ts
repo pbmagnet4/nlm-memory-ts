@@ -29,6 +29,7 @@ import {
   type ProviderKind,
   type ProviderUpdate,
 } from "@core/providers/provider-registry.js";
+import { listModels } from "@core/providers/provider-models.js";
 import {
   listActions,
   undoAction,
@@ -343,6 +344,43 @@ export function createApp(deps: HttpDeps): Hono {
     const ok = deps.providers.delete(id);
     if (!ok) return c.json({ error: `provider ${id} not found` }, 404);
     return c.json({ deleted: id });
+  });
+
+  app.get("/api/providers/:id/models", async (c) => {
+    if (!deps.providers) return c.json({ error: "providers registry unavailable" }, 503);
+    const id = Number.parseInt(c.req.param("id"), 10);
+    if (!Number.isFinite(id)) return c.json({ error: "invalid id" }, 400);
+    const provider = deps.providers.get(id);
+    if (!provider) return c.json({ error: `provider ${id} not found` }, 404);
+    const key = deps.providers.getSecret(id);
+    try {
+      const models = await listModels(provider, { apiKey: key });
+      return c.json({ models });
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      return c.json({ error: message }, 502);
+    }
+  });
+
+  app.post("/api/providers/:id/test", async (c) => {
+    if (!deps.providers) return c.json({ error: "providers registry unavailable" }, 503);
+    const id = Number.parseInt(c.req.param("id"), 10);
+    if (!Number.isFinite(id)) return c.json({ error: "invalid id" }, 400);
+    const provider = deps.providers.get(id);
+    if (!provider) return c.json({ error: `provider ${id} not found` }, 404);
+    const key = deps.providers.getSecret(id);
+    const startedAt = Date.now();
+    try {
+      const models = await listModels(provider, { apiKey: key });
+      return c.json({
+        ok: true,
+        modelCount: models.length,
+        latencyMs: Date.now() - startedAt,
+      });
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      return c.json({ ok: false, error: message, latencyMs: Date.now() - startedAt }, 200);
+    }
   });
 
   app.get("/api/session/:id", async (c) => {
