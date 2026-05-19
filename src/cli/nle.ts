@@ -36,9 +36,7 @@ import { reembedCorpus } from "../core/embedding/embed-backfill.js";
 import { backfillFacts } from "../core/facts/backfill-facts.js";
 import { normalizeEmbeddings } from "../core/embedding/embed-normalize.js";
 import { ScanScheduler } from "../core/scheduler/scheduler.js";
-import { ClaudeCodeAdapter } from "../core/adapters/claude-code.js";
-import { HermesAdapter } from "../core/adapters/hermes.js";
-import { PiAdapter } from "../core/adapters/pi.js";
+import { adapterFromSource } from "../core/adapters/from-source.js";
 import type { TranscriptAdapter } from "../ports/transcript-adapter.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -76,20 +74,23 @@ function buildClassifier(): ClassifierBox {
   return new ClassifierBox({ provider, model, ollamaUrl: ollamaUrl() });
 }
 
-function buildAdapters(): TranscriptAdapter[] {
-  // Honor adapter detection — only register adapters whose data dir exists.
-  // The user can force-enable via NLE_ADAPTERS=claude-code,hermes,pi.
+function buildAdapters(sources: SourceRegistry): TranscriptAdapter[] {
+  // Sources table is the source of truth. Each enabled row maps to one
+  // adapter via adapterFromSource(). Detection still gates registration —
+  // a row pointing at a missing dir won't poll. NLE_ADAPTERS keeps working
+  // as a name-based filter for forcing a subset during dev.
   const explicit = process.env["NLE_ADAPTERS"];
-  const all: TranscriptAdapter[] = [
-    new ClaudeCodeAdapter(),
-    new HermesAdapter(),
-    new PiAdapter(),
-  ];
-  if (explicit) {
-    const names = new Set(explicit.split(",").map((s) => s.trim()));
-    return all.filter((a) => names.has(a.name));
+  const allowed = explicit ? new Set(explicit.split(",").map((s) => s.trim())) : null;
+  const out: TranscriptAdapter[] = [];
+  for (const row of sources.list()) {
+    if (!row.enabled) continue;
+    const adapter = adapterFromSource(row);
+    if (!adapter) continue;
+    if (allowed && !allowed.has(adapter.name)) continue;
+    if (!adapter.detect().enabled) continue;
+    out.push(adapter);
   }
-  return all.filter((a) => a.detect().enabled);
+  return out;
 }
 
 function buildStack() {
@@ -143,7 +144,7 @@ program
     });
 
     if (opts.scheduler !== false) {
-      const adapters = buildAdapters();
+      const adapters = buildAdapters(sources);
       if (adapters.length === 0) {
         console.error("  scheduler: no adapters detected (set NLE_ADAPTERS to force-enable)");
       } else {
