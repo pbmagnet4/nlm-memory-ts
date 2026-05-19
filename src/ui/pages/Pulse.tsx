@@ -60,11 +60,7 @@ export function PulsePage() {
       <div className="pulse-grid">
         <section className="card">
           <header className="card-head"><h3>Coherence</h3></header>
-          <div className="bar-stack">
-            <Bar tone="active" label="Healthy" value={data.metrics.healthy} />
-            <Bar tone="warn" label="Sparse" value={data.metrics.sparse} />
-            <Bar tone="danger" label="Stale" value={data.metrics.stale} />
-          </div>
+          <CoherenceBars metrics={data.metrics} />
         </section>
 
         <section className="card pulse-scroll-card">
@@ -300,12 +296,34 @@ function KpiSparkline({ values }: { values: number[] }) {
   );
 }
 
-function Bar({ tone, label, value }: { tone: "active" | "warn" | "danger"; label: string; value: number }) {
+function CoherenceBars({ metrics }: { metrics: { healthy: number; sparse: number; stale: number } }) {
+  const max = Math.max(1, metrics.healthy, metrics.sparse, metrics.stale);
+  const total = metrics.healthy + metrics.sparse + metrics.stale;
+  const pct = (v: number) => (total > 0 ? Math.round((v / total) * 100) : 0);
+  return (
+    <div className="bar-stack">
+      <Bar tone="active" label="Healthy" value={metrics.healthy} max={max} pct={pct(metrics.healthy)} />
+      <Bar tone="warn"   label="Sparse"  value={metrics.sparse}  max={max} pct={pct(metrics.sparse)} />
+      <Bar tone="danger" label="Stale"   value={metrics.stale}   max={max} pct={pct(metrics.stale)} />
+    </div>
+  );
+}
+
+function Bar({ tone, label, value, max, pct }: {
+  tone: "active" | "warn" | "danger";
+  label: string;
+  value: number;
+  max: number;
+  pct: number;
+}) {
+  const width = max > 0 ? (value / max) * 100 : 0;
   return (
     <div className="bar-item">
       <span className="bar-label">{label}</span>
-      <div className="bar-track"><div className={`bar-fill tone-${tone}`} style={{ width: `${Math.min(100, value)}px` }} /></div>
-      <span className="bar-value mono">{value}</span>
+      <div className="bar-track" title={`${value} entit${value === 1 ? "y" : "ies"} (${pct}% of total)`}>
+        <div className={`bar-fill tone-${tone}`} style={{ width: `${width}%` }} />
+      </div>
+      <span className="bar-value mono">{value.toLocaleString()}<span className="bar-pct muted small"> · {pct}%</span></span>
     </div>
   );
 }

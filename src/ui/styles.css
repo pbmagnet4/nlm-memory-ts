@@ -911,7 +911,8 @@ code, .code-block {
 .bar-fill.tone-active { background: var(--accent); }
 .bar-fill.tone-warn   { background: var(--warn); }
 .bar-fill.tone-danger { background: var(--danger); }
-.bar-value { font-size: var(--text-sm); color: var(--text-1); min-width: 40px; text-align: right; }
+.bar-value { font-size: var(--text-sm); color: var(--text-1); min-width: 96px; text-align: right; white-space: nowrap; }
+.bar-pct { margin-left: 2px; }
 
 .alert-list { list-style: none; padding: 4px 0; }
 .alert-row-empty { padding: 16px 14px; }
