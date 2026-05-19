@@ -16,14 +16,20 @@ import { homedir } from "node:os";
 import { resolve } from "node:path";
 import Database from "better-sqlite3";
 import * as sqliteVec from "sqlite-vec";
-import { OllamaClient, ClassifierSchemaError } from "../llm/ollama-client.js";
+import type { LLMClient } from "../ports/llm-client.js";
 import { LLMUnreachableError } from "../ports/llm-client.js";
+import { DeepSeekClient } from "../llm/deepseek-client.js";
+import { OllamaClient, ClassifierSchemaError } from "../llm/ollama-client.js";
+import { autoloadEnv } from "../llm/env-autoload.js";
+
+export type Provider = "ollama" | "deepseek";
 
 interface CliOptions {
   readonly limit: number;
   readonly dbPath: string;
   readonly ollamaUrl: string;
   readonly classifyModel: string;
+  readonly provider: Provider;
   readonly verbose: boolean;
 }
 
@@ -74,15 +80,27 @@ function parseArgs(argv: string[]): CliOptions {
     return argv[i + 1] ?? fallback;
   };
   const limit = Number.parseInt(flag("--limit", "10") ?? "10", 10);
+  const providerRaw = (flag("--provider", "deepseek") ?? "deepseek").toLowerCase();
+  const provider: Provider = providerRaw === "ollama" ? "ollama" : "deepseek";
+  const defaultModel = provider === "deepseek" ? "deepseek-v4-flash" : "phi4-mini:latest";
   return {
     limit: Number.isFinite(limit) && limit > 0 ? limit : 10,
     dbPath:
       flag("--db", process.env["NLE_DB_PATH"] ?? resolve(homedir(), ".nle/canonical.sqlite")) ??
       resolve(homedir(), ".nle/canonical.sqlite"),
     ollamaUrl: flag("--ollama", process.env["NLE_OLLAMA_URL"] ?? "http://localhost:11434") ?? "http://localhost:11434",
-    classifyModel: flag("--model", "phi4-mini:latest") ?? "phi4-mini:latest",
+    classifyModel: flag("--model", defaultModel) ?? defaultModel,
+    provider,
     verbose: argv.includes("--verbose"),
   };
+}
+
+function buildClient(opts: { provider: Provider; classifyModel: string; ollamaUrl: string }): LLMClient {
+  if (opts.provider === "deepseek") {
+    autoloadEnv();
+    return new DeepSeekClient({ classifyModel: opts.classifyModel });
+  }
+  return new OllamaClient({ baseUrl: opts.ollamaUrl, classifyModel: opts.classifyModel });
 }
 
 function jaccard(a: ReadonlyArray<string>, b: ReadonlyArray<string>): number {
@@ -131,34 +149,45 @@ export async function runParity(opts: CliOptions): Promise<ParityReport> {
   }
   db.close();
 
-  const client = new OllamaClient({
-    baseUrl: opts.ollamaUrl,
-    classifyModel: opts.classifyModel,
-  });
+  const client = buildClient(opts);
 
   const diffs: DiffMetrics[] = [];
   let schemaFailures = 0;
   let networkFailures = 0;
 
+  let idx = 0;
   for (const r of rows) {
+    idx += 1;
     const py = persistedById.get(r.id);
     if (!py || !r.body) continue;
 
+    const t0 = Date.now();
     try {
       const ts = await client.classify(r.body);
+      const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
       const labelMatch = ts.label.toLowerCase().trim() === py.label.toLowerCase().trim();
+      const entJ = jaccard(ts.entities, py.entities);
+      const decJ = jaccard(ts.decisions, py.decisions);
+      const openJ = jaccard(ts.open, py.open);
       diffs.push({
         sessionId: r.id,
         labelMatch,
         labelTs: ts.label,
         labelPy: py.label,
-        entityJaccard: jaccard(ts.entities, py.entities),
-        decisionJaccard: jaccard(ts.decisions, py.decisions),
-        openJaccard: jaccard(ts.open, py.open),
+        entityJaccard: entJ,
+        decisionJaccard: decJ,
+        openJaccard: openJ,
         summaryDeltaChars: ts.summary.length - py.summary.length,
         schemaFailure: false,
       });
+      if (opts.verbose) {
+        const tag = labelMatch ? "EQ " : "DIFF";
+        process.stderr.write(
+          `  [${idx}/${rows.length}] ${elapsed}s ${tag} ${r.id}  ent=${entJ.toFixed(2)} dec=${decJ.toFixed(2)} open=${openJ.toFixed(2)}\n`,
+        );
+      }
     } catch (e) {
+      const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
       const message = e instanceof Error ? e.message : String(e);
       if (e instanceof ClassifierSchemaError) schemaFailures += 1;
       else if (e instanceof LLMUnreachableError) networkFailures += 1;
@@ -174,6 +203,11 @@ export async function runParity(opts: CliOptions): Promise<ParityReport> {
         schemaFailure: e instanceof ClassifierSchemaError,
         errorMessage: message,
       });
+      if (opts.verbose) {
+        process.stderr.write(
+          `  [${idx}/${rows.length}] ${elapsed}s ERR  ${r.id}  :: ${message}\n`,
+        );
+      }
     }
   }
 
@@ -197,18 +231,11 @@ export async function runParity(opts: CliOptions): Promise<ParityReport> {
 export async function main(): Promise<void> {
   const opts = parseArgs(process.argv.slice(2));
   console.error(`nle classify-parity: ${opts.limit} sessions from ${opts.dbPath}`);
-  console.error(`  ollama: ${opts.ollamaUrl}  model: ${opts.classifyModel}`);
+  console.error(
+    `  provider: ${opts.provider}  model: ${opts.classifyModel}` +
+      (opts.provider === "ollama" ? `  ollama: ${opts.ollamaUrl}` : ""),
+  );
   const report = await runParity(opts);
-
-  if (opts.verbose) {
-    for (const d of report.diffs) {
-      const tag = d.errorMessage ? "ERR" : d.labelMatch ? "EQ " : "DIFF";
-      console.error(
-        `  ${tag} ${d.sessionId}  ent=${d.entityJaccard.toFixed(2)} dec=${d.decisionJaccard.toFixed(2)} open=${d.openJaccard.toFixed(2)}` +
-          (d.errorMessage ? ` :: ${d.errorMessage}` : ""),
-      );
-    }
-  }
 
   console.error("");
   console.error(`attempted:           ${report.attempted}`);

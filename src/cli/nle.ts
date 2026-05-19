@@ -24,8 +24,11 @@ import { RecallService } from "../core/recall/recall-service.js";
 import { SqliteSessionStore } from "../core/storage/sqlite-session-store.js";
 import { createApp } from "../http/app.js";
 import { createMcpServer } from "../mcp/server.js";
+import { DeepSeekClient } from "../llm/deepseek-client.js";
 import { OllamaClient } from "../llm/ollama-client.js";
+import { autoloadEnv } from "../llm/env-autoload.js";
 import { runParity } from "./classify-parity.js";
+import type { LLMClient } from "../ports/llm-client.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -49,14 +52,30 @@ function ollamaUrl(): string {
   return process.env["NLE_OLLAMA_URL"] ?? "http://localhost:11434";
 }
 
+function buildClassifier(): LLMClient {
+  // DeepSeek V4 Flash is the default for the ingest classifier per the
+  // 2026-05-19 parity run: ~5s/session, 90% first-try success vs Ollama
+  // phi4-mini's 0% on the same first three sessions. Override with
+  // NLE_CLASSIFIER=ollama if you need offline-only operation.
+  const provider = (process.env["NLE_CLASSIFIER"] ?? "deepseek").toLowerCase();
+  if (provider === "ollama") {
+    return new OllamaClient({ baseUrl: ollamaUrl() });
+  }
+  autoloadEnv();
+  return new DeepSeekClient();
+}
+
 function buildStack() {
   const store = new SqliteSessionStore({
     dbPath: dbPath(),
     migrationsDir: MIGRATIONS_DIR,
   });
-  const llm = new OllamaClient({ baseUrl: ollamaUrl() });
-  const recall = new RecallService({ store, llm });
-  return { store, recall };
+  // Recall only uses embed(). Embeddings live on Ollama; DeepSeek doesn't
+  // expose them. Classifier is wired separately for Phase D ingest.
+  const embedder = new OllamaClient({ baseUrl: ollamaUrl() });
+  const classifier = buildClassifier();
+  const recall = new RecallService({ store, llm: embedder });
+  return { store, recall, embedder, classifier };
 }
 
 const program = new Command();
@@ -121,14 +140,18 @@ program
   .command("classify-parity")
   .description("Run TS classifier against ~/.nle/canonical.sqlite and diff vs persisted Python output")
   .option("-l, --limit <n>", "sessions to sample", (v) => Number.parseInt(v, 10), 10)
-  .option("-m, --model <name>", "Ollama model tag", "phi4-mini:latest")
+  .option("-p, --provider <name>", "deepseek | ollama", "deepseek")
+  .option("-m, --model <name>", "model tag (default: deepseek-v4-flash for deepseek, phi4-mini:latest for ollama)")
   .option("-v, --verbose", "per-session diff lines on stderr")
   .action(async (opts) => {
+    const provider = opts.provider === "ollama" ? "ollama" : "deepseek";
+    const defaultModel = provider === "deepseek" ? "deepseek-v4-flash" : "phi4-mini:latest";
     const report = await runParity({
       limit: opts.limit,
       dbPath: dbPath(),
       ollamaUrl: ollamaUrl(),
-      classifyModel: opts.model,
+      classifyModel: opts.model ?? defaultModel,
+      provider,
       verbose: Boolean(opts.verbose),
     });
     process.stdout.write(JSON.stringify(report, null, 2) + "\n");
