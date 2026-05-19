@@ -12,9 +12,13 @@
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
+import type { FactRecallService } from "@core/recall-facts/fact-recall-service.js";
 import type { RecallService } from "@core/recall/recall-service.js";
+import type { FactStore } from "@ports/fact-store.js";
 import type { SessionStore } from "@ports/session-store.js";
 import type {
+  FactKind,
+  FactRecallQuery,
   RecallKindFilter,
   RecallMode,
   RecallQuery,
@@ -28,6 +32,9 @@ const SERVER_VERSION = "0.2.0-dev";
 export interface McpDeps {
   readonly recall: RecallService;
   readonly store: SessionStore;
+  /** Optional — when absent, fact tools are not registered. */
+  readonly factRecall?: FactRecallService;
+  readonly factStore?: FactStore;
 }
 
 export interface ToolResult {
@@ -107,6 +114,61 @@ export async function getSessionHandler(
   }
 }
 
+export interface RecallFactsInput {
+  query: string | undefined;
+  subject: string | undefined;
+  predicate: string | undefined;
+  kind: FactKind | undefined;
+  mode: RecallMode | undefined;
+  includeSuperseded: boolean | undefined;
+  minConfidence: number | undefined;
+  limit: number | undefined;
+}
+
+export async function recallFactsHandler(
+  deps: McpDeps,
+  input: Partial<RecallFactsInput>,
+): Promise<ToolResult> {
+  if (!deps.factRecall) {
+    return err(new Error("fact recall not wired in this deployment"));
+  }
+  try {
+    const query: FactRecallQuery = {
+      query: input.query ?? "",
+      mode: input.mode ?? "keyword",
+      limit: input.limit ?? DEFAULT_LIMIT,
+      ...(input.subject !== undefined ? { subject: input.subject } : {}),
+      ...(input.predicate !== undefined ? { predicate: input.predicate } : {}),
+      ...(input.kind !== undefined ? { kind: input.kind } : {}),
+      ...(input.includeSuperseded !== undefined
+        ? { includeSuperseded: input.includeSuperseded }
+        : {}),
+      ...(input.minConfidence !== undefined
+        ? { minConfidence: input.minConfidence }
+        : {}),
+    };
+    const result = await deps.factRecall.search(query);
+    return ok(result);
+  } catch (e) {
+    return err(e);
+  }
+}
+
+export async function getFactHistoryHandler(
+  deps: McpDeps,
+  input: { subject: string; predicate: string | undefined },
+): Promise<ToolResult> {
+  if (!deps.factStore) {
+    return err(new Error("fact store not wired in this deployment"));
+  }
+  try {
+    const chains = await deps.factStore.getHistory(input.subject, input.predicate);
+    return ok({ subject: input.subject, predicate: input.predicate ?? null, chains });
+  } catch (e) {
+    return err(e);
+  }
+}
+
 const RECALL_DESCRIPTION = `Search prior AI sessions from the local nle-memory canonical store.
 Use this whenever the user's question references past work, prior decisions,
 unresolved questions, or anything that might already be answered in earlier
@@ -135,6 +197,55 @@ and you need the conversational context to answer accurately.
 
 Args:
   - id: Canonical session ID (e.g. "sess_pgvector", "sess_abc123").`;
+
+const RECALL_FACTS_DESCRIPTION = `Search the local nle-memory FactStore for normalized
+(subject, predicate, value) triples derived from prior sessions. Use this
+when you need a single concrete fact rather than the prose of a whole
+session — model aliases, framework choices, endpoints, ports, dates.
+
+Examples:
+  - "what model alias does the Mac Pro endpoint expose?"
+    → recall_facts(subject="mac-pro-llm-host", predicate="model")
+  - "what framework did we pick for nle-memory-ts?"
+    → recall_facts(subject="nle-memory-ts", predicate="framework")
+  - "anything we know about the GOAT engagement?"
+    → recall_facts(subject="goat-home-services")
+  - "decisions about routing in the last week?"
+    → recall_facts(query="routing", kind="decision")
+
+Returns the matching Fact records with provenance (source_session_id,
+source_quote when available). Superseded facts are excluded by default —
+use get_fact_history to walk the chain of how a value evolved.
+
+Args:
+  - query: free-text search against fact values. Optional if subject /
+           predicate / kind is set.
+  - subject: exact-match normalized (lowercase-kebab) entity or topic name.
+  - predicate: exact-match predicate from the closed vocabulary (framework,
+               endpoint, model, port, host, owner, pricing, deadline, status,
+               stack, runtime, library, version, dependency, schema,
+               integration, deployment, repo, branch, decided-on, assumption,
+               blocker, other).
+  - kind: "decision" | "open" | "attribute". Optional.
+  - mode: "keyword" (default), "semantic", or "hybrid".
+  - includeSuperseded: true to include outdated facts. Default false.
+  - minConfidence: lower bound on classifier confidence. Default 0.6.
+  - limit: max results (1-100, default 10).`;
+
+const GET_FACT_HISTORY_DESCRIPTION = `Walk the supersedence chain for a (subject, predicate) pair, or
+all chains for a subject. Use this when you need to understand how a value
+changed over time — "wait, did we used to use Fastify, when did that flip
+to Hono?".
+
+Returns chains ordered newest → oldest. The head of each chain is the
+current value; subsequent entries are predecessors, each pointing forward
+via supersededBy.
+
+Args:
+  - subject: normalized entity or topic name.
+  - predicate: (optional) narrow to a single (subject, predicate) chain.
+               When omitted, returns one chain per predicate for this
+               subject.`;
 
 export function createMcpServer(deps: McpDeps): McpServer {
   const server = new McpServer({
@@ -199,6 +310,84 @@ export function createMcpServer(deps: McpDeps): McpServer {
     },
     async (args) => getSessionHandler(deps, args) as never,
   );
+
+  if (deps.factRecall && deps.factStore) {
+    server.registerTool(
+      "recall_facts",
+      {
+        title: "Recall Facts from NLE Memory",
+        description: RECALL_FACTS_DESCRIPTION,
+        inputSchema: {
+          query: z
+            .string()
+            .default("")
+            .describe("Free-text search against fact values. Optional if subject/predicate/kind set."),
+          subject: z
+            .string()
+            .optional()
+            .describe("Exact-match normalized entity/topic (lowercase-kebab)."),
+          predicate: z
+            .string()
+            .optional()
+            .describe("Exact-match predicate from the closed vocabulary."),
+          kind: z
+            .enum(["decision", "open", "attribute"])
+            .optional()
+            .describe("Filter to a single fact kind."),
+          mode: z
+            .enum(["keyword", "semantic", "hybrid"])
+            .optional()
+            .describe("Search mode. Defaults to keyword."),
+          includeSuperseded: z
+            .boolean()
+            .optional()
+            .describe("Include outdated facts. Default false."),
+          minConfidence: z
+            .number()
+            .min(0)
+            .max(1)
+            .optional()
+            .describe("Lower bound on classifier confidence. Default 0.6."),
+          limit: z
+            .number()
+            .int()
+            .min(1)
+            .max(100)
+            .default(DEFAULT_LIMIT)
+            .describe("Max results to return."),
+        },
+        annotations: {
+          readOnlyHint: true,
+          destructiveHint: false,
+          idempotentHint: true,
+          openWorldHint: true,
+        },
+      },
+      async (args) => recallFactsHandler(deps, args) as never,
+    );
+
+    server.registerTool(
+      "get_fact_history",
+      {
+        title: "Get Fact Supersedence History",
+        description: GET_FACT_HISTORY_DESCRIPTION,
+        inputSchema: {
+          subject: z.string().min(1).describe("Normalized entity/topic name."),
+          predicate: z
+            .string()
+            .optional()
+            .describe("Narrow to one (subject, predicate) chain."),
+        },
+        annotations: {
+          readOnlyHint: true,
+          destructiveHint: false,
+          idempotentHint: true,
+          openWorldHint: true,
+        },
+      },
+      async (args) => getFactHistoryHandler(deps, args) as never,
+    );
+  }
 
   return server;
 }

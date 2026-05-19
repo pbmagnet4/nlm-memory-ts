@@ -302,6 +302,28 @@ describe("ScanScheduler.tick", () => {
     expect(count?.c).toBe(0);
   });
 
+  it("writes fact embeddings when both FactStore and embedder are configured (B.3)", async () => {
+    const adapter = new ClaudeCodeAdapter({ projectsPath: projects, idleMinutes: 15 });
+    const classifier = new StubClassifier({
+      label: "L", summary: "S", entities: [], decisions: [], open: [], confidence: 0.9,
+      facts: [
+        { kind: "decision", subject: "nle-memory-ts", predicate: "framework", value: "Hono" },
+        { kind: "attribute", subject: "mac-pro", predicate: "endpoint", value: "http://macpro:8080/v1" },
+      ],
+    });
+    const embedder = new StubEmbedder();
+    const factStore = new SqliteFactStore(store.rawDb());
+    const scheduler = new ScanScheduler({
+      store, adapters: [adapter], classifier, embedder, factStore, logger: () => {},
+    });
+    await scheduler.tick();
+    // session embedding (1) + per-fact embeddings (2) = 3 calls
+    expect(embedder.calls).toBe(3);
+    const count = store.rawDb()
+      .prepare<[], { c: number }>("SELECT COUNT(*) AS c FROM fact_embeddings").get();
+    expect(count?.c).toBe(2);
+  });
+
   it("re-ingest replaces facts (no duplicate fact rows across ticks)", async () => {
     const adapter = new ClaudeCodeAdapter({ projectsPath: projects, idleMinutes: 15 });
     const classifier = new StubClassifier({

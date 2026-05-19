@@ -8,14 +8,24 @@
  * the only way to get a single-writer SQLite to behave atomically across
  * both stores without WAL ordering surprises.
  *
- * Phase B.1 surface: insert, getById, findCurrent, list, listBySession,
- * markSuperseded. No semantic search (Phase B.3), no extraction wiring
- * (Phase B.2), no auto-supersedence (Phase B.4).
+ * Surface evolution:
+ *   B.1 — insert, getById, findCurrent, list, listBySession, markSuperseded
+ *   B.2 — insertManyInTxn (atomic session+facts ingest), embedding write helper
+ *   B.3 — listForRecall (pre-filter for FactRecallService), semanticSearch,
+ *         getHistory (supersedence chain inspection)
+ *   B.4 — auto-supersedence on (subject, predicate) collision (deferred)
  */
 
+type NeighborRow = { fact_id: string; distance: number };
+
 import type Database from "better-sqlite3";
-import type { FactQuery, FactStore } from "@ports/fact-store.js";
-import type { Fact, FactKind } from "@shared/types.js";
+import type {
+  FactListFilter,
+  FactQuery,
+  FactSemanticNeighbor,
+  FactStore,
+} from "@ports/fact-store.js";
+import type { Fact, FactHistoryChain, FactKind } from "@shared/types.js";
 
 type FactRow = {
   id: string;
@@ -120,6 +130,112 @@ export class SqliteFactStore implements FactStore {
       )
       .all(sessionId);
     return rows.map((r) => this.rowToFact(r));
+  }
+
+  async listForRecall(filter: FactListFilter): Promise<ReadonlyArray<Fact>> {
+    const where: string[] = [];
+    const params: Array<string | number> = [];
+    if (filter.subject !== undefined) {
+      where.push("subject = ?");
+      params.push(filter.subject);
+    }
+    if (filter.predicate !== undefined) {
+      where.push("predicate = ?");
+      params.push(filter.predicate);
+    }
+    if (filter.kind !== undefined) {
+      where.push("kind = ?");
+      params.push(filter.kind);
+    }
+    if (filter.minConfidence !== undefined) {
+      where.push("confidence >= ?");
+      params.push(filter.minConfidence);
+    }
+    if (filter.includeSuperseded !== true) {
+      where.push("superseded_by IS NULL");
+    }
+    const limit = Math.max(1, Math.trunc(filter.limit ?? 500));
+    params.push(limit);
+    const sql = `
+      SELECT id, kind, subject, predicate, value, source_session_id,
+             source_quote, created_at, superseded_by, confidence
+      FROM facts
+      ${where.length > 0 ? "WHERE " + where.join(" AND ") : ""}
+      ORDER BY created_at DESC
+      LIMIT ?
+    `;
+    const rows = this.db
+      .prepare<Array<string | number>, FactRow>(sql)
+      .all(...params);
+    return rows.map((r) => this.rowToFact(r));
+  }
+
+  async semanticSearch(
+    queryVector: Float32Array,
+    limit: number,
+  ): Promise<ReadonlyArray<FactSemanticNeighbor>> {
+    const k = Math.max(1, Math.trunc(limit));
+    const blob = Buffer.from(
+      queryVector.buffer,
+      queryVector.byteOffset,
+      queryVector.byteLength,
+    );
+    const rows = this.db
+      .prepare<[Buffer, number], NeighborRow>(`
+        SELECT fact_id, distance
+        FROM fact_embeddings
+        WHERE embedding MATCH ?
+          AND k = ?
+        ORDER BY distance
+      `)
+      .all(blob, k);
+    return rows.map((r) => ({ factId: r.fact_id, distance: r.distance }));
+  }
+
+  async getHistory(
+    subject: string,
+    predicate?: string,
+  ): Promise<ReadonlyArray<FactHistoryChain>> {
+    const sql = predicate
+      ? `SELECT id, kind, subject, predicate, value, source_session_id,
+                source_quote, created_at, superseded_by, confidence
+         FROM facts
+         WHERE subject = ? AND predicate = ?
+         ORDER BY predicate ASC, created_at DESC`
+      : `SELECT id, kind, subject, predicate, value, source_session_id,
+                source_quote, created_at, superseded_by, confidence
+         FROM facts
+         WHERE subject = ?
+         ORDER BY predicate ASC, created_at DESC`;
+    const rows = predicate
+      ? this.db.prepare<[string, string], FactRow>(sql).all(subject, predicate)
+      : this.db.prepare<[string], FactRow>(sql).all(subject);
+
+    const byPred = new Map<string, Fact[]>();
+    for (const r of rows) {
+      const fact = this.rowToFact(r);
+      const bucket = byPred.get(fact.predicate);
+      if (bucket) bucket.push(fact);
+      else byPred.set(fact.predicate, [fact]);
+    }
+    const chains: FactHistoryChain[] = [];
+    for (const [pred, history] of byPred.entries()) {
+      chains.push({ subject, predicate: pred, history });
+    }
+    return chains;
+  }
+
+  /**
+   * Insert (or replace) the embedding row for a fact. Best-effort: callers
+   * trap embedder errors so an unreachable Ollama doesn't roll back ingest.
+   * vec0 doesn't UPDATE, so this is a DELETE+INSERT pair.
+   */
+  upsertEmbedding(factId: string, vector: Float32Array): void {
+    const blob = Buffer.from(vector.buffer, vector.byteOffset, vector.byteLength);
+    this.db.prepare("DELETE FROM fact_embeddings WHERE fact_id = ?").run(factId);
+    this.db
+      .prepare("INSERT INTO fact_embeddings (fact_id, embedding) VALUES (?, ?)")
+      .run(factId, blob);
   }
 
   async markSuperseded(oldId: string, newId: string | null): Promise<void> {

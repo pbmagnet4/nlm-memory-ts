@@ -8,15 +8,20 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { FactRecallService } from "../../src/core/recall-facts/fact-recall-service.js";
 import { RecallService } from "../../src/core/recall/recall-service.js";
+import { SqliteFactStore } from "../../src/core/storage/sqlite-fact-store.js";
 import { SqliteSessionStore } from "../../src/core/storage/sqlite-session-store.js";
 import {
-  getSessionHandler,
-  recallSessionsHandler,
   createMcpServer,
+  getFactHistoryHandler,
+  getSessionHandler,
+  recallFactsHandler,
+  recallSessionsHandler,
 } from "../../src/mcp/server.js";
 import type { EmbedResult, LLMClient } from "../../src/ports/llm-client.js";
 import type { Session } from "../../src/shared/types.js";
+import { makeFact } from "../fixtures/facts.js";
 import { makeSession } from "../fixtures/sessions.js";
 
 const MIGRATIONS_DIR = resolve(__dirname, "../../migrations");
@@ -154,5 +159,90 @@ describe("MCP adapter", () => {
   it("createMcpServer registers both tools without throwing", () => {
     const server = createMcpServer({ recall, store });
     expect(server).toBeDefined();
+  });
+
+  describe("fact tools (B.3)", () => {
+    let factStore: SqliteFactStore;
+    let factRecall: FactRecallService;
+
+    beforeEach(async () => {
+      factStore = new SqliteFactStore(store.rawDb());
+      factRecall = new FactRecallService({
+        factStore,
+        llm: new FixedEmbedder(unit([1, 0, 0])),
+      });
+      await factStore.insertMany([
+        makeFact({
+          id: "f_hono",
+          subject: "nle-memory-ts",
+          predicate: "framework",
+          value: "Hono",
+          confidence: 0.9,
+          sourceSessionId: "sess_a",
+        }),
+        makeFact({
+          id: "f_endpoint",
+          kind: "attribute",
+          subject: "mac-pro-llm-host",
+          predicate: "endpoint",
+          value: "http://macpro:8080/v1",
+          confidence: 0.85,
+          sourceSessionId: "sess_b",
+        }),
+      ]);
+    });
+
+    it("recall_facts returns the current fact for an exact subject+predicate", async () => {
+      const result = await recallFactsHandler(
+        { recall, store, factRecall, factStore },
+        { subject: "nle-memory-ts", predicate: "framework" },
+      );
+      expect(result.isError).toBeUndefined();
+      const body = parsePayload(result) as {
+        total: number;
+        results: { id: string; value: string }[];
+      };
+      expect(body.total).toBe(1);
+      expect(body.results[0]?.id).toBe("f_hono");
+      expect(body.results[0]?.value).toBe("Hono");
+    });
+
+    it("recall_facts returns an error tool result when factRecall is missing", async () => {
+      const result = await recallFactsHandler(
+        { recall, store },
+        { subject: "x" },
+      );
+      expect(result.isError).toBe(true);
+    });
+
+    it("get_fact_history returns chains ordered newest → oldest", async () => {
+      await factStore.insertMany([
+        makeFact({
+          id: "f_old",
+          subject: "nle-memory-ts",
+          predicate: "framework",
+          value: "Fastify",
+          createdAt: "2026-05-18T00:00:00Z",
+          confidence: 0.9,
+          sourceSessionId: "sess_a",
+        }),
+      ]);
+      await factStore.markSuperseded("f_old", "f_hono");
+
+      const result = await getFactHistoryHandler(
+        { recall, store, factRecall, factStore },
+        { subject: "nle-memory-ts", predicate: "framework" },
+      );
+      const body = parsePayload(result) as {
+        chains: { history: { id: string }[] }[];
+      };
+      expect(body.chains).toHaveLength(1);
+      expect(body.chains[0]?.history.map((f) => f.id)).toEqual(["f_hono", "f_old"]);
+    });
+
+    it("createMcpServer registers fact tools when factRecall + factStore wired", () => {
+      const server = createMcpServer({ recall, store, factRecall, factStore });
+      expect(server).toBeDefined();
+    });
   });
 });

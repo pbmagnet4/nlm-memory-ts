@@ -13,12 +13,27 @@
  * by subject and optional predicate, mark a fact superseded.
  */
 
-import type { Fact } from "@shared/types.js";
+import type { Fact, FactHistoryChain, FactKind } from "@shared/types.js";
 
 export interface FactQuery {
   readonly subject: string;
   readonly predicate?: string;
   readonly includeSuperseded?: boolean;
+  readonly limit?: number;
+}
+
+export interface FactSemanticNeighbor {
+  readonly factId: string;
+  readonly distance: number;
+}
+
+/** Pre-filter applied at the storage layer before keyword scoring runs. */
+export interface FactListFilter {
+  readonly subject?: string;
+  readonly predicate?: string;
+  readonly kind?: FactKind;
+  readonly includeSuperseded?: boolean;
+  readonly minConfidence?: number;
   readonly limit?: number;
 }
 
@@ -55,4 +70,33 @@ export interface FactStore {
    * by passing null as newId (Phase C operator-undo affordance).
    */
   markSuperseded(oldId: string, newId: string | null): Promise<void>;
+
+  /**
+   * Pre-filtered fact list used by FactRecallService. Applies subject /
+   * predicate / kind / confidence / superseded filters at the SQL layer
+   * before keyword scoring runs in core. No ordering guarantee beyond
+   * `created_at DESC`.
+   */
+  listForRecall(filter: FactListFilter): Promise<ReadonlyArray<Fact>>;
+
+  /**
+   * sqlite-vec KNN over fact_embeddings. Returns up to `limit` nearest
+   * neighbors by L2 distance. The service converts distance to cosine and
+   * blends with keyword scores.
+   */
+  semanticSearch(
+    queryVector: Float32Array,
+    limit: number,
+  ): Promise<ReadonlyArray<FactSemanticNeighbor>>;
+
+  /**
+   * Supersedence chain inspection. When `predicate` is provided, returns a
+   * single chain (or empty array if no facts match). When omitted, returns
+   * one chain per distinct predicate for that subject. Each chain orders
+   * newest → oldest by created_at.
+   */
+  getHistory(
+    subject: string,
+    predicate?: string,
+  ): Promise<ReadonlyArray<FactHistoryChain>>;
 }

@@ -270,6 +270,25 @@ export class SqliteSessionStore implements SessionStore {
           // Embedder failure must not roll the ingest back.
         }
       }
+
+      // Fact embeddings — one per fact, best-effort. Cost is N round trips
+      // to Ollama; future optimization could batch via the embedder's batch
+      // endpoint when sessions average more than a handful of facts. For now
+      // the per-fact cost (~50ms) is acceptable relative to the classifier
+      // call (~3-8s) that produced them.
+      if (factSink !== null) {
+        for (const fact of factSink.facts) {
+          const factText = `${fact.subject} ${fact.predicate} ${fact.value}`.trim();
+          if (!factText) continue;
+          try {
+            const { vector } = await embedder.embed(factText, "document");
+            factSink.factStore.upsertEmbedding(fact.id, vector);
+          } catch {
+            // Per-fact embedding failure must not roll the ingest back, and
+            // must not abort embedding of subsequent facts.
+          }
+        }
+      }
     }
   }
 

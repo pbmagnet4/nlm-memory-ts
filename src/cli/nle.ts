@@ -20,6 +20,7 @@ import { homedir } from "node:os";
 import { Command } from "commander";
 import { serve } from "@hono/node-server";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { FactRecallService } from "../core/recall-facts/fact-recall-service.js";
 import { RecallService } from "../core/recall/recall-service.js";
 import { SqliteFactStore } from "../core/storage/sqlite-fact-store.js";
 import { SqliteSessionStore } from "../core/storage/sqlite-session-store.js";
@@ -103,7 +104,8 @@ function buildStack() {
   const embedder = new OllamaClient({ baseUrl: ollamaUrl() });
   const classifier = buildClassifier();
   const recall = new RecallService({ store, llm: embedder });
-  return { store, facts, recall, embedder, classifier };
+  const factRecall = new FactRecallService({ factStore: facts, llm: embedder });
+  return { store, facts, recall, factRecall, embedder, classifier };
 }
 
 const program = new Command();
@@ -272,8 +274,8 @@ program
   .command("mcp")
   .description("Run as an MCP stdio server (for ~/.mcp.json)")
   .action(async () => {
-    const { recall, store } = buildStack();
-    const server = createMcpServer({ recall, store });
+    const { recall, store, facts, factRecall } = buildStack();
+    const server = createMcpServer({ recall, store, factStore: facts, factRecall });
     const transport = new StdioServerTransport();
     await server.connect(transport);
   });

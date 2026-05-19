@@ -105,3 +105,41 @@ export interface Fact {
   readonly supersededBy: string | null;
   readonly confidence: number;
 }
+
+export type FactMatchField = "value" | "subject" | "predicate" | "semantic";
+
+export interface FactRecallQuery {
+  readonly query?: string;
+  readonly subject?: string;
+  readonly predicate?: string;
+  readonly kind?: FactKind;
+  readonly includeSuperseded?: boolean;
+  readonly minConfidence?: number;
+  readonly mode?: RecallMode;
+  readonly limit?: number;
+}
+
+export interface FactHit extends Fact {
+  readonly matchScore: number;
+  readonly matchedIn: ReadonlyArray<FactMatchField>;
+  readonly keywordScore?: number;
+  readonly semanticScore?: number;
+}
+
+export interface FactRecallResult {
+  readonly query: string;
+  readonly subject: string | null;
+  readonly predicate: string | null;
+  readonly kind: FactKind | null;
+  readonly mode: RecallMode;
+  readonly limit: number;
+  readonly total: number;
+  readonly results: ReadonlyArray<FactHit>;
+  readonly modeUnavailable?: "ollama_unreachable";
+}
+
+export interface FactHistoryChain {
+  readonly subject: string;
+  readonly predicate: string;
+  readonly history: ReadonlyArray<Fact>;
+}
