@@ -3,9 +3,21 @@ import { Link } from "react-router-dom";
 import { useDataset, relativeAge } from "../lib/dataset.js";
 import { postAction } from "../lib/actions.js";
 
+type SeverityFilter = "all" | "high" | "medium";
+type AlertSort = "oldest" | "recent";
+
 export function PulsePage() {
   const { data, loading, error, refetch } = useDataset();
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [severity, setSeverity] = useState<SeverityFilter>("all");
+  const [sort, setSort] = useState<AlertSort>("oldest");
+
+  const filteredAlerts = useMemo(() => {
+    if (!data) return [];
+    const filtered = severity === "all" ? data.alerts : data.alerts.filter((a) => a.severity === severity);
+    const sorted = [...filtered].sort((a, b) => (sort === "oldest" ? b.age_days - a.age_days : a.age_days - b.age_days));
+    return sorted;
+  }, [data, severity, sort]);
 
   const toggleExpand = (alertId: string) => {
     setExpanded((prev) => {
@@ -63,10 +75,34 @@ export function PulsePage() {
         </section>
 
         <section className="card pulse-scroll-card">
-          <header className="card-head"><h3>Stale alerts</h3><span className="muted small">{data.alerts.length}</span></header>
+          <header className="card-head card-head-stack">
+            <div className="card-head-row">
+              <h3>Stale alerts</h3>
+              <span className="muted small">
+                {filteredAlerts.length}{filteredAlerts.length !== data.alerts.length ? ` / ${data.alerts.length}` : ""}
+              </span>
+            </div>
+            <div className="card-filters">
+              <div className="filter-group" role="group" aria-label="Severity">
+                {(["all", "high", "medium"] as const).map((s) => (
+                  <button
+                    key={s}
+                    type="button"
+                    className={`chip${severity === s ? " active" : ""}`}
+                    data-severity={s === "all" ? undefined : s}
+                    onClick={() => setSeverity(s)}
+                  >{s}</button>
+                ))}
+              </div>
+              <div className="filter-group" role="group" aria-label="Sort">
+                <button type="button" className={`chip${sort === "oldest" ? " active" : ""}`} onClick={() => setSort("oldest")}>oldest</button>
+                <button type="button" className={`chip${sort === "recent" ? " active" : ""}`} onClick={() => setSort("recent")}>recent</button>
+              </div>
+            </div>
+          </header>
           <div className="pulse-scroll-body">
             <ul className="alert-list">
-              {data.alerts.map((a) => {
+              {filteredAlerts.map((a) => {
                 const isExpanded = expanded.has(a.id);
                 return (
                   <li key={a.id} className="alert-row">
@@ -87,7 +123,11 @@ export function PulsePage() {
                   </li>
                 );
               })}
-              {data.alerts.length === 0 && <li className="muted alert-row-empty">No stale alerts.</li>}
+              {filteredAlerts.length === 0 && (
+                <li className="muted alert-row-empty">
+                  {data.alerts.length === 0 ? "No stale alerts." : "No alerts match the current filters."}
+                </li>
+              )}
             </ul>
           </div>
         </section>

@@ -39,6 +39,8 @@ export interface DatasetAlert {
   entity: string;
   summary: string;
   sessions: string[];
+  age_days: number;
+  last_touch_at: string | null;
 }
 
 export interface Dataset {

@@ -1380,3 +1380,33 @@ a.session-label:hover { color: var(--accent); }
   flex-wrap: wrap;
   gap: 6px;
 }
+
+/* ── Card head with stacked filters ──────────────────────────────────── */
+.card-head.card-head-stack {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  padding: 10px 14px 12px;
+}
+
+.card-head-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.card-filters {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.filter-group {
+  display: flex;
+  gap: 4px;
+}
+
+.filter-group .chip {
+  font-size: var(--text-xs);
+  padding: 2px 8px;
+}

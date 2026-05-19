@@ -69,6 +69,8 @@ export interface DatasetResponse {
     readonly entity: string;
     readonly summary: string;
     readonly sessions: ReadonlyArray<string>;
+    readonly age_days: number;
+    readonly last_touch_at: string | null;
   }>;
 }
 
@@ -406,6 +408,8 @@ function computeStaleAlerts(
       entity: e.canonical,
       summary,
       sessions: last ? [last.id] : [],
+      age_days: ageDays,
+      last_touch_at: last?.started_at ?? null,
     });
   }
   alerts.sort((a, b) => (a.severity === "high" ? 0 : 1) - (b.severity === "high" ? 0 : 1));
