@@ -59,6 +59,13 @@ export declare class SqliteSessionStore implements SessionStore {
     private readonly db;
     constructor(opts: SqliteSessionStoreOptions);
     close(): void;
+    /**
+     * Drains the WAL into the main database and truncates the -wal file.
+     * WAL mode is on but nothing else checkpoints, so the file grows
+     * unbounded under continuous readers. The daemon calls this on an
+     * interval. Synchronous — keep the WAL small so each call is cheap.
+     */
+    checkpoint(): void;
     /** Raw db handle for ingest helpers (Scheduler, scanOnce). Avoid using
      *  directly from the recall path — it bypasses the SessionStore port. */
     rawDb(): Database.Database;
@@ -117,6 +124,13 @@ export declare class SqliteSessionStore implements SessionStore {
     private embedFacts;
     list(filter?: SessionFilter): Promise<ReadonlyArray<Session>>;
     getById(sessionId: string): Promise<Session | null>;
+    /**
+     * Batched session fetch for the recall path. Deliberately omits the
+     * `body` column — body is ~48KB/row of session markdown that recall
+     * never reads, and SELECTing it for the corpus is what wedged the
+     * daemon. Resolved sessions carry `body: ""`.
+     */
+    getByIds(ids: ReadonlyArray<string>): Promise<ReadonlyArray<Session>>;
     semanticSearch(queryVector: Float32Array, limit: number): Promise<ReadonlyArray<SemanticNeighbor>>;
     /**
      * Lexical recall via the sessions_fts FTS5 index. BM25 column weights

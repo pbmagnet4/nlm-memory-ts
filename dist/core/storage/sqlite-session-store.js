@@ -37,6 +37,15 @@ export class SqliteSessionStore {
     close() {
         this.db.close();
     }
+    /**
+     * Drains the WAL into the main database and truncates the -wal file.
+     * WAL mode is on but nothing else checkpoints, so the file grows
+     * unbounded under continuous readers. The daemon calls this on an
+     * interval. Synchronous — keep the WAL small so each call is cheap.
+     */
+    checkpoint() {
+        this.db.pragma("wal_checkpoint(TRUNCATE)");
+    }
     /** Raw db handle for ingest helpers (Scheduler, scanOnce). Avoid using
      *  directly from the recall path — it bypasses the SessionStore port. */
     rawDb() {
@@ -309,6 +318,32 @@ export class SqliteSessionStore {
         const markers = this.loadMarkers([sessionId]);
         const overlay = loadActionOverlay(this.db);
         return this.rowToSession(row, entities, markers, overlay);
+    }
+    /**
+     * Batched session fetch for the recall path. Deliberately omits the
+     * `body` column — body is ~48KB/row of session markdown that recall
+     * never reads, and SELECTing it for the corpus is what wedged the
+     * daemon. Resolved sessions carry `body: ""`.
+     */
+    async getByIds(ids) {
+        if (ids.length === 0)
+            return [];
+        const placeholders = ids.map(() => "?").join(",");
+        const rows = this.db
+            .prepare(`
+        SELECT id, runtime, runtime_session_id, started_at, ended_at, duration_min,
+               label, summary, status, transcript_kind, transcript_path
+        FROM sessions
+        WHERE id IN (${placeholders})
+      `)
+            .all(...ids);
+        if (rows.length === 0)
+            return [];
+        const foundIds = rows.map((r) => r.id);
+        const entitiesByIdMap = this.loadEntities(foundIds);
+        const markersByIdMap = this.loadMarkers(foundIds);
+        const overlay = loadActionOverlay(this.db);
+        return rows.map((r) => this.rowToSession({ ...r, body: null }, entitiesByIdMap, markersByIdMap, overlay));
     }
     async semanticSearch(queryVector, limit) {
         const k = Math.max(1, Math.trunc(limit));

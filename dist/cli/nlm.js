@@ -165,6 +165,26 @@ program
         console.error(`  db:     ${dbPath()}`);
         console.error(`  ollama: ${ollamaUrl()}`);
     });
+    // Keep the SQLite WAL bounded. WAL mode is on but nothing else
+    // checkpoints it; under continuous readers it grows without limit
+    // (it had reached 38 MB), which slows every read. Drain once at boot,
+    // then every 5 minutes.
+    const WAL_CHECKPOINT_INTERVAL_MS = 5 * 60_000;
+    try {
+        store.checkpoint();
+    }
+    catch {
+        // Boot checkpoint can lose a race with readers — the interval retries.
+    }
+    const checkpointTimer = setInterval(() => {
+        try {
+            store.checkpoint();
+        }
+        catch {
+            // Checkpoint contention — the next tick retries.
+        }
+    }, WAL_CHECKPOINT_INTERVAL_MS);
+    checkpointTimer.unref();
     if (opts.scheduler !== false) {
         const adapters = buildAdapters(sources);
         if (adapters.length === 0) {
@@ -182,6 +202,7 @@ program
             scheduler.start();
             console.error(`  scheduler: ${adapters.map((a) => a.name).join(", ")} every ${opts.intervalMin}m`);
             const shutdown = () => {
+                clearInterval(checkpointTimer);
                 scheduler.stop();
                 store.close();
                 process.exit(0);

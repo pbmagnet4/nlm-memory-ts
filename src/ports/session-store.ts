@@ -29,6 +29,8 @@ export interface SessionStore {
 
   getById(sessionId: string): Promise<Session | null>;
 
+  getByIds(ids: ReadonlyArray<string>): Promise<ReadonlyArray<Session>>;
+
   semanticSearch(
     queryVector: Float32Array,
     limit: number,

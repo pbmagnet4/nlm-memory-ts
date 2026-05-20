@@ -22,6 +22,7 @@ export interface KeywordNeighbor {
 export interface SessionStore {
     list(filter?: SessionFilter): Promise<ReadonlyArray<Session>>;
     getById(sessionId: string): Promise<Session | null>;
+    getByIds(ids: ReadonlyArray<string>): Promise<ReadonlyArray<Session>>;
     semanticSearch(queryVector: Float32Array, limit: number): Promise<ReadonlyArray<SemanticNeighbor>>;
     keywordSearch(query: string, limit: number): Promise<ReadonlyArray<KeywordNeighbor>>;
     updateStatus(sessionId: string, status: SessionStatus): Promise<void>;

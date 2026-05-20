@@ -36,23 +36,16 @@ export class RecallService {
         };
         if (!input.query && !entity && !kind)
             return empty;
-        const filterArgs = {};
-        if (input.entity !== undefined)
-            filterArgs.entity = input.entity;
-        if (input.kind !== undefined)
-            filterArgs.kind = input.kind;
-        const allSessions = await this.deps.store.list();
-        const filtered = applyFilter(allSessions, filterArgs);
-        const byId = new Map(filtered.map((s) => [s.id, s]));
-        const queryTokens = input.query ? new Set(tokenSet(input.query)) : new Set();
-        const kwHits = (mode === "keyword" || mode === "hybrid") && input.query
-            ? await this.runKeyword(input.query, byId, queryTokens, limit * KEYWORD_OVERFETCH)
+        // 1. Search legs — ranked neighbor IDs only. No session bodies loaded.
+        const kwNeighbors = (mode === "keyword" || mode === "hybrid") && input.query
+            ? await this.deps.store.keywordSearch(input.query, limit * KEYWORD_OVERFETCH)
             : [];
-        let semHits = [];
+        let semNeighbors = [];
         let semError = null;
         if ((mode === "semantic" || mode === "hybrid") && input.query) {
             try {
-                semHits = await this.runSemantic(input.query, byId, limit * SEMANTIC_OVERFETCH);
+                const embedding = await this.deps.llm.embed(input.query, "query");
+                semNeighbors = await this.deps.store.semanticSearch(embedding.vector, limit * SEMANTIC_OVERFETCH);
             }
             catch (err) {
                 if (err instanceof LLMUnreachableError) {
@@ -66,46 +59,60 @@ export class RecallService {
         if (mode === "semantic" && semError) {
             return { ...empty, modeUnavailable: semError };
         }
+        // 2. Resolve ONLY the hit sessions — never the whole corpus. The
+        //    entity/kind filter is applied to the fetched hits; a filtered-out
+        //    session is absent from byId and is skipped during resolution.
+        const hitIds = uniqueIds(kwNeighbors, semNeighbors);
+        const hitSessions = await this.deps.store.getByIds(hitIds);
+        const filterArgs = {};
+        if (input.entity !== undefined)
+            filterArgs.entity = input.entity;
+        if (input.kind !== undefined)
+            filterArgs.kind = input.kind;
+        const byId = new Map(applyFilter(hitSessions, filterArgs).map((s) => [s.id, s]));
+        // 3. Build hits from the resolved sessions, preserving leg rank order.
+        const queryTokens = input.query
+            ? new Set(tokenSet(input.query))
+            : new Set();
+        const kwHits = [];
+        for (const n of kwNeighbors) {
+            const session = byId.get(n.sessionId);
+            if (!session)
+                continue;
+            kwHits.push({
+                session,
+                score: n.score,
+                matchedIn: keywordMatchFields(session, queryTokens),
+            });
+        }
+        const semHits = [];
+        for (const n of semNeighbors) {
+            const session = byId.get(n.sessionId);
+            if (!session)
+                continue;
+            semHits.push({ session, similarity: cosineFromL2(n.distance) });
+        }
+        // 4. Finalize per mode.
         if (mode === "keyword") {
             return finalize(input.query, entity, kind, mode, limit, kwHits.map(toKeywordHit));
         }
         if (mode === "semantic") {
             return finalize(input.query, entity, kind, mode, limit, semHits.map(toSemanticHit));
         }
-        // hybrid
-        const merged = mergeHybrid(kwHits, semHits, byId);
+        const merged = mergeHybrid(kwHits, semHits);
         const result = finalize(input.query, entity, kind, mode, limit, merged);
         return semError ? { ...result, modeUnavailable: semError } : result;
     }
-    async runSemantic(query, byId, fetchLimit) {
-        const embedding = await this.deps.llm.embed(query, "query");
-        const neighbors = await this.deps.store.semanticSearch(embedding.vector, fetchLimit);
-        const hits = [];
-        for (const n of neighbors) {
-            const session = byId.get(n.sessionId);
-            if (!session)
-                continue;
-            hits.push({ session, similarity: cosineFromL2(n.distance) });
-        }
-        return hits;
-    }
-    async runKeyword(query, byId, queryTokens, fetchLimit) {
-        const neighbors = await this.deps.store.keywordSearch(query, fetchLimit);
-        const hits = [];
-        for (const n of neighbors) {
-            const session = byId.get(n.sessionId);
-            if (!session)
-                continue;
-            hits.push({
-                session,
-                score: n.score,
-                matchedIn: keywordMatchFields(session, queryTokens),
-            });
-        }
-        return hits;
-    }
 }
-function mergeHybrid(kwHits, semHits, byId) {
+function uniqueIds(kw, sem) {
+    const ids = new Set();
+    for (const n of kw)
+        ids.add(n.sessionId);
+    for (const n of sem)
+        ids.add(n.sessionId);
+    return [...ids];
+}
+function mergeHybrid(kwHits, semHits) {
     const maxKw = Math.max(1, ...kwHits.map((h) => h.score));
     const maxSem = Math.max(1, ...semHits.map((h) => h.similarity));
     const kwMap = new Map(kwHits.map((h) => [h.session.id, h]));
@@ -113,11 +120,9 @@ function mergeHybrid(kwHits, semHits, byId) {
     const allIds = new Set([...kwMap.keys(), ...semMap.keys()]);
     const rows = [];
     for (const id of allIds) {
-        const session = byId.get(id);
-        if (!session)
-            continue;
         const kw = kwMap.get(id);
         const sem = semMap.get(id);
+        const session = (kw ?? sem).session;
         const kwNorm = kw ? kw.score / maxKw : 0;
         const semNorm = sem ? sem.similarity / maxSem : 0;
         const combined = round4(HYBRID_SEM_WEIGHT * semNorm + HYBRID_KW_WEIGHT * kwNorm);

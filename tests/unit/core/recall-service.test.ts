@@ -14,16 +14,23 @@ import { makeSession } from "../../fixtures/sessions.js";
 // RecallService orchestration (filter, merge, limit, error handling) — not
 // keyword ranking quality, which is covered by the FTS integration tests.
 class InMemoryStore implements SessionStore {
+  listCalls = 0;
+  getByIdsCalls = 0;
   constructor(
     private readonly sessions: Session[],
     private readonly neighbors: SemanticNeighbor[] = [],
     private readonly keywordHits: KeywordNeighbor[] = [],
   ) {}
   async list(): Promise<ReadonlyArray<Session>> {
+    this.listCalls += 1;
     return this.sessions;
   }
   async getById(id: string): Promise<Session | null> {
     return this.sessions.find((s) => s.id === id) ?? null;
+  }
+  async getByIds(ids: ReadonlyArray<string>): Promise<ReadonlyArray<Session>> {
+    this.getByIdsCalls += 1;
+    return this.sessions.filter((s) => ids.includes(s.id));
   }
   async semanticSearch(): Promise<ReadonlyArray<SemanticNeighbor>> {
     return this.neighbors;
@@ -154,5 +161,20 @@ describe("RecallService.search", () => {
     expect(big.limit).toBe(100);
     const small = await svc.search({ query: "session", mode: "keyword", limit: 0 });
     expect(small.limit).toBe(1);
+  });
+
+  it("resolves only the hit sessions and never loads the full corpus", async () => {
+    const big: Session[] = Array.from({ length: 100 }, (_, i) =>
+      makeSession({ id: `s${i}`, label: `session ${i}` }),
+    );
+    const store = new InMemoryStore(big, [], [
+      { sessionId: "s7", score: 9 },
+      { sessionId: "s42", score: 8 },
+    ]);
+    const svc = new RecallService({ store, llm: new StubEmbedder() });
+    const result = await svc.search({ query: "anything", mode: "keyword" });
+    expect(result.results.map((r) => r.id)).toEqual(["s7", "s42"]);
+    expect(store.listCalls).toBe(0);
+    expect(store.getByIdsCalls).toBe(1);
   });
 });

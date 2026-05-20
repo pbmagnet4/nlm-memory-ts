@@ -16,6 +16,4 @@ export declare class RecallService {
     private readonly deps;
     constructor(deps: RecallServiceDeps);
     search(input: RecallQuery): Promise<RecallResult>;
-    private runSemantic;
-    private runKeyword;
 }
