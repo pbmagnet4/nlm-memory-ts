@@ -55,7 +55,7 @@ describe("runHook", () => {
     expect(out).toContain("## Possibly-relevant prior sessions (nlm-memory)");
     expect(out).toContain("sess_a");
     const memo = JSON.parse(readFileSync(join(tmp, "state", "c1.json"), "utf8"));
-    expect(memo.sort()).toEqual(["sess_a", "sess_b"]);
+    expect([...memo].sort()).toEqual(["sess_a", "sess_b"]);
   });
 
   it("live mode dedups: a second fire does not re-surface the same session", async () => {

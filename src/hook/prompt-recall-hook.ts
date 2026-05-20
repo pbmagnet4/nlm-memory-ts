@@ -10,6 +10,7 @@
  * pointer block and records the per-conversation memo.
  */
 
+import { pathToFileURL } from "node:url";
 import { classifyPrompt } from "@core/hook/gate.js";
 import { appendHookLog } from "@core/hook/hook-log.js";
 import { loadSurfaced, recordSurfaced } from "@core/hook/memo.js";
@@ -19,7 +20,7 @@ import { selectHits, type RecallHitInput } from "@core/hook/select.js";
 const SCORE_THRESHOLD = 0.5; // conservative start; calibrated in shadow mode
 const PER_FIRE_CAP = 3;
 const PER_CONVERSATION_CAP = 10;
-const RECALL_LIMIT = 5;
+const RECALL_LIMIT = 5; // fetch more than PER_FIRE_CAP to absorb score-filter + dedup
 const RECALL_TIMEOUT_MS = 1000;
 const PROMPT_PREVIEW_CHARS = 200;
 
@@ -113,7 +114,7 @@ async function recallOverHttp(prompt: string): Promise<ReadonlyArray<RecallHitIn
       signal: controller.signal,
     });
     if (!res.ok) return [];
-    const body = (await res.json()) as {
+    type RecallBody = {
       results?: ReadonlyArray<{
         id: string;
         label: string;
@@ -121,6 +122,12 @@ async function recallOverHttp(prompt: string): Promise<ReadonlyArray<RecallHitIn
         matchScore: number;
       }>;
     };
+    let body: RecallBody;
+    try {
+      body = (await res.json()) as RecallBody;
+    } catch {
+      return [];
+    }
     return (body.results ?? []).map((r) => ({
       id: r.id,
       label: r.label,
@@ -155,7 +162,7 @@ async function main(): Promise<void> {
   }
 }
 
-// Run main() only when invoked as a script, not when imported by tests.
-if (process.argv[1] && process.argv[1].endsWith("prompt-recall-hook.js")) {
+// Run main() only when invoked directly as a script, not when imported by tests.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   void main();
 }
