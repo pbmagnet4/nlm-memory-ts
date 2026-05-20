@@ -87,12 +87,15 @@ Once wired, agents can call `recall_sessions` (search past conversations) and `r
 ```sh
 git clone https://github.com/pbmagnet4/nlm-memory-ts
 cd nlm-memory-ts
-npm install        # installs deps + builds
+npm install        # install dependencies
+npm run build      # compile dist/ — commit the result, it ships in the repo
 npm run dev        # hot-reload daemon
 npm run ui:dev     # hot-reload UI at localhost:5173 (proxies /api to :3940)
 npm test           # unit + integration tests
 npm run typecheck
 ```
+
+`dist/` is committed to the repo so `npm install -g github:…` works without a build step on the user's machine. Rebuild and commit `dist/` whenever you change `src/`.
 
 Database lives at `~/.nlm/canonical.sqlite`. Override with `NLM_DB_PATH`.
 
