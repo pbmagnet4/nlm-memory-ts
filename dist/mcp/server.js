@@ -15,7 +15,7 @@ import { z } from "zod";
 const CHARACTER_LIMIT = 25_000;
 const DEFAULT_LIMIT = 10;
 const SERVER_NAME = "nlm-memory-mcp-server";
-const SERVER_VERSION = "0.2.0-dev";
+const SERVER_VERSION = "0.3.0";
 /** TOON encoding cuts token usage on large recall payloads. Opt in via
  *  NLM_FORMAT=toon in the MCP server's env (see .mcp.json). Defaults to JSON. */
 const USE_TOON = process.env.NLM_FORMAT === "toon";
