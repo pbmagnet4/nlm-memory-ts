@@ -15,6 +15,7 @@ const NAV_ITEMS: NavItem[] = [
   { to: "/river",  label: "River",  icon: riverIcon() },
   { to: "/thread", label: "Thread", icon: threadIcon() },
   { to: "/search", label: "Search", icon: searchIcon() },
+  { to: "/recall", label: "Recall", icon: recallIcon() },
   { to: "/settings", label: "Settings", icon: settingsIcon() },
 ];
 
@@ -110,6 +111,17 @@ function searchIcon() {
     <>
       <circle cx="11" cy="11" r="8" />
       <line x1="21" y1="21" x2="16.65" y2="16.65" />
+    </>,
+  );
+}
+
+function recallIcon() {
+  // bar-chart — observability / adoption telemetry
+  return svg(
+    <>
+      <line x1="6" y1="20" x2="6" y2="13" />
+      <line x1="12" y1="20" x2="12" y2="4" />
+      <line x1="18" y1="20" x2="18" y2="9" />
     </>,
   );
 }

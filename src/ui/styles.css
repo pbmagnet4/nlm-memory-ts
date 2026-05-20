@@ -1065,6 +1065,39 @@ code, .code-block {
 .bar-value { font-size: var(--text-sm); color: var(--text-1); min-width: 96px; text-align: right; white-space: nowrap; }
 .bar-pct { margin-left: 2px; }
 
+/* Recall — adoption + coverage telemetry */
+.recall-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 24px;
+  margin-bottom: 20px;
+}
+.recall-note { max-width: 60ch; margin: 0; line-height: 1.5; }
+.recall-block { margin-bottom: 28px; }
+.recall-block-head { margin-bottom: 14px; }
+.recall-block-head .page-title { margin-bottom: 2px; }
+.recall-block-head p { margin: 0; max-width: 70ch; }
+.recall-empty { padding: 18px; font-size: var(--text-sm); }
+.recall-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 14px;
+  margin-top: 14px;
+}
+.recall-bars .bar-item { grid-template-columns: 140px 1fr auto; }
+.recall-bar-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.recall-bars .bar-value { min-width: 0; }
+.recall-bars-empty { padding: 4px 0; }
+
+@media (max-width: 720px) {
+  .recall-head { flex-direction: column; gap: 12px; }
+}
+
 /* Runtimes panel (Pulse) */
 .runtime-list { list-style: none; padding: 4px 0; margin: 0; }
 .runtime-row {

@@ -5,6 +5,7 @@ import { PulsePage } from "./pages/Pulse.js";
 import { RiverPage } from "./pages/River.js";
 import { SearchPage } from "./pages/Search.js";
 import { ThreadPage } from "./pages/Thread.js";
+import { RecallPage } from "./pages/Recall.js";
 import { SettingsIndexPage } from "./pages/settings/Index.js";
 import { SettingsDataPage } from "./pages/settings/Data.js";
 import { SettingsViewsPage } from "./pages/settings/Views.js";
@@ -28,6 +29,7 @@ export function App() {
           <Route path="/river"               element={<RiverPage />} />
           <Route path="/thread"              element={<ThreadPage />} />
           <Route path="/search"              element={<SearchPage />} />
+          <Route path="/recall"              element={<RecallPage />} />
           <Route path="/settings"            element={<SettingsIndexPage />} />
           <Route path="/settings/sources"    element={<SettingsSourcesPage />} />
           <Route path="/settings/providers"  element={<SettingsProvidersPage />} />
