@@ -142,7 +142,7 @@ describe("RecallService against SqliteSessionStore (integration)", () => {
     expect(top?.semanticScore).toBeCloseTo(1, 4);
   });
 
-  it("entity filter applied via list() restricts the corpus", async () => {
+  it("entity filter restricts recall results", async () => {
     const svc = new RecallService({
       store,
       llm: new FixedEmbedder(unit([1, 0, 0])),
