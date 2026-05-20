@@ -5,7 +5,10 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { addHook, removeHook } from "../../src/core/hook/claude-settings.js";
 
 interface Settings {
-  hooks?: { UserPromptSubmit?: Array<{ hooks: Array<{ type: string; command: string }> }> };
+  hooks?: {
+    UserPromptSubmit?: Array<{ hooks: Array<{ type: string; command: string }> }>;
+    PostToolUse?: Array<{ hooks: Array<{ type: string; command: string }> }>;
+  };
 }
 
 describe("claude-settings hook editor", () => {
@@ -72,5 +75,28 @@ describe("claude-settings hook editor", () => {
 
   it("removeHook is a no-op when settings.json does not exist", () => {
     expect(() => removeHook(settingsPath)).not.toThrow();
+  });
+
+  it("removeHook of the only nlm entry leaves no empty UserPromptSubmit litter", () => {
+    addHook(settingsPath, CMD);
+    removeHook(settingsPath);
+    const s = JSON.parse(readFileSync(settingsPath, "utf8")) as Settings;
+    expect(s.hooks?.UserPromptSubmit).toBeUndefined();
+  });
+
+  it("addHook preserves an unrelated hook event key", () => {
+    writeFileSync(
+      settingsPath,
+      JSON.stringify({
+        hooks: { PostToolUse: [{ hooks: [{ type: "command", command: "other-event" }] }] },
+      }),
+      "utf8",
+    );
+    addHook(settingsPath, CMD);
+    const s = JSON.parse(readFileSync(settingsPath, "utf8")) as Settings;
+    expect(s.hooks?.PostToolUse).toHaveLength(1);
+    const ups = s.hooks?.UserPromptSubmit ?? [];
+    const cmds = ups.flatMap((e) => e.hooks.map((h) => h.command));
+    expect(cmds).toContain(CMD);
   });
 });

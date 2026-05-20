@@ -59,6 +59,9 @@ export function removeHook(settingsPath: string): void {
   const existing = settings.hooks?.UserPromptSubmit;
   if (!existing) return;
   const kept = existing.filter((e) => !isNlmEntry(e));
-  const hooks = { ...settings.hooks, UserPromptSubmit: kept };
+  const { UserPromptSubmit: _removed, ...otherHooks } = settings.hooks ?? {};
+  const hooks = kept.length > 0
+    ? { ...otherHooks, UserPromptSubmit: kept }
+    : otherHooks;
   write(settingsPath, { ...settings, hooks });
 }
