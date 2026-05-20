@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -43,7 +43,6 @@ describe("hook memo", () => {
   it("loadSurfaced returns empty on a corrupt memo file rather than throwing", () => {
     recordSurfaced("conv-1", ["sess_a"]);
     // overwrite with garbage
-    const { writeFileSync } = require("node:fs");
     writeFileSync(join(tmp, "conv-1.json"), "{not json", "utf8");
     expect(loadSurfaced("conv-1").size).toBe(0);
   });
