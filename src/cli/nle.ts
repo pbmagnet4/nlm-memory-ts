@@ -139,12 +139,14 @@ program
   .option("--no-scheduler", "HTTP only; skip the ingest tick loop")
   .option("--interval-min <n>", "scheduler tick interval (min, default 30)", (v) => Number.parseInt(v, 10), 30)
   .action(async (opts) => {
-    const { store, facts, sources, providers, recall, embedder, classifier } = buildStack();
+    const { store, facts, sources, providers, recall, factRecall, embedder, classifier } = buildStack();
     const { existsSync } = await import("node:fs");
     const app = createApp({
       recall,
       store,
       liveStore: store,
+      factRecall,
+      factStore: facts,
       dbPath: dbPath(),
       classifier,
       sources,

@@ -20,6 +20,9 @@ import {
 import type { RecallService } from "@core/recall/recall-service.js";
 import { logQuery, recallStats } from "@core/recall/query-log.js";
 import { recentQueryLog } from "@core/recall/recent-log.js";
+import type { FactRecallService } from "@core/recall-facts/fact-recall-service.js";
+import { factRecallStats, logFactQuery } from "@core/recall-facts/fact-query-log.js";
+import type { FactStore } from "@ports/fact-store.js";
 import { buildDataset } from "@core/dataset/build-dataset.js";
 import { ClassifierBox, type ClassifierProvider } from "../llm/classifier-box.js";
 import {
@@ -45,6 +48,8 @@ import {
 import type { SessionStore } from "@ports/session-store.js";
 import type { SqliteSessionStore } from "@core/storage/sqlite-session-store.js";
 import type {
+  FactKind,
+  FactRecallQuery,
   RecallKindFilter,
   RecallMode,
   RecallQuery,
@@ -57,6 +62,11 @@ export interface HttpDeps {
   readonly liveStore?: SqliteSessionStore;
   /** Optional override for the query log path. Defaults to ~/.nle/query_log.jsonl or $NLE_QUERY_LOG. */
   readonly queryLogPath?: string;
+  /** Fact recall — wire to enable /api/recall/facts + /api/facts/history. */
+  readonly factRecall?: FactRecallService;
+  readonly factStore?: FactStore;
+  /** Optional override for the fact query log path. Defaults to ~/.nle/fact_query_log.jsonl. */
+  readonly factQueryLogPath?: string;
   /** Path to canonical.sqlite for the /api/dataset endpoint. */
   readonly dbPath?: string;
   /** Mutable classifier — read by /api/classifier/info, swapped by POST /api/classifier. */
@@ -108,6 +118,7 @@ function parseLimit(raw: string | undefined, fallback: number, max: number): num
 
 const VALID_MODES: ReadonlyArray<RecallMode> = ["keyword", "semantic", "hybrid"];
 const VALID_KINDS: ReadonlyArray<RecallKindFilter> = ["decision", "open"];
+const VALID_FACT_KINDS: ReadonlyArray<FactKind> = ["decision", "open", "attribute"];
 
 export function createApp(deps: HttpDeps): Hono {
   const app = new Hono();
@@ -182,6 +193,96 @@ export function createApp(deps: HttpDeps): Hono {
       ...(deps.queryLogPath !== undefined ? [deps.queryLogPath] : []),
     );
     return c.json({ entries });
+  });
+
+  // ── Fact recall (Phase B.3 surface, exposed over HTTP for the MCP proxy) ──
+
+  app.get("/api/recall/facts", async (c) => {
+    if (!deps.factRecall) {
+      return c.json({ error: "fact recall not wired in this deployment" }, 503);
+    }
+    const q = c.req.query("q") ?? "";
+    const subject = c.req.query("subject");
+    const predicate = c.req.query("predicate");
+    const kind = c.req.query("kind");
+    const mode = (c.req.query("mode") ?? "keyword") as string;
+    const includeSuperseded = c.req.query("includeSuperseded") === "true";
+    const minConfidenceStr = c.req.query("minConfidence");
+    const limitStr = c.req.query("limit");
+
+    if (kind !== undefined && !VALID_FACT_KINDS.includes(kind as FactKind)) {
+      return c.json({ error: "kind must be 'decision', 'open', 'attribute', or omitted" }, 400);
+    }
+    if (!VALID_MODES.includes(mode as RecallMode)) {
+      return c.json({ error: "mode must be 'keyword', 'semantic', or 'hybrid'" }, 400);
+    }
+    const limit = limitStr === undefined ? 10 : Number.parseInt(limitStr, 10);
+    if (!Number.isFinite(limit) || limit < 1 || limit > 100) {
+      return c.json({ error: "limit must be 1..100" }, 400);
+    }
+    let minConfidence: number | undefined;
+    if (minConfidenceStr !== undefined) {
+      minConfidence = Number.parseFloat(minConfidenceStr);
+      if (!Number.isFinite(minConfidence) || minConfidence < 0 || minConfidence > 1) {
+        return c.json({ error: "minConfidence must be 0..1" }, 400);
+      }
+    }
+
+    const query: FactRecallQuery = {
+      query: q,
+      mode: mode as RecallMode,
+      limit,
+      includeSuperseded,
+      ...(subject !== undefined ? { subject } : {}),
+      ...(predicate !== undefined ? { predicate } : {}),
+      ...(kind !== undefined ? { kind: kind as FactKind } : {}),
+      ...(minConfidence !== undefined ? { minConfidence } : {}),
+    };
+    const result = await deps.factRecall.search(query);
+
+    const source = c.req.header("x-recall-source") ?? "http";
+    void logFactQuery(
+      {
+        source,
+        query: q || null,
+        subject: subject ?? null,
+        predicate: predicate ?? null,
+        kind: (kind as FactKind | undefined) ?? null,
+        mode: mode as RecallMode,
+        limit,
+        nResults: result.total,
+        returnedIds: result.results.map((r) => r.id),
+      },
+      ...(deps.factQueryLogPath !== undefined ? [deps.factQueryLogPath] : []),
+    );
+
+    return c.json(result);
+  });
+
+  app.get("/api/facts/history", async (c) => {
+    if (!deps.factStore) {
+      return c.json({ error: "fact store not wired in this deployment" }, 503);
+    }
+    const subject = c.req.query("subject");
+    if (!subject) {
+      return c.json({ error: "subject is required" }, 400);
+    }
+    const predicate = c.req.query("predicate");
+    const chains = await deps.factStore.getHistory(subject, predicate);
+    return c.json({ subject, predicate: predicate ?? null, chains });
+  });
+
+  app.get("/api/recall/facts/stats", async (c) => {
+    const daysStr = c.req.query("days") ?? "7";
+    const days = Number.parseInt(daysStr, 10);
+    if (!Number.isFinite(days) || days < 1 || days > 365) {
+      return c.json({ error: "days must be 1..365" }, 400);
+    }
+    const stats = await factRecallStats(
+      days,
+      ...(deps.factQueryLogPath !== undefined ? [deps.factQueryLogPath] : []),
+    );
+    return c.json(stats);
   });
 
   app.get("/api/live/recent-writes", (c) => {

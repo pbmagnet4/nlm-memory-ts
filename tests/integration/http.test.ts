@@ -9,10 +9,13 @@ import { join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { Hono } from "hono";
 import { RecallService } from "../../src/core/recall/recall-service.js";
+import { FactRecallService } from "../../src/core/recall-facts/fact-recall-service.js";
+import { SqliteFactStore } from "../../src/core/storage/sqlite-fact-store.js";
 import { SqliteSessionStore } from "../../src/core/storage/sqlite-session-store.js";
 import { createApp } from "../../src/http/app.js";
 import type { EmbedResult, LLMClient } from "../../src/ports/llm-client.js";
 import type { Session } from "../../src/shared/types.js";
+import { makeFact } from "../fixtures/facts.js";
 import { makeSession } from "../fixtures/sessions.js";
 
 const MIGRATIONS_DIR = resolve(__dirname, "../../migrations");
@@ -298,5 +301,101 @@ describe("HTTP adapter — data management", () => {
   it("POST /api/data/restore 400s when no file field is present", async () => {
     const res = await app.request("/api/data/restore", { method: "POST", body: new FormData() });
     expect(res.status).toBe(400);
+  });
+});
+
+describe("HTTP adapter — fact recall", () => {
+  let tmp: string;
+  let store: SqliteSessionStore;
+  let factStore: SqliteFactStore;
+  let app: Hono;
+  let factQueryLogPath: string;
+
+  beforeEach(async () => {
+    tmp = mkdtempSync(join(tmpdir(), "nle-http-facts-"));
+    store = new SqliteSessionStore({
+      dbPath: join(tmp, "canonical.sqlite"),
+      migrationsDir: MIGRATIONS_DIR,
+    });
+    store.insertSessionForTest(makeSession({ id: "sess_p" }));
+    factStore = new SqliteFactStore(store.rawDb());
+    await factStore.insertMany([
+      makeFact({
+        id: "f_hono", subject: "nle-memory-ts", predicate: "framework",
+        value: "Hono", confidence: 0.9, sourceSessionId: "sess_p",
+      }),
+      makeFact({
+        id: "f_fastify", subject: "nle-memory-ts", predicate: "framework",
+        value: "Fastify", confidence: 0.9, sourceSessionId: "sess_p",
+        createdAt: "2026-05-01T00:00:00Z", supersededBy: "f_hono",
+      }),
+    ]);
+    const recall = new RecallService({ store, llm: new FixedEmbedder(unit([1, 0, 0])) });
+    const factRecall = new FactRecallService({
+      factStore,
+      llm: new FixedEmbedder(unit([1, 0, 0])),
+    });
+    factQueryLogPath = join(tmp, "fact_query_log.jsonl");
+    app = createApp({ recall, store, factRecall, factStore, factQueryLogPath });
+  });
+
+  afterEach(() => {
+    store.close();
+    rmSync(tmp, { recursive: true, force: true });
+  });
+
+  it("GET /api/recall/facts returns the current fact for subject+predicate", async () => {
+    const res = await app.request("/api/recall/facts?subject=nle-memory-ts&predicate=framework");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { total: number; results: { id: string; value: string }[] };
+    expect(body.total).toBe(1);
+    expect(body.results[0]?.id).toBe("f_hono");
+    expect(body.results[0]?.value).toBe("Hono");
+  });
+
+  it("GET /api/recall/facts excludes superseded by default, includes with flag", async () => {
+    const def = await app.request("/api/recall/facts?subject=nle-memory-ts");
+    expect(((await def.json()) as { total: number }).total).toBe(1);
+    const all = await app.request("/api/recall/facts?subject=nle-memory-ts&includeSuperseded=true");
+    expect(((await all.json()) as { total: number }).total).toBe(2);
+  });
+
+  it("GET /api/recall/facts rejects invalid kind + mode", async () => {
+    expect((await app.request("/api/recall/facts?kind=banana")).status).toBe(400);
+    expect((await app.request("/api/recall/facts?subject=x&mode=banana")).status).toBe(400);
+  });
+
+  it("GET /api/facts/history walks the supersedence chain", async () => {
+    const res = await app.request("/api/facts/history?subject=nle-memory-ts&predicate=framework");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { chains: { history: { id: string }[] }[] };
+    expect(body.chains[0]?.history.map((f) => f.id)).toEqual(["f_hono", "f_fastify"]);
+  });
+
+  it("GET /api/facts/history 400s without a subject", async () => {
+    expect((await app.request("/api/facts/history")).status).toBe(400);
+  });
+
+  it("GET /api/recall/facts records a fact query-log entry", async () => {
+    await app.request("/api/recall/facts?subject=nle-memory-ts&predicate=framework");
+    // logFactQuery is fire-and-forget; give the microtask a tick.
+    await new Promise((r) => setTimeout(r, 50));
+    const stats = await app.request("/api/recall/facts/stats?days=7");
+    const body = (await stats.json()) as {
+      total: number;
+      hit_rate: number;
+      log_present: boolean;
+    };
+    expect(body.log_present).toBe(true);
+    expect(body.total).toBe(1);
+    expect(body.hit_rate).toBe(1);
+  });
+
+  it("GET /api/recall/facts 503s when factRecall is not wired", async () => {
+    const bare = createApp({
+      recall: new RecallService({ store, llm: new FixedEmbedder(unit([1, 0, 0])) }),
+      store,
+    });
+    expect((await bare.request("/api/recall/facts?subject=x")).status).toBe(503);
   });
 });
