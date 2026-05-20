@@ -1,8 +1,8 @@
-# nle-memory
+# nlm-memory
 
-> Local-first memory operating system for AI operators.
+> NLM (Non-Linear Memory) — a local-first memory operating system for AI operators.
 
-`nle-memory` indexes every AI session you run — Claude Code, Hermes, pi, Codex, Gemini, Aider — into a single searchable store on your machine. Recall by keyword, semantic similarity, or hybrid. Browse in a local web UI. Plug into any agent via MCP so it can query your history automatically.
+`nlm-memory` indexes every AI session you run — Claude Code, Hermes, pi, Codex, Gemini, Aider — into a single searchable store on your machine. Recall by keyword, semantic similarity, or hybrid. Browse in a local web UI. Plug into any agent via MCP so it can query your history automatically.
 
 Everything stays on your machine. No cloud, no account, no API key required (except your classifier of choice).
 
@@ -15,24 +15,24 @@ Everything stays on your machine. No cloud, no account, no API key required (exc
   ```sh
   ollama pull nomic-embed-text
   ```
-- **A classifier** — [DeepSeek](https://platform.deepseek.com) is recommended (fast, cheap, ~$0.002/session). Set `DEEPSEEK_API_KEY` in `~/.nle/.env`. Ollama works offline with `NLE_CLASSIFIER=ollama`.
+- **A classifier** — [DeepSeek](https://platform.deepseek.com) is recommended (fast, cheap, ~$0.002/session). Set `DEEPSEEK_API_KEY` in `~/.nlm/.env`. Ollama works offline with `NLM_CLASSIFIER=ollama`.
 
 ---
 
 ## Install
 
 ```sh
-npm install -g github:pbmagnet4/nle-memory-ts
-nle migrate
-nle install
+npm install -g github:pbmagnet4/nlm-memory-ts
+nlm migrate
+nlm install
 ```
 
-`nle install` writes a macOS LaunchAgent that starts the daemon on login and keeps it running. Open **http://localhost:3940/ui** — done.
+`nlm install` writes a macOS LaunchAgent that starts the daemon on login and keeps it running. Open **http://localhost:3940/ui** — done.
 
 To stop or remove:
 ```sh
-launchctl stop io.whtnxt.nle-memory   # stop without uninstalling
-nle uninstall                          # remove the LaunchAgent entirely
+launchctl stop io.whtnxt.nlm-memory   # stop without uninstalling
+nlm uninstall                          # remove the LaunchAgent entirely
 ```
 
 ---
@@ -44,15 +44,15 @@ Add to `~/.mcp.json` (or your editor's MCP config):
 ```json
 {
   "mcpServers": {
-    "nle-memory": {
+    "nlm-memory": {
       "command": "node",
-      "args": ["<path-to-global-npm>/lib/node_modules/nle-memory/dist/cli/nle.js", "mcp"]
+      "args": ["<path-to-global-npm>/lib/node_modules/nlm-memory/dist/cli/nlm.js", "mcp"]
     }
   }
 }
 ```
 
-Find the path with `npm root -g` — the full path is `$(npm root -g)/nle-memory/dist/cli/nle.js`.
+Find the path with `npm root -g` — the full path is `$(npm root -g)/nlm-memory/dist/cli/nlm.js`.
 
 Once wired, agents can call `recall_sessions` (search past conversations) and `recall_facts` (pull structured facts like decisions and project state) automatically.
 
@@ -85,8 +85,8 @@ Once wired, agents can call `recall_sessions` (search past conversations) and `r
 ## Development
 
 ```sh
-git clone https://github.com/pbmagnet4/nle-memory-ts
-cd nle-memory-ts
+git clone https://github.com/pbmagnet4/nlm-memory-ts
+cd nlm-memory-ts
 npm install        # installs deps + builds
 npm run dev        # hot-reload daemon
 npm run ui:dev     # hot-reload UI at localhost:5173 (proxies /api to :3940)
@@ -94,7 +94,7 @@ npm test           # unit + integration tests
 npm run typecheck
 ```
 
-Database lives at `~/.nle/canonical.sqlite`. Override with `NLE_DB_PATH`.
+Database lives at `~/.nlm/canonical.sqlite`. Override with `NLM_DB_PATH`.
 
 ---
 
