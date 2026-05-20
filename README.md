@@ -31,8 +31,8 @@ nlm install
 
 To stop or remove:
 ```sh
-launchctl stop io.whtnxt.nlm-memory   # stop without uninstalling
-nlm uninstall                          # remove the LaunchAgent entirely
+launchctl stop com.github.pbmagnet4.nlm-memory   # stop without uninstalling
+nlm uninstall                                    # remove the LaunchAgent entirely
 ```
 
 ---

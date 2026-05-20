@@ -332,7 +332,7 @@ program
     const transport = new StdioServerTransport();
     await server.connect(transport);
 });
-const LAUNCH_AGENT_LABEL = "io.whtnxt.nlm-memory";
+const LAUNCH_AGENT_LABEL = "com.github.pbmagnet4.nlm-memory";
 const LAUNCH_AGENT_PLIST = join(homedir(), "Library", "LaunchAgents", `${LAUNCH_AGENT_LABEL}.plist`);
 function buildPlist(nodeExec, nlmJs) {
     const logDir = join(homedir(), ".nlm", "logs");
@@ -394,7 +394,7 @@ program
     execFileSync("launchctl", ["bootstrap", `gui/${uid}`, LAUNCH_AGENT_PLIST]);
     console.error("nlm: daemon installed and started.");
     console.error(`  UI:       http://localhost:${port()}/ui`);
-    console.error("  To stop:  launchctl stop io.whtnxt.nlm-memory");
+    console.error(`  To stop:  launchctl stop ${LAUNCH_AGENT_LABEL}`);
     console.error("  To remove: nlm uninstall");
 });
 program
