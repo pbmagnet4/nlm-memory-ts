@@ -8,7 +8,11 @@
 
 import type { LLMClient } from "@ports/llm-client.js";
 import { LLMUnreachableError } from "@ports/llm-client.js";
-import type { SessionStore } from "@ports/session-store.js";
+import type {
+  KeywordNeighbor,
+  SemanticNeighbor,
+  SessionStore,
+} from "@ports/session-store.js";
 import type {
   MatchField,
   RecallHit,
@@ -54,30 +58,21 @@ export class RecallService {
 
     if (!input.query && !entity && !kind) return empty;
 
-    const filterArgs: { entity?: string; kind?: typeof input.kind } = {};
-    if (input.entity !== undefined) filterArgs.entity = input.entity;
-    if (input.kind !== undefined) filterArgs.kind = input.kind;
-    const allSessions = await this.deps.store.list();
-    const filtered = applyFilter(allSessions, filterArgs);
-    const byId = new Map<string, Session>(filtered.map((s) => [s.id, s]));
-
-    const queryTokens = input.query ? new Set(tokenSet(input.query)) : new Set<string>();
-
-    const kwHits =
+    // 1. Search legs — ranked neighbor IDs only. No session bodies loaded.
+    const kwNeighbors: ReadonlyArray<KeywordNeighbor> =
       (mode === "keyword" || mode === "hybrid") && input.query
-        ? await this.runKeyword(
-            input.query,
-            byId,
-            queryTokens,
-            limit * KEYWORD_OVERFETCH,
-          )
+        ? await this.deps.store.keywordSearch(input.query, limit * KEYWORD_OVERFETCH)
         : [];
 
-    let semHits: ReadonlyArray<SemanticHit> = [];
+    let semNeighbors: ReadonlyArray<SemanticNeighbor> = [];
     let semError: "ollama_unreachable" | null = null;
     if ((mode === "semantic" || mode === "hybrid") && input.query) {
       try {
-        semHits = await this.runSemantic(input.query, byId, limit * SEMANTIC_OVERFETCH);
+        const embedding = await this.deps.llm.embed(input.query, "query");
+        semNeighbors = await this.deps.store.semanticSearch(
+          embedding.vector,
+          limit * SEMANTIC_OVERFETCH,
+        );
       } catch (err) {
         if (err instanceof LLMUnreachableError) {
           semError = "ollama_unreachable";
@@ -91,55 +86,62 @@ export class RecallService {
       return { ...empty, modeUnavailable: semError };
     }
 
-    if (mode === "keyword") {
-      return finalize(input.query, entity, kind, mode, limit, kwHits.map(toKeywordHit));
-    }
+    // 2. Resolve ONLY the hit sessions — never the whole corpus. The
+    //    entity/kind filter is applied to the fetched hits; a filtered-out
+    //    session is absent from byId and is skipped during resolution.
+    const hitIds = uniqueIds(kwNeighbors, semNeighbors);
+    const hitSessions = await this.deps.store.getByIds(hitIds);
+    const filterArgs: { entity?: string; kind?: typeof input.kind } = {};
+    if (input.entity !== undefined) filterArgs.entity = input.entity;
+    if (input.kind !== undefined) filterArgs.kind = input.kind;
+    const byId = new Map<string, Session>(
+      applyFilter(hitSessions, filterArgs).map((s) => [s.id, s]),
+    );
 
-    if (mode === "semantic") {
-      return finalize(input.query, entity, kind, mode, limit, semHits.map(toSemanticHit));
-    }
+    // 3. Build hits from the resolved sessions, preserving leg rank order.
+    const queryTokens = input.query
+      ? new Set(tokenSet(input.query))
+      : new Set<string>();
 
-    // hybrid
-    const merged = mergeHybrid(kwHits, semHits, byId);
-    const result = finalize(input.query, entity, kind, mode, limit, merged);
-    return semError ? { ...result, modeUnavailable: semError } : result;
-  }
-
-  private async runSemantic(
-    query: string,
-    byId: ReadonlyMap<string, Session>,
-    fetchLimit: number,
-  ): Promise<ReadonlyArray<SemanticHit>> {
-    const embedding = await this.deps.llm.embed(query, "query");
-    const neighbors = await this.deps.store.semanticSearch(embedding.vector, fetchLimit);
-    const hits: SemanticHit[] = [];
-    for (const n of neighbors) {
+    const kwHits: KeywordHit[] = [];
+    for (const n of kwNeighbors) {
       const session = byId.get(n.sessionId);
       if (!session) continue;
-      hits.push({ session, similarity: cosineFromL2(n.distance) });
-    }
-    return hits;
-  }
-
-  private async runKeyword(
-    query: string,
-    byId: ReadonlyMap<string, Session>,
-    queryTokens: ReadonlySet<string>,
-    fetchLimit: number,
-  ): Promise<ReadonlyArray<KeywordHit>> {
-    const neighbors = await this.deps.store.keywordSearch(query, fetchLimit);
-    const hits: KeywordHit[] = [];
-    for (const n of neighbors) {
-      const session = byId.get(n.sessionId);
-      if (!session) continue;
-      hits.push({
+      kwHits.push({
         session,
         score: n.score,
         matchedIn: keywordMatchFields(session, queryTokens),
       });
     }
-    return hits;
+
+    const semHits: SemanticHit[] = [];
+    for (const n of semNeighbors) {
+      const session = byId.get(n.sessionId);
+      if (!session) continue;
+      semHits.push({ session, similarity: cosineFromL2(n.distance) });
+    }
+
+    // 4. Finalize per mode.
+    if (mode === "keyword") {
+      return finalize(input.query, entity, kind, mode, limit, kwHits.map(toKeywordHit));
+    }
+    if (mode === "semantic") {
+      return finalize(input.query, entity, kind, mode, limit, semHits.map(toSemanticHit));
+    }
+    const merged = mergeHybrid(kwHits, semHits, byId);
+    const result = finalize(input.query, entity, kind, mode, limit, merged);
+    return semError ? { ...result, modeUnavailable: semError } : result;
   }
+}
+
+function uniqueIds(
+  kw: ReadonlyArray<KeywordNeighbor>,
+  sem: ReadonlyArray<SemanticNeighbor>,
+): ReadonlyArray<string> {
+  const ids = new Set<string>();
+  for (const n of kw) ids.add(n.sessionId);
+  for (const n of sem) ids.add(n.sessionId);
+  return [...ids];
 }
 
 interface KeywordHit {
