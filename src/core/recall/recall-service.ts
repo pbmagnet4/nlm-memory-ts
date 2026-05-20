@@ -128,7 +128,7 @@ export class RecallService {
     if (mode === "semantic") {
       return finalize(input.query, entity, kind, mode, limit, semHits.map(toSemanticHit));
     }
-    const merged = mergeHybrid(kwHits, semHits, byId);
+    const merged = mergeHybrid(kwHits, semHits);
     const result = finalize(input.query, entity, kind, mode, limit, merged);
     return semError ? { ...result, modeUnavailable: semError } : result;
   }
@@ -158,7 +158,6 @@ interface SemanticHit {
 function mergeHybrid(
   kwHits: ReadonlyArray<KeywordHit>,
   semHits: ReadonlyArray<SemanticHit>,
-  byId: ReadonlyMap<string, Session>,
 ): ReadonlyArray<RecallHit> {
   const maxKw = Math.max(1, ...kwHits.map((h) => h.score));
   const maxSem = Math.max(1, ...semHits.map((h) => h.similarity));
@@ -169,10 +168,9 @@ function mergeHybrid(
 
   const rows: RecallHit[] = [];
   for (const id of allIds) {
-    const session = byId.get(id);
-    if (!session) continue;
     const kw = kwMap.get(id);
     const sem = semMap.get(id);
+    const session = (kw ?? sem)!.session;
     const kwNorm = kw ? kw.score / maxKw : 0;
     const semNorm = sem ? sem.similarity / maxSem : 0;
     const combined = round4(HYBRID_SEM_WEIGHT * semNorm + HYBRID_KW_WEIGHT * kwNorm);
