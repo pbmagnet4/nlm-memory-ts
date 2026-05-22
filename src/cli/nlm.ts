@@ -486,7 +486,7 @@ hook
   .description("Add the recall hook to ~/.claude/settings.json (shadow mode)")
   .action(() => {
     const path = claudeSettingsPath();
-    const command = `NLM_HOOK_MODE=shadow node ${HOOK_JS}`;
+    const command = `NLM_HOOK_MODE=shadow ${process.execPath} ${HOOK_JS}`;
     addHook(path, command);
     console.error(`nlm: recall hook installed in ${path} (shadow mode).`);
     console.error("  It logs to ~/.nlm/hook-log.jsonl and injects nothing.");
