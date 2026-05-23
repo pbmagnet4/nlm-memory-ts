@@ -55,7 +55,7 @@ export async function recallSessionsHandler(deps, input) {
     try {
         const query = {
             query: input.query ?? "",
-            mode: input.mode ?? "keyword",
+            mode: input.mode ?? "hybrid",
             limit: input.limit ?? DEFAULT_LIMIT,
             ...(input.entity !== undefined ? { entity: input.entity } : {}),
             ...(input.kind !== undefined ? { kind: input.kind } : {}),
@@ -69,7 +69,7 @@ export async function recallSessionsHandler(deps, input) {
             query: input.query ?? null,
             entity: input.entity ?? null,
             kind: input.kind ?? null,
-            mode: input.mode ?? "keyword",
+            mode: input.mode ?? "hybrid",
             limit: input.limit ?? DEFAULT_LIMIT,
             nResults: result.total,
             returnedIds: result.results.map((r) => r.id),
@@ -99,7 +99,7 @@ export async function recallFactsHandler(deps, input) {
     try {
         const query = {
             query: input.query ?? "",
-            mode: input.mode ?? "keyword",
+            mode: input.mode ?? "hybrid",
             limit: input.limit ?? DEFAULT_LIMIT,
             ...(input.subject !== undefined ? { subject: input.subject } : {}),
             ...(input.predicate !== undefined ? { predicate: input.predicate } : {}),
@@ -119,7 +119,7 @@ export async function recallFactsHandler(deps, input) {
             subject: input.subject ?? null,
             predicate: input.predicate ?? null,
             kind: input.kind ?? null,
-            mode: input.mode ?? "keyword",
+            mode: input.mode ?? "hybrid",
             limit: input.limit ?? DEFAULT_LIMIT,
             nResults: result.total,
             returnedIds: result.results.map((r) => r.id),
@@ -161,7 +161,7 @@ Args:
   - entity: filter to sessions tagged with this entity. Optional.
   - kind: "decision" or "open" — restrict to sessions containing that
           marker kind. Omit for any. Optional.
-  - mode: "keyword" (default), "semantic", or "hybrid". Optional.
+  - mode: "hybrid" (default — keyword BM25 + semantic embeddings), "keyword", or "semantic". Optional.
   - limit: max results (1-100, default 10).`;
 const GET_SESSION_DESCRIPTION = `Fetch one session from nlm-memory by its canonical ID, including
 the full body text. Use this when a recall_sessions result looks relevant
@@ -198,7 +198,7 @@ Args:
                integration, deployment, repo, branch, commit, description,
                decided-on, assumption, blocker).
   - kind: "decision" | "open" | "attribute". Optional.
-  - mode: "keyword" (default), "semantic", or "hybrid".
+  - mode: "hybrid" (default — keyword BM25 + semantic embeddings), "keyword", or "semantic".
   - includeSuperseded: true to include outdated facts. Default false.
   - minConfidence: lower bound on classifier confidence. Default 0.6.
   - limit: max results (1-100, default 10).`;
@@ -240,7 +240,7 @@ export function createMcpServer(deps) {
             mode: z
                 .enum(["keyword", "semantic", "hybrid"])
                 .optional()
-                .describe("Search mode. Defaults to keyword."),
+                .describe("Search mode. Defaults to hybrid (keyword BM25 + semantic embeddings)."),
             limit: z
                 .number()
                 .int()
@@ -293,7 +293,7 @@ export function createMcpServer(deps) {
                 mode: z
                     .enum(["keyword", "semantic", "hybrid"])
                     .optional()
-                    .describe("Search mode. Defaults to keyword."),
+                    .describe("Search mode. Defaults to hybrid (keyword BM25 + semantic embeddings)."),
                 includeSuperseded: z
                     .boolean()
                     .optional()

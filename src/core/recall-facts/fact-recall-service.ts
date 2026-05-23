@@ -119,9 +119,12 @@ export class FactRecallService {
     }
 
     // For pure structured queries (no query text, just subject/predicate),
-    // a keyword pass with empty tokens scores zero. Fall back to returning
-    // the storage filter result ordered by created_at DESC.
-    if (mode === "keyword" && !queryText) {
+    // a keyword pass with empty tokens scores zero and a semantic pass has
+    // nothing to embed. Fall back to returning the storage filter result
+    // ordered by created_at DESC. Applies to keyword AND hybrid — hybrid
+    // is the MCP default, so this path catches exact subject+predicate
+    // lookups from agent callers that pass no query text.
+    if ((mode === "keyword" || mode === "hybrid") && !queryText) {
       const rows = candidates
         .slice(0, limit)
         .map((f) => factToHit(f, 0, []));
