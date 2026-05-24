@@ -8,7 +8,13 @@
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { spawnSync } from "node:child_process";
-const HOOK_MARKER = "prompt-recall-hook.js";
+// Every NLM hook script ends in `-hook.js`. We tag entries we own by
+// matching the filename suffix against this list. Add new entries here
+// when a new hook script ships.
+const HOOK_SCRIPT_MARKERS = [
+    "prompt-recall-hook.js",
+    "session-end-hook.js",
+];
 /**
  * Single-quote a shell argument so paths with spaces or other shell
  * metacharacters survive `sh -c` tokenization. Without this, a path like
@@ -68,31 +74,40 @@ function write(path, settings) {
     writeFileSync(path, `${JSON.stringify(settings, null, 2)}\n`, "utf8");
 }
 function isNlmEntry(entry) {
-    return entry.hooks.some((h) => h.command.includes(HOOK_MARKER));
+    return entry.hooks.some((h) => HOOK_SCRIPT_MARKERS.some((marker) => h.command.includes(marker)));
 }
-export function addHook(settingsPath, command) {
+export function addHook(settingsPath, command, event = "UserPromptSubmit") {
     const settings = read(settingsPath);
     const hooks = settings.hooks ?? {};
-    const existing = hooks.UserPromptSubmit ?? [];
+    const existing = hooks[event] ?? [];
     const others = existing.filter((e) => !isNlmEntry(e));
     const next = [
         ...others,
         { hooks: [{ type: "command", command }] },
     ];
-    write(settingsPath, { ...settings, hooks: { ...hooks, UserPromptSubmit: next } });
+    write(settingsPath, { ...settings, hooks: { ...hooks, [event]: next } });
 }
-export function removeHook(settingsPath) {
+/**
+ * Remove the NLM-tagged hook entry from one event (default UserPromptSubmit)
+ * or every event when `event === "*"`. Leaves unrelated entries untouched.
+ */
+export function removeHook(settingsPath, event = "UserPromptSubmit") {
     if (!existsSync(settingsPath))
         return;
     const settings = read(settingsPath);
-    const existing = settings.hooks?.UserPromptSubmit;
-    if (!existing)
-        return;
-    const kept = existing.filter((e) => !isNlmEntry(e));
-    const { UserPromptSubmit: _removed, ...otherHooks } = settings.hooks ?? {};
-    const hooks = kept.length > 0
-        ? { ...otherHooks, UserPromptSubmit: kept }
-        : otherHooks;
-    write(settingsPath, { ...settings, hooks });
+    const allHooks = settings.hooks ?? {};
+    const events = event === "*" ? Object.keys(allHooks) : [event];
+    const nextHooks = { ...allHooks };
+    for (const ev of events) {
+        const existing = nextHooks[ev];
+        if (!existing)
+            continue;
+        const kept = existing.filter((e) => !isNlmEntry(e));
+        if (kept.length > 0)
+            nextHooks[ev] = kept;
+        else
+            delete nextHooks[ev];
+    }
+    write(settingsPath, { ...settings, hooks: nextHooks });
 }
 //# sourceMappingURL=claude-settings.js.map

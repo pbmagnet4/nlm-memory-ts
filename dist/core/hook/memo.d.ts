@@ -12,3 +12,9 @@
  */
 export declare function loadSurfaced(conversationId: string): Set<string>;
 export declare function recordSurfaced(conversationId: string, ids: ReadonlyArray<string>): void;
+/**
+ * Delete the memo file for a closed conversation. Called by the SessionEnd
+ * hook so memo files don't accumulate forever. Returns true if a file was
+ * removed, false otherwise — callers may want to log the outcome.
+ */
+export declare function clearSurfaced(conversationId: string): boolean;

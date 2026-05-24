@@ -25,5 +25,10 @@ export interface SmokeTestResult {
  * at startup (path tokenization, missing modules, etc.).
  */
 export declare function smokeTestHookCommand(command: string, hookLogPath: string, timeoutMs?: number): SmokeTestResult;
-export declare function addHook(settingsPath: string, command: string): void;
-export declare function removeHook(settingsPath: string): void;
+export type ClaudeHookEvent = "UserPromptSubmit" | "SessionEnd" | "Stop" | "PreCompact" | "PostToolUse" | "PreToolUse";
+export declare function addHook(settingsPath: string, command: string, event?: ClaudeHookEvent): void;
+/**
+ * Remove the NLM-tagged hook entry from one event (default UserPromptSubmit)
+ * or every event when `event === "*"`. Leaves unrelated entries untouched.
+ */
+export declare function removeHook(settingsPath: string, event?: ClaudeHookEvent | "*"): void;

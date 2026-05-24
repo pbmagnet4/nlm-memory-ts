@@ -155,4 +155,49 @@ describe("claude-settings hook editor", () => {
     const cmds = ups.flatMap((e) => e.hooks.map((h) => h.command));
     expect(cmds).toContain(CMD);
   });
+
+  it("addHook installs under a non-default event when specified", () => {
+    const sessionEndCmd = "node /abs/dist/hook/session-end-hook.js";
+    addHook(settingsPath, sessionEndCmd, "SessionEnd");
+    const s = JSON.parse(readFileSync(settingsPath, "utf8")) as Settings & {
+      hooks?: { SessionEnd?: Array<{ hooks: Array<{ command: string }> }> };
+    };
+    expect(s.hooks?.UserPromptSubmit).toBeUndefined();
+    expect(s.hooks?.SessionEnd).toHaveLength(1);
+    expect(s.hooks?.SessionEnd?.[0]?.hooks[0]?.command).toBe(sessionEndCmd);
+  });
+
+  it("addHook can hold separate NLM entries on two event keys without collision", () => {
+    addHook(settingsPath, CMD, "UserPromptSubmit");
+    const sessionEndCmd = "node /abs/dist/hook/session-end-hook.js";
+    addHook(settingsPath, sessionEndCmd, "SessionEnd");
+    const s = JSON.parse(readFileSync(settingsPath, "utf8")) as Settings & {
+      hooks?: { SessionEnd?: Array<{ hooks: Array<{ command: string }> }> };
+    };
+    expect(s.hooks?.UserPromptSubmit).toHaveLength(1);
+    expect(s.hooks?.SessionEnd).toHaveLength(1);
+  });
+
+  it("removeHook with event='*' clears the NLM entry from every event", () => {
+    addHook(settingsPath, CMD, "UserPromptSubmit");
+    const sessionEndCmd = "node /abs/dist/hook/session-end-hook.js";
+    addHook(settingsPath, sessionEndCmd, "SessionEnd");
+    // Also add an unrelated PostToolUse entry to confirm we don't touch it.
+    writeFileSync(
+      settingsPath,
+      JSON.stringify({
+        hooks: {
+          UserPromptSubmit: [{ hooks: [{ type: "command", command: CMD }] }],
+          SessionEnd: [{ hooks: [{ type: "command", command: sessionEndCmd }] }],
+          PostToolUse: [{ hooks: [{ type: "command", command: "other-tool" }] }],
+        },
+      }),
+      "utf8",
+    );
+    removeHook(settingsPath, "*");
+    const s = JSON.parse(readFileSync(settingsPath, "utf8")) as Settings;
+    expect(s.hooks?.UserPromptSubmit).toBeUndefined();
+    expect(s.hooks?.SessionEnd).toBeUndefined();
+    expect(s.hooks?.PostToolUse).toHaveLength(1);
+  });
 });

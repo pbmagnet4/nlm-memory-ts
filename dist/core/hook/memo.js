@@ -10,7 +10,7 @@
  * memo, and a write failure is swallowed. The hook must never break on memo
  * I/O.
  */
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 function stateDir() {
@@ -44,6 +44,23 @@ export function recordSurfaced(conversationId, ids) {
     }
     catch {
         // Memo write failure must never break the hook.
+    }
+}
+/**
+ * Delete the memo file for a closed conversation. Called by the SessionEnd
+ * hook so memo files don't accumulate forever. Returns true if a file was
+ * removed, false otherwise — callers may want to log the outcome.
+ */
+export function clearSurfaced(conversationId) {
+    try {
+        const path = memoPath(conversationId);
+        if (!existsSync(path))
+            return false;
+        rmSync(path);
+        return true;
+    }
+    catch {
+        return false;
     }
 }
 //# sourceMappingURL=memo.js.map

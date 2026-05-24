@@ -458,46 +458,66 @@ program
     console.error("nlm: uninstalled. Run `nlm install` to reinstall.");
 });
 const HOOK_JS = resolve(__dirname, "../hook/prompt-recall-hook.js");
+const SESSION_END_HOOK_JS = resolve(__dirname, "../hook/session-end-hook.js");
+const ALL_HOOKS = [
+    { event: "UserPromptSubmit", script: HOOK_JS, label: "recall" },
+    { event: "SessionEnd", script: SESSION_END_HOOK_JS, label: "session-end" },
+];
 function claudeSettingsPath() {
     return process.env["NLM_CLAUDE_SETTINGS"] ?? join(homedir(), ".claude", "settings.json");
 }
 const hook = program
     .command("hook")
-    .description("Manage the Claude Code recall hook");
+    .description("Manage the Claude Code NLM hooks");
 hook
     .command("install")
-    .description("Add the recall hook to ~/.claude/settings.json (shadow mode)")
+    .description("Add the NLM hooks (recall + session-end) to ~/.claude/settings.json (shadow mode)")
     .action(() => {
     const path = claudeSettingsPath();
-    const command = buildHookCommand(process.execPath, HOOK_JS, "shadow");
-    addHook(path, command);
     const hookLogPath = process.env["NLM_HOOK_LOG"] ?? join(homedir(), ".nlm", "hook-log.jsonl");
-    const smoke = smokeTestHookCommand(command, hookLogPath);
-    if (!smoke.ok) {
-        removeHook(path);
-        console.error("nlm: hook install FAILED smoke test — reverted.");
-        console.error(`  reason: ${smoke.reason}`);
-        if (smoke.stderr) {
-            const trimmed = smoke.stderr.trim();
-            if (trimmed)
-                console.error(`  stderr: ${trimmed}`);
+    // Install + smoke each hook. If any fails, revert all and exit nonzero.
+    // Atomic install matters because partial state ("recall installed but
+    // session-end didn't smoke-test") is worse than no install — silent
+    // partial failure is the bug class we shipped #161 to prevent.
+    const installed = [];
+    for (const spec of ALL_HOOKS) {
+        const command = buildHookCommand(process.execPath, spec.script, "shadow");
+        addHook(path, command, spec.event);
+        const smoke = smokeTestHookCommand(command, hookLogPath);
+        if (!smoke.ok) {
+            // Revert every hook we installed this run (including the failing one).
+            for (const prior of [...installed, spec]) {
+                removeHook(path, prior.event);
+            }
+            console.error(`nlm: ${spec.label} hook (${spec.event}) FAILED smoke test — all NLM hooks reverted.`);
+            console.error(`  reason: ${smoke.reason}`);
+            if (smoke.stderr) {
+                const trimmed = smoke.stderr.trim();
+                if (trimmed)
+                    console.error(`  stderr: ${trimmed}`);
+            }
+            console.error(`  command was: ${command}`);
+            process.exit(1);
         }
-        console.error(`  command was: ${command}`);
-        process.exit(1);
+        installed.push(spec);
     }
-    console.error(`nlm: recall hook installed in ${path} (shadow mode).`);
-    console.error("  Smoke test passed — synthetic invocation appended to hook-log.jsonl.");
-    console.error("  It logs to ~/.nlm/hook-log.jsonl and injects nothing.");
-    console.error("  To go live later: change NLM_HOOK_MODE=shadow to live in that file.");
+    console.error(`nlm: NLM hooks installed in ${path} (shadow mode):`);
+    for (const spec of installed) {
+        console.error(`  - ${spec.event} → ${spec.label}-hook`);
+    }
+    console.error("  Smoke tests passed — both hooks appended synthetic entries to hook-log.jsonl.");
+    console.error("  Recall hook logs to ~/.nlm/hook-log.jsonl and injects nothing in shadow mode.");
+    console.error("  Session-end hook cleans up ~/.nlm/hook-state/<session>.json on session close.");
+    console.error("  To go live later: change NLM_HOOK_MODE=shadow to live for the recall hook.");
     console.error("  To remove: nlm hook uninstall");
 });
 hook
     .command("uninstall")
-    .description("Remove the recall hook from ~/.claude/settings.json")
+    .description("Remove all NLM hooks from ~/.claude/settings.json")
     .action(() => {
     const path = claudeSettingsPath();
-    removeHook(path);
-    console.error(`nlm: recall hook removed from ${path}.`);
+    removeHook(path, "*");
+    console.error(`nlm: all NLM hooks removed from ${path}.`);
 });
 program.parseAsync().catch((e) => {
     console.error("nlm: fatal", e);

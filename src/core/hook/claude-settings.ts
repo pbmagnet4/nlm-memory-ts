@@ -10,7 +10,13 @@ import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "no
 import { dirname } from "node:path";
 import { spawnSync } from "node:child_process";
 
-const HOOK_MARKER = "prompt-recall-hook.js";
+// Every NLM hook script ends in `-hook.js`. We tag entries we own by
+// matching the filename suffix against this list. Add new entries here
+// when a new hook script ships.
+const HOOK_SCRIPT_MARKERS = [
+  "prompt-recall-hook.js",
+  "session-end-hook.js",
+] as const;
 
 /**
  * Single-quote a shell argument so paths with spaces or other shell
@@ -74,6 +80,14 @@ export function smokeTestHookCommand(
   return { ok: true };
 }
 
+export type ClaudeHookEvent =
+  | "UserPromptSubmit"
+  | "SessionEnd"
+  | "Stop"
+  | "PreCompact"
+  | "PostToolUse"
+  | "PreToolUse";
+
 interface HookCommand {
   readonly type: string;
   readonly command: string;
@@ -82,7 +96,7 @@ interface HookEntry {
   readonly hooks: ReadonlyArray<HookCommand>;
 }
 interface ClaudeSettings {
-  hooks?: { UserPromptSubmit?: HookEntry[] } & Record<string, unknown>;
+  hooks?: Record<string, HookEntry[]>;
   [key: string]: unknown;
 }
 
@@ -101,30 +115,46 @@ function write(path: string, settings: ClaudeSettings): void {
 }
 
 function isNlmEntry(entry: HookEntry): boolean {
-  return entry.hooks.some((h) => h.command.includes(HOOK_MARKER));
+  return entry.hooks.some((h) =>
+    HOOK_SCRIPT_MARKERS.some((marker) => h.command.includes(marker)),
+  );
 }
 
-export function addHook(settingsPath: string, command: string): void {
+export function addHook(
+  settingsPath: string,
+  command: string,
+  event: ClaudeHookEvent = "UserPromptSubmit",
+): void {
   const settings = read(settingsPath);
   const hooks = settings.hooks ?? {};
-  const existing = hooks.UserPromptSubmit ?? [];
+  const existing = hooks[event] ?? [];
   const others = existing.filter((e) => !isNlmEntry(e));
   const next: HookEntry[] = [
     ...others,
     { hooks: [{ type: "command", command }] },
   ];
-  write(settingsPath, { ...settings, hooks: { ...hooks, UserPromptSubmit: next } });
+  write(settingsPath, { ...settings, hooks: { ...hooks, [event]: next } });
 }
 
-export function removeHook(settingsPath: string): void {
+/**
+ * Remove the NLM-tagged hook entry from one event (default UserPromptSubmit)
+ * or every event when `event === "*"`. Leaves unrelated entries untouched.
+ */
+export function removeHook(
+  settingsPath: string,
+  event: ClaudeHookEvent | "*" = "UserPromptSubmit",
+): void {
   if (!existsSync(settingsPath)) return;
   const settings = read(settingsPath);
-  const existing = settings.hooks?.UserPromptSubmit;
-  if (!existing) return;
-  const kept = existing.filter((e) => !isNlmEntry(e));
-  const { UserPromptSubmit: _removed, ...otherHooks } = settings.hooks ?? {};
-  const hooks = kept.length > 0
-    ? { ...otherHooks, UserPromptSubmit: kept }
-    : otherHooks;
-  write(settingsPath, { ...settings, hooks });
+  const allHooks = settings.hooks ?? {};
+  const events: string[] = event === "*" ? Object.keys(allHooks) : [event];
+  const nextHooks: Record<string, HookEntry[]> = { ...allHooks };
+  for (const ev of events) {
+    const existing = nextHooks[ev];
+    if (!existing) continue;
+    const kept = existing.filter((e) => !isNlmEntry(e));
+    if (kept.length > 0) nextHooks[ev] = kept;
+    else delete nextHooks[ev];
+  }
+  write(settingsPath, { ...settings, hooks: nextHooks });
 }

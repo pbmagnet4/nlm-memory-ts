@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { loadSurfaced, recordSurfaced } from "../../src/core/hook/memo.js";
+import { clearSurfaced, loadSurfaced, recordSurfaced } from "../../src/core/hook/memo.js";
 
 describe("hook memo", () => {
   let tmp: string;
@@ -45,5 +45,24 @@ describe("hook memo", () => {
     // overwrite with garbage
     writeFileSync(join(tmp, "conv-1.json"), "{not json", "utf8");
     expect(loadSurfaced("conv-1").size).toBe(0);
+  });
+
+  it("clearSurfaced deletes the memo file and returns true", () => {
+    recordSurfaced("conv-1", ["sess_a"]);
+    expect(loadSurfaced("conv-1").size).toBe(1);
+    expect(clearSurfaced("conv-1")).toBe(true);
+    expect(loadSurfaced("conv-1").size).toBe(0);
+  });
+
+  it("clearSurfaced returns false when no memo file exists", () => {
+    expect(clearSurfaced("never-existed")).toBe(false);
+  });
+
+  it("clearSurfaced isolates conversations — only deletes the targeted one", () => {
+    recordSurfaced("conv-1", ["sess_a"]);
+    recordSurfaced("conv-2", ["sess_b"]);
+    clearSurfaced("conv-1");
+    expect(loadSurfaced("conv-1").size).toBe(0);
+    expect([...loadSurfaced("conv-2")]).toEqual(["sess_b"]);
   });
 });
