@@ -5,9 +5,55 @@
  * "prompt-recall-hook.js". add is idempotent (it replaces any prior nlm
  * entry); remove strips only the nlm entry and preserves everything else.
  */
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
+import { spawnSync } from "node:child_process";
 const HOOK_MARKER = "prompt-recall-hook.js";
+/**
+ * Single-quote a shell argument so paths with spaces or other shell
+ * metacharacters survive `sh -c` tokenization. Without this, a path like
+ * `~/projects/...` is split on whitespace
+ * and node receives the wrong argv — silent hook bricking.
+ */
+export function shellQuote(arg) {
+    return `'${arg.replace(/'/g, "'\\''")}'`;
+}
+export function buildHookCommand(execPath, hookJs, mode) {
+    return `NLM_HOOK_MODE=${mode} ${shellQuote(execPath)} ${shellQuote(hookJs)}`;
+}
+/**
+ * Invoke the wired command exactly the way Claude Code does (sh -c with
+ * JSON on stdin) and confirm the hook log gained an entry. Catches the
+ * class of failures where settings.json looks valid but the hook fails
+ * at startup (path tokenization, missing modules, etc.).
+ */
+export function smokeTestHookCommand(command, hookLogPath, timeoutMs = 5000) {
+    const sizeBefore = existsSync(hookLogPath) ? statSync(hookLogPath).size : 0;
+    const result = spawnSync("sh", ["-c", command], {
+        input: JSON.stringify({ prompt: "smoke test", session_id: "install-smoke" }),
+        timeout: timeoutMs,
+        encoding: "utf8",
+    });
+    if (result.error) {
+        return { ok: false, reason: `spawn failed: ${result.error.message}` };
+    }
+    if (result.status !== 0) {
+        return {
+            ok: false,
+            reason: `exit code ${result.status ?? "null"}`,
+            stderr: result.stderr,
+        };
+    }
+    const sizeAfter = existsSync(hookLogPath) ? statSync(hookLogPath).size : 0;
+    if (sizeAfter <= sizeBefore) {
+        return {
+            ok: false,
+            reason: `no entry appended to ${hookLogPath}`,
+            stderr: result.stderr,
+        };
+    }
+    return { ok: true };
+}
 function read(path) {
     if (!existsSync(path))
         return {};

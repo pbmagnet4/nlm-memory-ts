@@ -1,8 +1,15 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { spawnSync } from "node:child_process";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { addHook, removeHook } from "../../src/core/hook/claude-settings.js";
+import {
+  addHook,
+  buildHookCommand,
+  removeHook,
+  shellQuote,
+  smokeTestHookCommand,
+} from "../../src/core/hook/claude-settings.js";
 
 interface Settings {
   hooks?: {
@@ -82,6 +89,55 @@ describe("claude-settings hook editor", () => {
     removeHook(settingsPath);
     const s = JSON.parse(readFileSync(settingsPath, "utf8")) as Settings;
     expect(s.hooks?.UserPromptSubmit).toBeUndefined();
+  });
+
+  function shEcho(s: string): string {
+    return spawnSync("sh", ["-c", `echo ${s}`], { encoding: "utf8" }).stdout.trim();
+  }
+
+  it("shellQuote wraps paths with spaces so sh -c keeps them as one arg", () => {
+    const pathWithSpace = "~/projects/foo/bar.js";
+    expect(shEcho(shellQuote(pathWithSpace))).toBe(pathWithSpace);
+  });
+
+  it("shellQuote escapes embedded single quotes", () => {
+    const tricky = "/path/with'quote/file.js";
+    expect(shEcho(shellQuote(tricky))).toBe(tricky);
+  });
+
+  it("buildHookCommand quotes both paths", () => {
+    const cmd = buildHookCommand(
+      "/usr/local/bin/node",
+      "~/projects/nlm/dist/hook/prompt-recall-hook.js",
+      "shadow",
+    );
+    expect(cmd).toBe(
+      "NLM_HOOK_MODE=shadow '/usr/local/bin/node' '~/projects/nlm/dist/hook/prompt-recall-hook.js'",
+    );
+  });
+
+  it("smokeTestHookCommand reports failure when command exits nonzero", () => {
+    const logPath = join(tmp, "hook-log.jsonl");
+    const result = smokeTestHookCommand("exit 1", logPath);
+    expect(result.ok).toBe(false);
+    expect(result.reason).toContain("exit code 1");
+  });
+
+  it("smokeTestHookCommand reports failure when log does not gain an entry", () => {
+    const logPath = join(tmp, "hook-log.jsonl");
+    const result = smokeTestHookCommand("true", logPath);
+    expect(result.ok).toBe(false);
+    expect(result.reason).toContain("no entry appended");
+  });
+
+  it("smokeTestHookCommand passes when command writes to the log", () => {
+    const logPath = join(tmp, "hook-log.jsonl");
+    const result = smokeTestHookCommand(
+      `printf '{"ts":"x"}\\n' >> ${shellQuote(logPath)}`,
+      logPath,
+    );
+    expect(result.ok).toBe(true);
+    expect(statSync(logPath).size).toBeGreaterThan(0);
   });
 
   it("addHook preserves an unrelated hook event key", () => {

@@ -38,7 +38,7 @@ import { ClassifierBox } from "../llm/classifier-box.js";
 import { DeepSeekClient } from "../llm/deepseek-client.js";
 import { OllamaClient } from "../llm/ollama-client.js";
 import { autoloadEnv } from "../llm/env-autoload.js";
-import { addHook, removeHook } from "../core/hook/claude-settings.js";
+import { addHook, buildHookCommand, removeHook, smokeTestHookCommand } from "../core/hook/claude-settings.js";
 import { runParity } from "./classify-parity.js";
 import { reembedCorpus } from "../core/embedding/embed-backfill.js";
 import { backfillFacts } from "../core/facts/backfill-facts.js";
@@ -469,9 +469,24 @@ hook
     .description("Add the recall hook to ~/.claude/settings.json (shadow mode)")
     .action(() => {
     const path = claudeSettingsPath();
-    const command = `NLM_HOOK_MODE=shadow ${process.execPath} ${HOOK_JS}`;
+    const command = buildHookCommand(process.execPath, HOOK_JS, "shadow");
     addHook(path, command);
+    const hookLogPath = process.env["NLM_HOOK_LOG"] ?? join(homedir(), ".nlm", "hook-log.jsonl");
+    const smoke = smokeTestHookCommand(command, hookLogPath);
+    if (!smoke.ok) {
+        removeHook(path);
+        console.error("nlm: hook install FAILED smoke test — reverted.");
+        console.error(`  reason: ${smoke.reason}`);
+        if (smoke.stderr) {
+            const trimmed = smoke.stderr.trim();
+            if (trimmed)
+                console.error(`  stderr: ${trimmed}`);
+        }
+        console.error(`  command was: ${command}`);
+        process.exit(1);
+    }
     console.error(`nlm: recall hook installed in ${path} (shadow mode).`);
+    console.error("  Smoke test passed — synthetic invocation appended to hook-log.jsonl.");
     console.error("  It logs to ~/.nlm/hook-log.jsonl and injects nothing.");
     console.error("  To go live later: change NLM_HOOK_MODE=shadow to live in that file.");
     console.error("  To remove: nlm hook uninstall");
