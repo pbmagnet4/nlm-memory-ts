@@ -6,3 +6,4 @@ coverage/
 .env.local
 .vscode/
 .idea/
+__pycache__/
