@@ -207,53 +207,92 @@ export async function getFactHistoryHandler(
   }
 }
 
-const RECALL_DESCRIPTION = `Search prior AI sessions from the local nlm-memory canonical store.
-Use this whenever the user's question references past work, prior decisions,
-unresolved questions, or anything that might already be answered in earlier
-Claude Code, Hermes, or pi.dev sessions. Examples:
+const RECALL_DESCRIPTION = `Search prior AI sessions across every runtime the user has connected (Claude Code,
+Hermes, pi, Codex, Gemini, Aider). Local-first, fast (~200-400ms warm), idempotent,
+safe to call eagerly. No rate limit; no cost per call.
 
-  - "what did we decide about pgvector?"
-  - "what's still open on the pulse rewrite?"
-  - "have I worked with this client before?"
+CALL THIS FIRST — before answering — whenever the user prompt contains any of:
 
-Returns session digests (id, label, summary, entities, decisions, open
-questions) ranked by match score. Use get_session for the full body.
+  Decision / position questions
+    "what did we decide about X" · "did we figure out X" · "what's our take on X"
+    "have we tried X" · "where did we land on X" · "what was the conclusion"
+
+  Status / open-thread questions
+    "what's still open on X" · "where did we leave X" · "what's blocked on X"
+    "what's the state of X" · "is X done"
+
+  History / continuity questions
+    "have I worked on X" · "when did we last X" · "did we already do X"
+    "have I talked to <person>" · "what's the history with X"
+
+  Implicit references to prior context (the dangerous case — easy to miss)
+    "that pgvector thing" · "the X discussion" · "our auth approach"
+    "the one we built for <client>" · "the issue we hit last week"
+
+Not calling when the user references past work is the failure mode this tool exists
+to prevent: re-derivation of already-solved problems, contradicting prior decisions,
+re-litigating resolved open questions, ignoring the user's accumulated context.
+
+Returns ranked session digests (id, label, summary, entities, decisions, open
+questions). Call get_session for the full body when a digest looks relevant.
+
+Skip ONLY when the request is purely forward-looking with no plausible prior
+context — drafting wholly new content, naming something new, brainstorming
+greenfield ideas. When in doubt, call.
 
 Args:
-  - query: keyword(s) to search. Token-weighted match against label,
-           decisions, open questions, and summary. Optional if entity or
-           kind is provided.
+  - query: keyword(s) to search. Token-weighted match against label, decisions,
+           open questions, and summary. Optional if entity or kind is provided.
   - entity: filter to sessions tagged with this entity. Optional.
-  - kind: "decision" or "open" — restrict to sessions containing that
-          marker kind. Omit for any. Optional.
-  - mode: "hybrid" (default — keyword BM25 + semantic embeddings), "keyword", or "semantic". Optional.
+  - kind: "decision" or "open" — restrict to sessions containing that marker
+          kind. Omit for any. Optional.
+  - mode: "hybrid" (default — keyword BM25 + semantic embeddings), "keyword", or
+          "semantic". Optional.
   - limit: max results (1-100, default 10).`;
 
-const GET_SESSION_DESCRIPTION = `Fetch one session from nlm-memory by its canonical ID, including
-the full body text. Use this when a recall_sessions result looks relevant
-and you need the conversational context to answer accurately.
+const GET_SESSION_DESCRIPTION = `Fetch one full session by its canonical ID, including the conversational body.
+
+Call this AFTER recall_sessions when a returned digest looks relevant and the
+summary alone isn't enough to answer — e.g. you need the exact wording of a
+decision, the full reasoning behind a pivot, the specific commands that were
+run, or any quote you intend to reference verbatim.
+
+The recall_sessions digest is optimized for ranking and scanning; the full body
+contains the actual conversation transcript that produced the decision.
 
 Args:
-  - id: Canonical session ID (e.g. "sess_pgvector", "sess_abc123").`;
+  - id: Canonical session ID returned by recall_sessions (e.g. "cc_abc123",
+        "sess_pgvector"). Pass the id field from the recall_sessions result.`;
 
-const RECALL_FACTS_DESCRIPTION = `Search the local nlm-memory FactStore for normalized
-(subject, predicate, value) triples derived from prior sessions. Use this
-when you need a single concrete fact rather than the prose of a whole
-session — model aliases, framework choices, endpoints, ports, dates.
+const RECALL_FACTS_DESCRIPTION = `Look up specific (subject, predicate, value) facts the user has established in
+prior sessions — model aliases, framework choices, endpoints, ports, hosts,
+deadlines, pricing, owners, dependencies, etc.
+
+CALL THIS when the user asks for a concrete value rather than a prose summary:
+
+  "what port is X on" · "what model does Y use" · "what's the endpoint for Z"
+  "what framework did we pick for X" · "who owns the X project"
+  "when's the X deadline" · "what did we set X to" · "where does X live"
+  "what version of X are we on" · "what's our X account"
+
+Prefer this over recall_sessions when the user wants the *answer*, not the
+*conversation* — facts return the exact value with provenance (source session
++ source quote), no scanning required. recall_sessions is the right tool when
+the user wants context, reasoning, or the full discussion.
+
+Returns matching Fact records ordered by recency. Superseded facts are excluded
+by default; call get_fact_history to walk the chain of how a value evolved
+("when did X flip from Fastify to Hono?").
 
 Examples:
-  - "what model alias does the Mac Pro endpoint expose?"
-    → recall_facts(subject="mac-pro-llm-host", predicate="model")
-  - "what framework did we pick for nlm-memory-ts?"
-    → recall_facts(subject="nlm-memory-ts", predicate="framework")
-  - "anything we know about the GOAT engagement?"
-    → recall_facts(subject="goat-home-services")
-  - "decisions about routing in the last week?"
-    → recall_facts(query="routing", kind="decision")
-
-Returns the matching Fact records with provenance (source_session_id,
-source_quote when available). Superseded facts are excluded by default —
-use get_fact_history to walk the chain of how a value evolved.
+  recall_facts(subject="mac-pro-llm-host", predicate="model")
+    → the model alias currently exposed on the Mac Pro LLM endpoint
+  recall_facts(subject="nlm-memory-ts", predicate="framework")
+    → the web framework picked for nlm-memory-ts
+  recall_facts(subject="goat-home-services")
+    → all known facts about the GOAT engagement
+  recall_facts(query="routing", kind="decision")
+    → recent decision-kind facts mentioning routing
 
 Args:
   - query: free-text search against fact values. Optional if subject /
@@ -265,25 +304,30 @@ Args:
                integration, deployment, repo, branch, commit, description,
                decided-on, assumption, blocker).
   - kind: "decision" | "open" | "attribute". Optional.
-  - mode: "hybrid" (default — keyword BM25 + semantic embeddings), "keyword", or "semantic".
+  - mode: "hybrid" (default — keyword BM25 + semantic embeddings), "keyword",
+          or "semantic".
   - includeSuperseded: true to include outdated facts. Default false.
   - minConfidence: lower bound on classifier confidence. Default 0.6.
   - limit: max results (1-100, default 10).`;
 
-const GET_FACT_HISTORY_DESCRIPTION = `Walk the supersedence chain for a (subject, predicate) pair, or
-all chains for a subject. Use this when you need to understand how a value
-changed over time — "wait, did we used to use Fastify, when did that flip
-to Hono?".
+const GET_FACT_HISTORY_DESCRIPTION = `Walk the supersedence chain for a (subject, predicate) pair to see how a value
+changed over time. Call this when the user asks about evolution, history of a
+choice, or wants to understand a prior decision that's since changed:
 
-Returns chains ordered newest → oldest. The head of each chain is the
-current value; subsequent entries are predecessors, each pointing forward
-via supersededBy.
+  "when did we switch from X to Y" · "what did we use before X"
+  "wasn't X different a month ago" · "history of <X choice>"
+  "why did we change from X to Y"
+
+This is the editable-timeline feature: NLM preserves rejected/replaced decisions
+as superseded entries rather than deleting them, so the reasoning trail survives.
+
+Returns chains ordered newest → oldest. The head is the current value; subsequent
+entries are predecessors, each linked forward via supersededBy.
 
 Args:
-  - subject: normalized entity or topic name.
-  - predicate: (optional) narrow to a single (subject, predicate) chain.
-               When omitted, returns one chain per predicate for this
-               subject.`;
+  - subject: normalized (lowercase-kebab) entity or topic name.
+  - predicate: optional — narrow to a single (subject, predicate) chain. When
+               omitted, returns one chain per predicate for this subject.`;
 
 export function createMcpServer(deps: McpDeps): McpServer {
   const server = new McpServer({
