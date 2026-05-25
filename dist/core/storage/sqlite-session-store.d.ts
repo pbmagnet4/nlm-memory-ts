@@ -87,6 +87,8 @@ export declare class SqliteSessionStore implements SessionStore {
         factStore: SqliteFactStore;
         facts: ReadonlyArray<Fact>;
     } | null): Promise<void>;
+    private deleteSessionChunks;
+    private insertChunkEmbedding;
     /**
      * Phase B.5 — backfill entry point. Writes facts (with deterministic
      * supersedence + best-effort embeddings) for an EXISTING session row
@@ -143,6 +145,7 @@ export declare class SqliteSessionStore implements SessionStore {
     updateStatus(sessionId: string, status: SessionStatus): Promise<void>;
     insertSessionForTest(session: Session): void;
     insertEmbeddingForTest(sessionId: string, vector: Float32Array): void;
+    insertChunkEmbeddingForTest(sessionId: string, chunkIdx: number, vector: Float32Array): void;
     private loadEntities;
     private loadMarkers;
     private rowToSession;

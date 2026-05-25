@@ -134,9 +134,9 @@ describe("ScanScheduler.tick", () => {
     expect(ent[0]?.entity_canonical).toBe("NLM");
 
     const emb = db.prepare<[string], { c: number }>(
-      "SELECT COUNT(*) AS c FROM session_embeddings WHERE session_id = ?",
+      "SELECT COUNT(*) AS c FROM session_chunk_map WHERE session_id = ?",
     ).get(sess[0]!.id);
-    expect(emb?.c).toBe(1);
+    expect(emb?.c).toBeGreaterThanOrEqual(1);
 
     const state = db.prepare<[], { source_path: string; session_id: string }>(
       "SELECT source_path, session_id FROM adapter_state WHERE adapter_name = 'claude-code'",

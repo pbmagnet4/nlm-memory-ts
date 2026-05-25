@@ -117,7 +117,7 @@ const DATA_STAT_TABLES = [
   "entities",
   "markers",
   "facts",
-  "session_embeddings",
+  "session_embedding_chunks",
   "fact_embeddings",
   "actions",
   "session_edges",

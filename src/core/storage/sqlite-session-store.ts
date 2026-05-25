@@ -33,6 +33,7 @@ import type { Fact } from "@shared/types.js";
 import { runMigrations } from "./migrate.js";
 import type { SqliteFactStore } from "./sqlite-fact-store.js";
 import { tokenize } from "@core/recall/tokenize.js";
+import { chunkSessionText } from "@core/embedding/chunk-body.js";
 
 export interface SqliteSessionStoreOptions {
   readonly dbPath: string;
@@ -278,28 +279,26 @@ export class SqliteSessionStore implements SessionStore {
     txn();
 
     // Embedding is best-effort and lives outside the txn so a slow Ollama
-    // doesn't block the row commit.
+    // doesn't block the row commit. Body is chunked into ≤MAX_CHUNK_CHARS
+    // windows (see chunk-body.ts) and each chunk embedded independently.
+    // Per-chunk embedder failures are tolerated; the chunks that did embed
+    // still contribute to recall.
     if (embedder) {
-      // Body cap restored to 4000 on 2026-05-25 after a 24K experiment
-      // produced 54% Ollama 500s and collapsed semantic R@5 from 87.2 →
-      // 15.8 on the LongMemEval-S baseline. nomic-embed-text via Ollama
-      // does not reliably accept inputs near its nominal 8192-token
-      // context. Real fix is chunk + max-pool (filed as #174).
-      const text = [
-        record.label,
-        record.summary,
-        (record.body ?? "").slice(0, 4_000),
-      ].filter((s) => s && s.length > 0).join(" ").trim();
-      if (text) {
+      const chunks = chunkSessionText({
+        label: record.label,
+        summary: record.summary,
+        body: record.body,
+      });
+      this.deleteSessionChunks(record.id);
+      for (let chunkIdx = 0; chunkIdx < chunks.length; chunkIdx++) {
+        const text = chunks[chunkIdx]!;
+        if (!text) continue;
         try {
           const { vector } = await embedder.embed(text, "document");
-          const blob = Buffer.from(vector.buffer, vector.byteOffset, vector.byteLength);
-          db.prepare("DELETE FROM session_embeddings WHERE session_id = ?").run(record.id);
-          db.prepare(
-            "INSERT INTO session_embeddings (session_id, embedding) VALUES (?, ?)",
-          ).run(record.id, blob);
+          this.insertChunkEmbedding(record.id, chunkIdx, vector);
         } catch {
-          // Embedder failure must not roll the ingest back.
+          // Per-chunk embedder failure must not roll the ingest back or
+          // abort subsequent chunks.
         }
       }
 
@@ -307,6 +306,47 @@ export class SqliteSessionStore implements SessionStore {
         await this.embedFacts(factSink.factStore, factSink.facts, embedder);
       }
     }
+  }
+
+  private deleteSessionChunks(sessionId: string): void {
+    const db = this.db;
+    const rows = db
+      .prepare<[string], { chunk_id: number }>(
+        "SELECT chunk_id FROM session_chunk_map WHERE session_id = ?",
+      )
+      .all(sessionId);
+    if (rows.length === 0) return;
+    const placeholders = rows.map(() => "?").join(",");
+    const ids = rows.map((r) => r.chunk_id);
+    db.prepare(
+      `DELETE FROM session_embedding_chunks WHERE chunk_id IN (${placeholders})`,
+    ).run(...ids);
+    db.prepare("DELETE FROM session_chunk_map WHERE session_id = ?").run(sessionId);
+  }
+
+  private insertChunkEmbedding(
+    sessionId: string,
+    chunkIdx: number,
+    vector: Float32Array,
+  ): void {
+    const db = this.db;
+    const blob = Buffer.from(
+      vector.buffer,
+      vector.byteOffset,
+      vector.byteLength,
+    );
+    // vec0 enforces strict integer typing on aux columns; better-sqlite3 binds
+    // JS numbers as FLOAT, so cast chunk_idx via BigInt to bind as INTEGER.
+    const idxInt = BigInt(chunkIdx);
+    const info = db
+      .prepare(
+        "INSERT INTO session_embedding_chunks (embedding, session_id, chunk_idx) VALUES (?, ?, ?)",
+      )
+      .run(blob, sessionId, idxInt);
+    const chunkId = Number(info.lastInsertRowid);
+    db.prepare(
+      "INSERT INTO session_chunk_map (chunk_id, session_id, chunk_idx) VALUES (?, ?, ?)",
+    ).run(chunkId, sessionId, chunkIdx);
   }
 
   /**
@@ -493,17 +533,33 @@ export class SqliteSessionStore implements SessionStore {
       queryVector.byteOffset,
       queryVector.byteLength,
     );
+    // Overfetch chunks so the max-pool grouping has enough unique sessions
+    // even when several top chunks come from the same session. CHUNK_OVERFETCH
+    // ≈ average chunks per session on the LongMemEval-S benchmark.
+    const CHUNK_OVERFETCH = 4;
+    const chunkK = k * CHUNK_OVERFETCH;
     const rows = this.db
       .prepare<[Buffer, number], NeighborRow>(`
         SELECT session_id, distance
-        FROM session_embeddings
+        FROM session_embedding_chunks
         WHERE embedding MATCH ?
           AND k = ?
         ORDER BY distance
       `)
-      .all(blob, k);
+      .all(blob, chunkK);
 
-    return rows.map((r) => ({ sessionId: r.session_id, distance: r.distance }));
+    // Max-pool: keep the smallest distance (highest cosine) per session.
+    const best = new Map<string, number>();
+    for (const r of rows) {
+      const cur = best.get(r.session_id);
+      if (cur === undefined || r.distance < cur) {
+        best.set(r.session_id, r.distance);
+      }
+    }
+    return [...best.entries()]
+      .map(([sessionId, distance]) => ({ sessionId, distance }))
+      .sort((a, b) => a.distance - b.distance)
+      .slice(0, k);
   }
 
   /**
@@ -592,12 +648,15 @@ export class SqliteSessionStore implements SessionStore {
   }
 
   insertEmbeddingForTest(sessionId: string, vector: Float32Array): void {
-    const blob = Buffer.from(vector.buffer, vector.byteOffset, vector.byteLength);
-    this.db
-      .prepare(
-        "INSERT INTO session_embeddings (session_id, embedding) VALUES (?, ?)",
-      )
-      .run(sessionId, blob);
+    this.insertChunkEmbeddingForTest(sessionId, 0, vector);
+  }
+
+  insertChunkEmbeddingForTest(
+    sessionId: string,
+    chunkIdx: number,
+    vector: Float32Array,
+  ): void {
+    this.insertChunkEmbedding(sessionId, chunkIdx, vector);
   }
 
   // ── internal ──────────────────────────────────────────────────────────

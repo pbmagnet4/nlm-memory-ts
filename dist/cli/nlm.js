@@ -291,9 +291,8 @@ program
 });
 program
     .command("embed-backfill")
-    .description("Re-embed every session in canonical.sqlite with the document prefix")
+    .description("Re-embed every session into session_embedding_chunks (chunk + max-pool)")
     .option("-l, --limit <n>", "session cap (default: all)", (v) => Number.parseInt(v, 10))
-    .option("--body-chars <n>", "body truncation (default 4000)", (v) => Number.parseInt(v, 10), 4_000)
     .option("--state <path>", "resume state file (default ~/.nlm/embed_reembed.state)")
     .option("-v, --verbose", "per-session progress on stderr")
     .action(async (opts) => {
@@ -303,7 +302,6 @@ program
         embedder,
         ...(opts.state ? { statePath: opts.state } : {}),
         ...(opts.limit ? { limit: opts.limit } : {}),
-        bodyChars: opts.bodyChars,
         ...(opts.verbose
             ? {
                 onProgress: (i, n, sid, status) => {

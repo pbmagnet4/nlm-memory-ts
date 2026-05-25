@@ -1,16 +1,16 @@
 /**
- * embed-backfill — re-embed every session in canonical.sqlite with the
- * document prefix + L2-normalized vectors. Ports `embed_reembed.py`.
+ * embed-backfill — re-embed every session in canonical.sqlite into the
+ * chunk + max-pool index (session_embedding_chunks). Replaces the prior
+ * one-vector-per-session backfill that wrote to session_embeddings.
  *
- * Pre-nomic-prefix vectors live alongside new ones in session_embeddings,
- * so the embedding space is inconsistent. This module reads each session's
- * (label + summary + body[:4000]) text, calls embedder.embed(kind="document"),
- * and replaces the old vector via DELETE + INSERT (vec0 doesn't support
- * UPDATE on the vector column).
+ * For each session: chunk (label + summary + body) via chunkSessionText,
+ * embed each chunk with kind="document", and write to the chunk table +
+ * session_chunk_map via the same INSERT pair used by the live ingest path.
  *
  * Resumable via a JSON state file at $NLM_EMBED_STATE (default
  * ~/.nlm/embed_reembed.state). Interrupting + rerunning skips already-done
- * session ids.
+ * session ids. A session is considered "done" only when ALL its chunks
+ * embed successfully — partial sessions are retried on the next run.
  *
  * Layering: depends on the LLMClient port. SQLite touched directly via
  * better-sqlite3 because this is a one-shot operational tool, not a hot
@@ -22,7 +22,6 @@ export interface BackfillOptions {
     readonly embedder: LLMClient;
     readonly statePath?: string;
     readonly limit?: number;
-    readonly bodyChars?: number;
     readonly onProgress?: (i: number, total: number, sid: string, status: string) => void;
 }
 export interface BackfillReport {

@@ -40,6 +40,7 @@ import type { RecallMode } from "../../src/shared/types.js";
 import { EmbeddingCache } from "./embedding-cache.js";
 import { scoreOne, aggregate, type SingleScore } from "./scorer.js";
 import { turnsToBody, type LongMemEvalInstance } from "./types.js";
+import { chunkSessionText } from "../../src/core/embedding/chunk-body.js";
 
 interface Args {
   readonly datasetPath: string;
@@ -138,14 +139,16 @@ async function runInstance(
         open: [],
       });
       if (needsEmbeddings) {
-        try {
-          const vector = await cache.embed(body, "document");
-          store.insertEmbeddingForTest(id, vector);
-        } catch {
-          // Single-session embed failure is non-fatal — skip embedding for
-          // this session, semantic retrieval just won't see it. Reported in
-          // counter for visibility.
-          embedFailures++;
+        const chunks = chunkSessionText({ body });
+        for (let c = 0; c < chunks.length; c++) {
+          try {
+            const vector = await cache.embed(chunks[c]!, "document");
+            store.insertChunkEmbeddingForTest(id, c, vector);
+          } catch {
+            // Per-chunk embed failure is non-fatal — successfully embedded
+            // chunks still contribute via max-pool. Counter tracks attempts.
+            embedFailures++;
+          }
         }
       }
     }

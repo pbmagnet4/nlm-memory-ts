@@ -109,15 +109,27 @@ describe("normalizeEmbeddings", () => {
     store.insertSessionForTest(makeSession({ id: "raw" }));
     store.insertSessionForTest(makeSession({ id: "already" }));
     store.insertSessionForTest(makeSession({ id: "zero" }));
+    store.close();
+    // embed-normalize operates on the legacy session_embeddings table that
+    // migration 003 still creates (left in place for rollback safety after
+    // the chunk + max-pool migration). Seed it directly via raw SQL — the
+    // session store's helpers now target session_embedding_chunks.
+    const db = new Database(dbPath);
+    sqliteVec.load(db);
+    const ins = db.prepare(
+      "INSERT INTO session_embeddings (session_id, embedding) VALUES (?, ?)",
+    );
+    const toBlob = (v: Float32Array): Buffer =>
+      Buffer.from(v.buffer, v.byteOffset, v.byteLength);
     // raw: non-unit (||v|| = sqrt(768 * 0.25) ≈ 13.86)
-    store.insertEmbeddingForTest("raw", new Float32Array(768).fill(0.5));
+    ins.run("raw", toBlob(new Float32Array(768).fill(0.5)));
     // already: unit (one component at 1.0)
     const unit = new Float32Array(768);
     unit[0] = 1;
-    store.insertEmbeddingForTest("already", unit);
+    ins.run("already", toBlob(unit));
     // zero: zero vector
-    store.insertEmbeddingForTest("zero", new Float32Array(768));
-    store.close();
+    ins.run("zero", toBlob(new Float32Array(768)));
+    db.close();
   });
 
   afterEach(() => rmSync(tmp, { recursive: true, force: true }));
