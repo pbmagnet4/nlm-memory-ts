@@ -63,6 +63,26 @@ describe("scoreOne", () => {
     expect(r.sessionBodyHit).toBe(0);
   });
 
+  it("coerces a numeric answer to string and matches with word boundaries", () => {
+    const hit = scoreOne({
+      returnedIds: ["a"],
+      goldIds: ["gold"],
+      returnedBodies: ["The user mentioned 3 brothers in the conversation."],
+      answer: 3,
+      k: 5,
+    });
+    expect(hit.sessionBodyHit).toBe(1);
+
+    const miss = scoreOne({
+      returnedIds: ["a"],
+      goldIds: ["gold"],
+      returnedBodies: ["They paid $30 for the meal and tipped 20%."],
+      answer: 3,
+      k: 5,
+    });
+    expect(miss.sessionBodyHit).toBe(0);
+  });
+
   it("sessionBodyHit=0 when answer is empty", () => {
     const r = scoreOne({
       returnedIds: ["a"],

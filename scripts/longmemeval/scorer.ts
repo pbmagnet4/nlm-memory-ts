@@ -18,7 +18,8 @@ export interface ScoreInputs {
   readonly goldIds: ReadonlyArray<string>;
   /** Map id → body for the bodies of the top-k returned sessions. */
   readonly returnedBodies: ReadonlyArray<string>;
-  readonly answer: string;
+  /** Some LongMemEval answers are ints (counting questions); coerced to string. */
+  readonly answer: string | number | boolean;
   readonly k: number;
 }
 
@@ -33,12 +34,21 @@ export function scoreOne(input: ScoreInputs): SingleScore {
   const goldSet = new Set(input.goldIds);
   const recallAtK = topK.some((id) => goldSet.has(id)) ? 1 : 0;
 
-  const ans = normalize(input.answer);
+  // Session-body hit: substring match for multi-word answers; word-boundary
+  // match for short answers (single token <4 chars: "3", "yes", numeric
+  // counts). Without the boundary, a numeric answer "3" hits every body
+  // containing "3 days", "$3", etc., inflating the metric to noise.
+  const ans = normalize(String(input.answer));
   let sessionBodyHit: 0 | 1 = 0;
   if (ans.length > 0) {
+    const isShortToken = !ans.includes(" ") && ans.length < 4;
+    const test = isShortToken
+      ? (body: string): boolean =>
+          new RegExp(`\\b${escapeRegExp(ans)}\\b`).test(normalize(body))
+      : (body: string): boolean => normalize(body).includes(ans);
     const bodies = input.returnedBodies.slice(0, input.k);
     for (const body of bodies) {
-      if (normalize(body).includes(ans)) {
+      if (test(body)) {
         sessionBodyHit = 1;
         break;
       }
@@ -82,4 +92,8 @@ function normalize(s: string): string {
 
 function round3(x: number): number {
   return Math.round(x * 1000) / 1000;
+}
+
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }

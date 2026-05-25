@@ -17,7 +17,9 @@ export interface LongMemEvalInstance {
   readonly question_id: string;
   readonly question_type: string;
   readonly question: string;
-  readonly answer: string;
+  // LongMemEval answers are sometimes ints/booleans for counting and
+  // temporal-reasoning questions — coerce at the call site.
+  readonly answer: string | number | boolean;
   readonly question_date: string;
   readonly haystack_session_ids: ReadonlyArray<string>;
   readonly haystack_dates: ReadonlyArray<string>;
