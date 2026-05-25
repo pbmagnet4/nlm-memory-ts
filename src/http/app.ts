@@ -27,6 +27,7 @@ import {
 import type { RecallService } from "@core/recall/recall-service.js";
 import { logQuery, recallStats } from "@core/recall/query-log.js";
 import { recentQueryLog } from "@core/recall/recent-log.js";
+import { appendCitation, citationStats } from "@core/recall/citation-log.js";
 import type { FactRecallService } from "@core/recall-facts/fact-recall-service.js";
 import { factRecallStats, logFactQuery } from "@core/recall-facts/fact-query-log.js";
 import type { FactStore } from "@ports/fact-store.js";
@@ -70,6 +71,8 @@ export interface HttpDeps {
   readonly liveStore?: SqliteSessionStore;
   /** Optional override for the query log path. Defaults to ~/.nlm/query_log.jsonl or $NLM_QUERY_LOG. */
   readonly queryLogPath?: string;
+  /** Optional override for the citation log path. Defaults to ~/.nlm/citation-log.jsonl or $NLM_CITATION_LOG. */
+  readonly citationLogPath?: string;
   /** Fact recall — wire to enable /api/recall/facts + /api/facts/history. */
   readonly factRecall?: FactRecallService;
   readonly factStore?: FactStore;
@@ -234,6 +237,51 @@ export function createApp(deps: HttpDeps): Hono {
       ...(deps.queryLogPath !== undefined ? [deps.queryLogPath] : []),
     );
     return c.json({ entries });
+  });
+
+  // Citation events from the Stop hook. One POST per surfaced ID the
+  // assistant cited in its response. Drives useful_hit_rate and is the
+  // training-data substrate for the future learned reranker.
+  app.post("/api/recall/cite-event", async (c) => {
+    let body: Record<string, unknown>;
+    try {
+      body = (await c.req.json()) as Record<string, unknown>;
+    } catch {
+      return c.json({ error: "body must be JSON" }, 400);
+    }
+    const conversationId = body["conversation_id"];
+    const citedId = body["cited_id"];
+    if (typeof conversationId !== "string" || !conversationId) {
+      return c.json({ error: "conversation_id required" }, 400);
+    }
+    if (typeof citedId !== "string" || !citedId) {
+      return c.json({ error: "cited_id required" }, 400);
+    }
+    const responsePreview = body["response_preview"];
+    await appendCitation(
+      {
+        conversationId,
+        citedId,
+        ...(typeof responsePreview === "string"
+          ? { responsePreview }
+          : {}),
+      },
+      ...(deps.citationLogPath !== undefined ? [deps.citationLogPath] : []),
+    );
+    return c.json({ ok: true });
+  });
+
+  app.get("/api/recall/cite-stats", async (c) => {
+    const daysStr = c.req.query("days") ?? "7";
+    const days = Number.parseInt(daysStr, 10);
+    if (!Number.isFinite(days) || days < 1 || days > 365) {
+      return c.json({ error: "days must be 1..365" }, 400);
+    }
+    const stats = await citationStats(
+      days,
+      ...(deps.citationLogPath !== undefined ? [deps.citationLogPath] : []),
+    );
+    return c.json(stats);
   });
 
   // ── Fact recall (Phase B.3 surface, exposed over HTTP for the MCP proxy) ──

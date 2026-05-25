@@ -16,6 +16,7 @@ import { spawnSync } from "node:child_process";
 const HOOK_SCRIPT_MARKERS = [
   "prompt-recall-hook.js",
   "session-end-hook.js",
+  "stop-hook.js",
 ] as const;
 
 /**

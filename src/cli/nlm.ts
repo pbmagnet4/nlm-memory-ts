@@ -516,9 +516,10 @@ program
 
 const HOOK_JS = resolve(__dirname, "../hook/prompt-recall-hook.js");
 const SESSION_END_HOOK_JS = resolve(__dirname, "../hook/session-end-hook.js");
+const STOP_HOOK_JS = resolve(__dirname, "../hook/stop-hook.js");
 
 interface HookSpec {
-  readonly event: "UserPromptSubmit" | "SessionEnd";
+  readonly event: "UserPromptSubmit" | "SessionEnd" | "Stop";
   readonly script: string;
   readonly label: string;
 }
@@ -526,6 +527,7 @@ interface HookSpec {
 const ALL_HOOKS: ReadonlyArray<HookSpec> = [
   { event: "UserPromptSubmit", script: HOOK_JS, label: "recall" },
   { event: "SessionEnd", script: SESSION_END_HOOK_JS, label: "session-end" },
+  { event: "Stop", script: STOP_HOOK_JS, label: "stop" },
 ];
 
 function claudeSettingsPath(): string {
@@ -538,7 +540,7 @@ const hook = program
 
 hook
   .command("install")
-  .description("Add the NLM hooks (recall + session-end) to ~/.claude/settings.json (shadow mode)")
+  .description("Add the NLM hooks (recall + session-end + stop) to ~/.claude/settings.json (shadow mode)")
   .action(() => {
     const path = claudeSettingsPath();
     const hookLogPath = process.env["NLM_HOOK_LOG"] ?? join(homedir(), ".nlm", "hook-log.jsonl");

@@ -31,6 +31,8 @@ export interface HttpDeps {
     readonly liveStore?: SqliteSessionStore;
     /** Optional override for the query log path. Defaults to ~/.nlm/query_log.jsonl or $NLM_QUERY_LOG. */
     readonly queryLogPath?: string;
+    /** Optional override for the citation log path. Defaults to ~/.nlm/citation-log.jsonl or $NLM_CITATION_LOG. */
+    readonly citationLogPath?: string;
     /** Fact recall — wire to enable /api/recall/facts + /api/facts/history. */
     readonly factRecall?: FactRecallService;
     readonly factStore?: FactStore;
