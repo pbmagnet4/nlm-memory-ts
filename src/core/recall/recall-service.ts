@@ -27,8 +27,12 @@ import { tokenSet } from "./tokenize.js";
 
 const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 100;
-const HYBRID_KW_WEIGHT = 0.4;
-const HYBRID_SEM_WEIGHT = 0.6;
+// Reciprocal Rank Fusion constant (Cormack et al. 2009). k=60 is the
+// canonical literature default. RRF combines ranked lists from multiple
+// retrievers by summing 1/(k + rank) per retriever, ignoring raw scores —
+// robust to wildly different score distributions (BM25 unbounded vs cosine
+// in [-1,1]) without requiring normalization.
+const RRF_K = 60;
 const SEMANTIC_OVERFETCH = 3;
 const KEYWORD_OVERFETCH = 3;
 
@@ -155,12 +159,29 @@ interface SemanticHit {
   readonly similarity: number;
 }
 
+/**
+ * Reciprocal Rank Fusion across the keyword + semantic legs.
+ *
+ * matchScore = Σ 1/(RRF_K + rank_i) for each retriever the session appears in.
+ * A session at rank 1 in both retrievers therefore scores ~0.0328 (the max
+ * possible with two retrievers at k=60); a session at rank 1 in one
+ * retriever and absent from the other scores ~0.0164.
+ *
+ * keywordScore and semanticScore stay populated as min-max normalized
+ * informational values so the UI can show "how strong was each leg" —
+ * they're no longer used to compute matchScore.
+ */
 function mergeHybrid(
   kwHits: ReadonlyArray<KeywordHit>,
   semHits: ReadonlyArray<SemanticHit>,
 ): ReadonlyArray<RecallHit> {
   const maxKw = Math.max(1, ...kwHits.map((h) => h.score));
   const maxSem = Math.max(1, ...semHits.map((h) => h.similarity));
+
+  const kwRank = new Map<string, number>();
+  kwHits.forEach((h, i) => kwRank.set(h.session.id, i + 1));
+  const semRank = new Map<string, number>();
+  semHits.forEach((h, i) => semRank.set(h.session.id, i + 1));
 
   const kwMap = new Map<string, KeywordHit>(kwHits.map((h) => [h.session.id, h]));
   const semMap = new Map<string, SemanticHit>(semHits.map((h) => [h.session.id, h]));
@@ -171,16 +192,18 @@ function mergeHybrid(
     const kw = kwMap.get(id);
     const sem = semMap.get(id);
     const session = (kw ?? sem)!.session;
-    const kwNorm = kw ? kw.score / maxKw : 0;
-    const semNorm = sem ? sem.similarity / maxSem : 0;
-    const combined = round4(HYBRID_SEM_WEIGHT * semNorm + HYBRID_KW_WEIGHT * kwNorm);
+    const kRank = kwRank.get(id);
+    const sRank = semRank.get(id);
+    const rrf =
+      (kRank !== undefined ? 1 / (RRF_K + kRank) : 0) +
+      (sRank !== undefined ? 1 / (RRF_K + sRank) : 0);
     const matchedIn = uniqueFields(kw?.matchedIn ?? [], sem ? (["semantic"] as MatchField[]) : []);
     rows.push({
       ...sessionHitFields(session),
-      matchScore: combined,
+      matchScore: round4(rrf),
       matchedIn,
-      keywordScore: round4(kwNorm),
-      semanticScore: round4(semNorm),
+      keywordScore: kw ? round4(kw.score / maxKw) : 0,
+      semanticScore: sem ? round4(sem.similarity / maxSem) : 0,
     });
   }
   rows.sort((a, b) => b.matchScore - a.matchScore);

@@ -138,7 +138,7 @@ describe("RecallService.search", () => {
     expect(result.results[0]?.matchScore).toBe(1);
   });
 
-  it("hybrid mode blends 0.4 * kw + 0.6 * sem after per-leg normalization", async () => {
+  it("hybrid mode uses RRF fusion — rank 1 in both legs scores 2/(60+1)", async () => {
     const store = new InMemoryStore(
       corpus,
       [{ sessionId: "b", distance: 0 }],
@@ -148,10 +148,30 @@ describe("RecallService.search", () => {
     const result = await svc.search({ query: "pgvector", mode: "hybrid" });
     const top = result.results[0];
     expect(top?.id).toBe("b");
-    // kwNorm = 1 (only hit / its own max), semNorm = 1 (distance 0) => 0.4 + 0.6 = 1
-    expect(top?.matchScore).toBeCloseTo(1, 4);
+    // RRF with both legs at rank 1, k=60: 1/61 + 1/61 = 2/61 ≈ 0.0328
+    expect(top?.matchScore).toBeCloseTo(2 / 61, 4);
+    // Informational normalized scores preserved for UI display.
     expect(top?.keywordScore).toBe(1);
     expect(top?.semanticScore).toBe(1);
+  });
+
+  it("hybrid RRF: a session in only one leg scores half as much as a session in both legs at the same rank", async () => {
+    // Session "a" appears in keyword leg at rank 1.
+    // Session "b" appears in BOTH legs at rank 1.
+    const store = new InMemoryStore(
+      corpus,
+      [{ sessionId: "b", distance: 0 }],
+      [
+        { sessionId: "a", score: 100 }, // huge raw score, but only one leg
+        { sessionId: "b", score: 1 },   // tiny raw score, but in both legs
+      ],
+    );
+    const svc = new RecallService({ store, llm: new StubEmbedder() });
+    const result = await svc.search({ query: "pgvector", mode: "hybrid" });
+    expect(result.results[0]?.id).toBe("b"); // both-legs wins despite tiny kw score
+    expect(result.results[0]?.matchScore).toBeCloseTo(1 / 61 + 1 / 62, 4); // b is rank 1 sem, rank 2 kw
+    expect(result.results[1]?.id).toBe("a");
+    expect(result.results[1]?.matchScore).toBeCloseTo(1 / 61, 4); // a is rank 1 kw only
   });
 
   it("clamps limit to MAX_LIMIT (100) and at least 1", async () => {
