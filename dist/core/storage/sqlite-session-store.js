@@ -215,9 +215,12 @@ export class SqliteSessionStore {
     insertChunkEmbedding(sessionId, chunkIdx, vector) {
         const db = this.db;
         const blob = Buffer.from(vector.buffer, vector.byteOffset, vector.byteLength);
+        // vec0 enforces strict integer typing on aux columns; better-sqlite3 binds
+        // JS numbers as FLOAT, so cast chunk_idx via BigInt to bind as INTEGER.
+        const idxInt = BigInt(chunkIdx);
         const info = db
             .prepare("INSERT INTO session_embedding_chunks (embedding, session_id, chunk_idx) VALUES (?, ?, ?)")
-            .run(blob, sessionId, chunkIdx);
+            .run(blob, sessionId, idxInt);
         const chunkId = Number(info.lastInsertRowid);
         db.prepare("INSERT INTO session_chunk_map (chunk_id, session_id, chunk_idx) VALUES (?, ?, ?)").run(chunkId, sessionId, chunkIdx);
     }
@@ -377,9 +380,12 @@ export class SqliteSessionStore {
         const k = Math.max(1, Math.trunc(limit));
         const blob = Buffer.from(queryVector.buffer, queryVector.byteOffset, queryVector.byteLength);
         // Overfetch chunks so the max-pool grouping has enough unique sessions
-        // even when several top chunks come from the same session. CHUNK_OVERFETCH
-        // ≈ average chunks per session on the LongMemEval-S benchmark.
-        const CHUNK_OVERFETCH = 4;
+        // even when several top chunks come from the same session. Default 4
+        // ≈ average chunks per session on the LongMemEval-S benchmark. Env-
+        // tunable via NLM_CHUNK_OVERFETCH for per-type ablation against the
+        // preference/assistant regressions where displacement is hypothesized.
+        const envOverfetch = Number.parseInt(process.env["NLM_CHUNK_OVERFETCH"] ?? "", 10);
+        const CHUNK_OVERFETCH = Number.isFinite(envOverfetch) && envOverfetch > 0 ? envOverfetch : 4;
         const chunkK = k * CHUNK_OVERFETCH;
         const rows = this.db
             .prepare(`

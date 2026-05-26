@@ -134,44 +134,57 @@ export async function reembedCorpus(opts: BackfillOptions): Promise<BackfillRepo
         continue;
       }
 
-      // Embed all chunks before mutating the DB. A partial run leaves the
-      // session id off the done-set, so the next run retries it whole.
-      const vectors: Float32Array[] = [];
-      let embedFailed = false;
-      for (const chunk of chunks) {
-        try {
-          const out = await opts.embedder.embed(chunk, "document");
-          vectors.push(out.vector);
-        } catch (e) {
-          if (!(e instanceof LLMUnreachableError)) throw e;
-          embedFailed = true;
-          break;
+      // Per-chunk failure tolerance matches live ingest: one chunk hitting
+      // the Ollama edge-cliff 500 must not zero out an entire session's
+      // coverage. Single retry on LLMUnreachableError catches transient
+      // failures; persistent ones are dropped. Session is "done" if any
+      // chunk landed — partial max-pool coverage beats none.
+      const vectors: { idx: number; vec: Float32Array }[] = [];
+      let chunkSkipped = 0;
+      for (let c = 0; c < chunks.length; c++) {
+        const chunk = chunks[c]!;
+        let lastErr: unknown;
+        for (let attempt = 0; attempt < 2; attempt++) {
+          try {
+            const out = await opts.embedder.embed(chunk, "document");
+            vectors.push({ idx: c, vec: out.vector });
+            lastErr = undefined;
+            break;
+          } catch (e) {
+            lastErr = e;
+            if (!(e instanceof LLMUnreachableError)) throw e;
+            if (attempt === 0) await new Promise((r) => setTimeout(r, 200));
+          }
         }
+        if (lastErr !== undefined) chunkSkipped += 1;
       }
-      if (embedFailed) {
+      if (vectors.length === 0) {
         failed += 1;
-        opts.onProgress?.(idx, total, row.id, "FAIL (embedder)");
+        opts.onProgress?.(idx, total, row.id, `FAIL (embedder, ${chunkSkipped}/${chunks.length} chunks)`);
         continue;
       }
 
       try {
         delChunks(row.id);
-        for (let c = 0; c < vectors.length; c++) {
-          const vec = vectors[c]!;
+        for (const { idx: cidx, vec } of vectors) {
           const blob = Buffer.from(vec.buffer, vec.byteOffset, vec.byteLength);
           // BigInt cast so vec0's aux chunk_idx column receives an INTEGER.
-          const info = insChunk.run(blob, row.id, BigInt(c));
-          insMap.run(Number(info.lastInsertRowid), row.id, c);
+          const info = insChunk.run(blob, row.id, BigInt(cidx));
+          insMap.run(Number(info.lastInsertRowid), row.id, cidx);
         }
-      } catch {
+      } catch (e) {
         failed += 1;
-        opts.onProgress?.(idx, total, row.id, "FAIL (db)");
+        opts.onProgress?.(idx, total, row.id, `FAIL (db): ${(e as Error).message}`);
         continue;
       }
 
       done.add(row.id);
       succeeded += 1;
-      opts.onProgress?.(idx, total, row.id, `OK (${vectors.length} chunks)`);
+      const status =
+        chunkSkipped === 0
+          ? `OK (${vectors.length} chunks)`
+          : `PARTIAL (${vectors.length}/${chunks.length} chunks, ${chunkSkipped} skipped)`;
+      opts.onProgress?.(idx, total, row.id, status);
       if (succeeded % SAVE_EVERY === 0) saveState(statePath, done);
     }
     saveState(statePath, done);

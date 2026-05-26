@@ -534,9 +534,12 @@ export class SqliteSessionStore implements SessionStore {
       queryVector.byteLength,
     );
     // Overfetch chunks so the max-pool grouping has enough unique sessions
-    // even when several top chunks come from the same session. CHUNK_OVERFETCH
-    // ≈ average chunks per session on the LongMemEval-S benchmark.
-    const CHUNK_OVERFETCH = 4;
+    // even when several top chunks come from the same session. Default 4
+    // ≈ average chunks per session on the LongMemEval-S benchmark. Env-
+    // tunable via NLM_CHUNK_OVERFETCH for per-type ablation against the
+    // preference/assistant regressions where displacement is hypothesized.
+    const envOverfetch = Number.parseInt(process.env["NLM_CHUNK_OVERFETCH"] ?? "", 10);
+    const CHUNK_OVERFETCH = Number.isFinite(envOverfetch) && envOverfetch > 0 ? envOverfetch : 4;
     const chunkK = k * CHUNK_OVERFETCH;
     const rows = this.db
       .prepare<[Buffer, number], NeighborRow>(`
