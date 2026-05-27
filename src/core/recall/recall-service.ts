@@ -23,6 +23,7 @@ import type {
 } from "@shared/types.js";
 import { applyFilter } from "./filter.js";
 import { keywordMatchFields } from "./match-fields.js";
+import { detectQueryShape } from "./query-shape.js";
 import { tokenSet } from "./tokenize.js";
 
 const DEFAULT_LIMIT = 20;
@@ -133,7 +134,11 @@ export class RecallService {
       return finalize(input.query, entity, kind, mode, limit, semHits.map(toSemanticHit));
     }
     const merged = mergeHybrid(kwHits, semHits);
-    const result = finalize(input.query, entity, kind, mode, limit, merged);
+    const shape = detectQueryShape(input.query);
+    const forceIncluded = (shape.hasTemporal && shape.hasNamedEntity)
+      ? forceIncludeKeywordTop(merged, kwHits, limit)
+      : merged;
+    const result = finalize(input.query, entity, kind, mode, limit, forceIncluded);
     return semError ? { ...result, modeUnavailable: semError } : result;
   }
 }
@@ -208,6 +213,30 @@ function mergeHybrid(
   }
   rows.sort((a, b) => b.matchScore - a.matchScore);
   return rows;
+}
+
+/**
+ * Force-include the keyword-leg rank-1 session into the merged top-`limit`
+ * result. Only invoked when the query shape (temporal + named entity)
+ * indicates a Mode A pattern where pure RRF is known to demote keyword
+ * winners (see query-shape.ts for diagnosis). If the rank-1 keyword session
+ * is already in the limited top-N, no change. Otherwise it's inserted at
+ * position `limit - 1`, displacing the lowest-confidence merged hit.
+ */
+function forceIncludeKeywordTop(
+  merged: ReadonlyArray<RecallHit>,
+  kwHits: ReadonlyArray<KeywordHit>,
+  limit: number,
+): ReadonlyArray<RecallHit> {
+  if (kwHits.length === 0 || merged.length === 0) return merged;
+  const topId = kwHits[0]!.session.id;
+  const top = merged.slice(0, limit);
+  if (top.some((h) => h.id === topId)) return merged;
+  const forcedHit = merged.find((h) => h.id === topId);
+  if (!forcedHit) return merged;
+  const kept = top.slice(0, Math.max(0, limit - 1));
+  const tail = merged.slice(limit);
+  return [...kept, forcedHit, ...tail];
 }
 
 function toKeywordHit(h: KeywordHit): RecallHit {
