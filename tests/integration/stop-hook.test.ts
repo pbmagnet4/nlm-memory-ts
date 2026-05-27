@@ -4,7 +4,9 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { runStopHook } from "../../src/hook/stop-hook.js";
 import { recordSurfaced } from "../../src/core/hook/memo.js";
+import { loadCited } from "../../src/core/hook/cite-memo.js";
 import {
+  readAllAssistantTurns,
   readLastAssistantText,
   readLastAssistantTurn,
 } from "../../src/core/hook/transcript.js";
@@ -298,5 +300,261 @@ describe("runStopHook", () => {
     expect(result.surfacedCount).toBe(1);
     expect(result.citations).toEqual([]);
     expect(postCitation).not.toHaveBeenCalled();
+  });
+
+  it("detects a tool_use citation when the model invoked the tool in an EARLIER turn and the last turn is prose-only", async () => {
+    // Real-world pattern: model calls get_session → reads tool_result →
+    // writes prose summary in a separate assistant turn. Stop fires after
+    // the summary. The pre-fix detector scanned only the summary turn and
+    // missed the get_session call entirely (348 stop firings in production
+    // logged 0 citations despite 23 NLM tool_uses in transcripts).
+    recordSurfaced("conv-multi", [
+      "cc_7ff73609-9ac8-4851-891c-e958915bb7fa",
+    ]);
+    const transcript = join(tmp, "t.jsonl");
+    writeTranscript(transcript, [
+      { type: "user", message: { content: "what did we decide about FTS5?" } },
+      {
+        type: "assistant",
+        message: {
+          content: [
+            { type: "text", text: "Let me check the prior session." },
+            {
+              type: "tool_use",
+              name: "mcp__nlm-memory__get_session",
+              input: { id: "cc_7ff73609-9ac8-4851-891c-e958915bb7fa" },
+            },
+          ],
+        },
+      },
+      {
+        type: "user",
+        message: {
+          content: [{ type: "tool_result", content: "session body..." }],
+        },
+      },
+      {
+        type: "assistant",
+        message: {
+          content: [
+            {
+              type: "text",
+              text: "FTS5 was chosen because the keyword leg already ranks high.",
+            },
+          ],
+        },
+      },
+    ]);
+    const postCitation = vi.fn().mockResolvedValue(undefined);
+    const result = await runStopHook(
+      {
+        conversationId: "conv-multi",
+        transcriptPath: transcript,
+        stopHookActive: false,
+      },
+      { postCitation },
+    );
+    expect(result.citations).toEqual([
+      {
+        id: "cc_7ff73609-9ac8-4851-891c-e958915bb7fa",
+        kind: "tool_use",
+      },
+    ]);
+    expect(postCitation).toHaveBeenCalledTimes(1);
+    expect(postCitation).toHaveBeenCalledWith(
+      "conv-multi",
+      "cc_7ff73609-9ac8-4851-891c-e958915bb7fa",
+      "tool_use",
+      // preview is the LAST turn's prose, not the earlier prose.
+      expect.stringContaining("FTS5 was chosen"),
+    );
+  });
+
+  it("dedupes across repeated Stop firings — same tool_use citation is posted exactly once", async () => {
+    recordSurfaced("conv-dedup", [
+      "cc_sub_a139f4ab7ca5aa909",
+    ]);
+    const transcript = join(tmp, "t.jsonl");
+    writeTranscript(transcript, [
+      {
+        type: "assistant",
+        message: {
+          content: [
+            {
+              type: "tool_use",
+              name: "mcp__nlm-memory__get_session",
+              input: { id: "cc_sub_a139f4ab7ca5aa909" },
+            },
+          ],
+        },
+      },
+      {
+        type: "assistant",
+        message: { content: [{ type: "text", text: "first response" }] },
+      },
+    ]);
+    const postCitation = vi.fn().mockResolvedValue(undefined);
+
+    // First fire — citation detected and posted.
+    const first = await runStopHook(
+      {
+        conversationId: "conv-dedup",
+        transcriptPath: transcript,
+        stopHookActive: false,
+      },
+      { postCitation },
+    );
+    expect(first.citations).toHaveLength(1);
+    expect(postCitation).toHaveBeenCalledTimes(1);
+
+    // Transcript grows with another assistant turn (typical conversation
+    // continuation). The earlier tool_use is still in the file.
+    writeTranscript(transcript, [
+      {
+        type: "assistant",
+        message: {
+          content: [
+            {
+              type: "tool_use",
+              name: "mcp__nlm-memory__get_session",
+              input: { id: "cc_sub_a139f4ab7ca5aa909" },
+            },
+          ],
+        },
+      },
+      {
+        type: "assistant",
+        message: { content: [{ type: "text", text: "first response" }] },
+      },
+      {
+        type: "user",
+        message: { content: "follow up" },
+      },
+      {
+        type: "assistant",
+        message: { content: [{ type: "text", text: "second response" }] },
+      },
+    ]);
+
+    // Second fire — same id, must not post again.
+    const second = await runStopHook(
+      {
+        conversationId: "conv-dedup",
+        transcriptPath: transcript,
+        stopHookActive: false,
+      },
+      { postCitation },
+    );
+    expect(second.citations).toEqual([]);
+    expect(postCitation).toHaveBeenCalledTimes(1);
+
+    // Cite-memo persisted the dedup state.
+    expect(loadCited("conv-dedup")).toEqual(
+      new Set(["cc_sub_a139f4ab7ca5aa909"]),
+    );
+  });
+
+  it("records a citation locally even if postCitation fails — prevents reposting on next fire", async () => {
+    recordSurfaced("conv-failopen", ["cc_sub_a139f4ab7ca5aa909"]);
+    const transcript = join(tmp, "t.jsonl");
+    writeTranscript(transcript, [
+      {
+        type: "assistant",
+        message: {
+          content: [
+            {
+              type: "tool_use",
+              name: "mcp__nlm-memory__get_session",
+              input: { id: "cc_sub_a139f4ab7ca5aa909" },
+            },
+          ],
+        },
+      },
+    ]);
+    const postCitation = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("ECONNREFUSED"))
+      .mockResolvedValue(undefined);
+    await runStopHook(
+      {
+        conversationId: "conv-failopen",
+        transcriptPath: transcript,
+        stopHookActive: false,
+      },
+      { postCitation },
+    );
+    // Second fire must NOT retry — the citation log carries an at-most-once
+    // contract on the hook side; a missed daemon write is a known telemetry
+    // gap, not a reason to double-count.
+    await runStopHook(
+      {
+        conversationId: "conv-failopen",
+        transcriptPath: transcript,
+        stopHookActive: false,
+      },
+      { postCitation },
+    );
+    expect(postCitation).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("readAllAssistantTurns", () => {
+  let tmp: string;
+  beforeEach(() => {
+    tmp = mkdtempSync(join(tmpdir(), "nlm-transcript-all-"));
+  });
+  afterEach(() => {
+    rmSync(tmp, { recursive: true, force: true });
+  });
+
+  it("returns every assistant turn in order", () => {
+    const path = join(tmp, "t.jsonl");
+    writeTranscript(path, [
+      { type: "user", message: { content: "hi" } },
+      {
+        type: "assistant",
+        message: {
+          content: [
+            { type: "text", text: "first" },
+            {
+              type: "tool_use",
+              name: "mcp__nlm-memory__get_session",
+              input: { id: "cc_x" },
+            },
+          ],
+        },
+      },
+      { type: "user", message: { content: "more" } },
+      {
+        type: "assistant",
+        message: { content: [{ type: "text", text: "second" }] },
+      },
+    ]);
+    const turns = readAllAssistantTurns(path);
+    expect(turns).toHaveLength(2);
+    expect(turns[0]?.text).toBe("first");
+    expect(turns[0]?.toolUses[0]?.name).toBe("mcp__nlm-memory__get_session");
+    expect(turns[1]?.text).toBe("second");
+    expect(turns[1]?.toolUses).toEqual([]);
+  });
+
+  it("returns empty array for missing path", () => {
+    expect(readAllAssistantTurns(join(tmp, "missing.jsonl"))).toEqual([]);
+  });
+
+  it("skips malformed lines without throwing", () => {
+    const path = join(tmp, "t.jsonl");
+    writeFileSync(
+      path,
+      "not json\n" +
+        JSON.stringify({
+          type: "assistant",
+          message: { content: [{ type: "text", text: "real" }] },
+        }) +
+        "\n",
+    );
+    const turns = readAllAssistantTurns(path);
+    expect(turns).toHaveLength(1);
+    expect(turns[0]?.text).toBe("real");
   });
 });

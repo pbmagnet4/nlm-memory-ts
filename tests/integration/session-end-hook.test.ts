@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { runSessionEnd } from "../../src/hook/session-end-hook.js";
 import { loadSurfaced, recordSurfaced } from "../../src/core/hook/memo.js";
+import { loadCited, recordCited } from "../../src/core/hook/cite-memo.js";
 
 describe("session-end hook", () => {
   let tmp: string;
@@ -30,5 +31,18 @@ describe("session-end hook", () => {
   it("reports cleared=false when no memo file exists", () => {
     const result = runSessionEnd("never-existed");
     expect(result.cleared).toBe(false);
+  });
+
+  it("also deletes the cited memo (Stop hook dedup state)", () => {
+    recordCited("conv-c", ["cc_x", "cc_y"]);
+    expect(loadCited("conv-c").size).toBe(2);
+    const result = runSessionEnd("conv-c");
+    expect(result.cleared).toBe(true);
+    expect(loadCited("conv-c").size).toBe(0);
+  });
+
+  it("reports cleared=true when only one of (surfaced, cited) memo exists", () => {
+    recordCited("conv-only-cited", ["cc_x"]);
+    expect(runSessionEnd("conv-only-cited").cleared).toBe(true);
   });
 });

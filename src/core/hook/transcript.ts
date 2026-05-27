@@ -1,16 +1,18 @@
 /**
- * Read the last assistant message from a Claude Code transcript JSONL.
+ * Read assistant messages from a Claude Code transcript JSONL.
  *
  * Claude Code passes `transcript_path` in the Stop hook payload. Each line is
  * a JSON object; assistant turns have `type:"assistant"` and a `message`
  * object whose `content` is an array of blocks (`{type:"text", text:...}` for
  * prose; `{type:"tool_use", name, input}` for tool invocations).
  *
- * Two reads, one walk: `readLastAssistantTurn` parses every block of the
- * last assistant turn and returns both the prose text AND the tool_use
- * blocks. Stop-hook citation detection needs both — prose for substring
- * matches, tool_use for the strong signal that the model invoked an NLM
- * MCP tool referencing a surfaced session ID.
+ * Stop-hook citation detection needs the union of ALL assistant turns in the
+ * transcript, not just the last one: the model typically calls a tool, reads
+ * the result on the next user turn (tool_result), then writes a prose summary
+ * as a separate assistant turn. Scanning only the last turn misses the
+ * tool_use entirely. `readAllAssistantTurns` returns every assistant turn in
+ * order so the detector can fire across the whole conversation; cross-firing
+ * dedup happens upstream via the per-conversation cited memo.
  *
  * Fail-quiet: a malformed file yields nulls/empty rather than throwing —
  * the Stop hook must never break on transcript I/O.
@@ -44,15 +46,59 @@ export interface AssistantTurn {
 
 const EMPTY_TURN: AssistantTurn = { text: "", toolUses: [] };
 
-export function readLastAssistantTurn(transcriptPath: string): AssistantTurn {
-  if (!transcriptPath || !existsSync(transcriptPath)) return EMPTY_TURN;
-  let raw: string;
-  try {
-    raw = readFileSync(transcriptPath, "utf8");
-  } catch {
-    return EMPTY_TURN;
+function parseTurn(parsed: TranscriptLine): AssistantTurn | null {
+  if (parsed.type !== "assistant" || !parsed.message) return null;
+  const content = parsed.message.content;
+  if (typeof content === "string") {
+    return content ? { text: content, toolUses: [] } : null;
   }
-  const lines = raw.split("\n");
+  if (!Array.isArray(content)) return null;
+  const textParts: string[] = [];
+  const toolUses: ToolUseBlock[] = [];
+  for (const block of content) {
+    if (block.type === "text" && typeof block.text === "string") {
+      textParts.push(block.text);
+    } else if (block.type === "tool_use" && typeof block.name === "string") {
+      toolUses.push({ name: block.name, input: block.input });
+    }
+  }
+  if (textParts.length === 0 && toolUses.length === 0) return null;
+  return { text: textParts.join("\n"), toolUses };
+}
+
+function readLines(transcriptPath: string): string[] | null {
+  if (!transcriptPath || !existsSync(transcriptPath)) return null;
+  try {
+    return readFileSync(transcriptPath, "utf8").split("\n");
+  } catch {
+    return null;
+  }
+}
+
+export function readAllAssistantTurns(
+  transcriptPath: string,
+): ReadonlyArray<AssistantTurn> {
+  const lines = readLines(transcriptPath);
+  if (!lines) return [];
+  const turns: AssistantTurn[] = [];
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (!line) continue;
+    let parsed: TranscriptLine;
+    try {
+      parsed = JSON.parse(line) as TranscriptLine;
+    } catch {
+      continue;
+    }
+    const turn = parseTurn(parsed);
+    if (turn) turns.push(turn);
+  }
+  return turns;
+}
+
+export function readLastAssistantTurn(transcriptPath: string): AssistantTurn {
+  const lines = readLines(transcriptPath);
+  if (!lines) return EMPTY_TURN;
   for (let i = lines.length - 1; i >= 0; i--) {
     const line = lines[i]?.trim();
     if (!line) continue;
@@ -62,25 +108,8 @@ export function readLastAssistantTurn(transcriptPath: string): AssistantTurn {
     } catch {
       continue;
     }
-    if (parsed.type !== "assistant" || !parsed.message) continue;
-    const content = parsed.message.content;
-    if (typeof content === "string") {
-      return { text: content, toolUses: [] };
-    }
-    if (Array.isArray(content)) {
-      const textParts: string[] = [];
-      const toolUses: ToolUseBlock[] = [];
-      for (const block of content) {
-        if (block.type === "text" && typeof block.text === "string") {
-          textParts.push(block.text);
-        } else if (block.type === "tool_use" && typeof block.name === "string") {
-          toolUses.push({ name: block.name, input: block.input });
-        }
-      }
-      if (textParts.length > 0 || toolUses.length > 0) {
-        return { text: textParts.join("\n"), toolUses };
-      }
-    }
+    const turn = parseTurn(parsed);
+    if (turn) return turn;
   }
   return EMPTY_TURN;
 }
