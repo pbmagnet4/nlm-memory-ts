@@ -40,6 +40,12 @@ import { DeepSeekClient } from "../llm/deepseek-client.js";
 import { OllamaClient } from "../llm/ollama-client.js";
 import { autoloadEnv } from "../llm/env-autoload.js";
 import { addHook, buildHookCommand, removeHook, smokeTestHookCommand } from "../core/hook/claude-settings.js";
+import {
+  codexBinaryAvailable,
+  connectCodex,
+  disconnectCodex,
+  pluginScriptsDir,
+} from "../install/codex.js";
 import { runParity } from "./classify-parity.js";
 import { reembedCorpus } from "../core/embedding/embed-backfill.js";
 import { backfillFacts } from "../core/facts/backfill-facts.js";
@@ -587,6 +593,117 @@ hook
     const path = claudeSettingsPath();
     removeHook(path, "*");
     console.error(`nlm: all NLM hooks removed from ${path}.`);
+  });
+
+// Repo root resolves to <pkg>/dist/cli/nlm.js → <pkg>/. The plugin tree is
+// shipped alongside dist/ so plugin/scripts/ is reachable from both local
+// dev and the globally-installed package.
+const REPO_ROOT = resolve(__dirname, "../..");
+
+const connect = program
+  .command("connect")
+  .description("Connect nlm-memory to an AI coding runtime");
+
+connect
+  .command("codex")
+  .description("Install nlm-memory as a Codex CLI plugin (marketplace + plugin add)")
+  .option("--source <source>", "marketplace source (owner/repo, git URL, or local path)", "pbmagnet4/nlm-memory-ts")
+  .option("--local", "shortcut for --source <repo-root>; use during dev")
+  .option("--with-hooks", "additionally write absolute paths to ~/.codex/hooks.json (Codex Desktop fallback for openai/codex#16430)")
+  .option("--dry-run", "print what would happen without invoking codex")
+  .action((opts) => {
+    if (!opts.dryRun && !codexBinaryAvailable()) {
+      console.error("nlm connect codex: `codex` binary not on PATH. Install via `npm i -g @openai/codex` or `brew install codex`.");
+      process.exit(1);
+    }
+    const source = opts.local ? REPO_ROOT : opts.source;
+    const report = connectCodex(
+      { source, withHooks: Boolean(opts.withHooks), dryRun: Boolean(opts.dryRun) },
+      pluginScriptsDir(REPO_ROOT),
+    );
+
+    if (report.dryRun) {
+      console.error("nlm connect codex (dry run):");
+      console.error(`  codex plugin marketplace add ${report.source}`);
+      console.error(`  codex plugin add ${report.pluginName}@${report.marketplaceName}`);
+      console.error(`  write [mcp_servers.nlm-memory] block to ${report.mcpServerWritten}`);
+      if (report.legacyHooksWritten) {
+        console.error(`  write legacy fallback to ${report.legacyHooksWritten}`);
+      }
+      return;
+    }
+
+    if (report.marketplaceAdd && report.marketplaceAdd.status !== 0) {
+      const stderr = report.marketplaceAdd.stderr.trim();
+      console.error(`nlm connect codex: marketplace add failed (exit ${report.marketplaceAdd.status}).`);
+      if (stderr) console.error(`  codex stderr: ${stderr}`);
+      process.exit(1);
+    }
+    if (report.pluginAdd && report.pluginAdd.status !== 0) {
+      const stderr = report.pluginAdd.stderr.trim();
+      console.error(`nlm connect codex: plugin add failed (exit ${report.pluginAdd.status}).`);
+      if (stderr) console.error(`  codex stderr: ${stderr}`);
+      process.exit(1);
+    }
+
+    console.error(`nlm: connected to Codex via marketplace ${report.marketplaceName}, plugin ${report.pluginName}.`);
+    if (report.mcpServerWritten) {
+      console.error(`  Wrote [mcp_servers.nlm-memory] to ${report.mcpServerWritten}`);
+    }
+    if (report.legacyHooksWritten) {
+      console.error(`  Wrote hooks.json fallback to ${report.legacyHooksWritten}`);
+    }
+    console.error("  Next: run `codex` interactively and approve the hook trust prompts. Then prompt — recall should fire.");
+  });
+
+const disconnect = program
+  .command("disconnect")
+  .description("Disconnect nlm-memory from an AI coding runtime");
+
+disconnect
+  .command("codex")
+  .description("Remove the nlm-memory plugin + marketplace from Codex")
+  .option("--with-hooks", "also strip our entries from ~/.codex/hooks.json")
+  .option("--dry-run", "print what would happen without invoking codex")
+  .action((opts) => {
+    if (!opts.dryRun && !codexBinaryAvailable()) {
+      console.error("nlm disconnect codex: `codex` binary not on PATH.");
+      process.exit(1);
+    }
+    const report = disconnectCodex({
+      withHooks: Boolean(opts.withHooks),
+      dryRun: Boolean(opts.dryRun),
+    });
+
+    if (report.dryRun) {
+      console.error("nlm disconnect codex (dry run):");
+      console.error(`  codex plugin remove ${report.pluginName}@${report.marketplaceName}`);
+      console.error(`  codex plugin marketplace remove ${report.marketplaceName}`);
+      console.error("  strip [mcp_servers.nlm-memory] block from ~/.codex/config.toml");
+      if (opts.withHooks) console.error("  strip our entries from ~/.codex/hooks.json");
+      return;
+    }
+
+    // Best-effort removal — non-zero exits from codex are reported but
+    // don't abort, because partial cleanup (plugin removed, marketplace
+    // already gone) is the common case for repeat invocations.
+    const pluginStderr = (report.pluginRemove?.stderr ?? "").trim();
+    const marketStderr = (report.marketplaceRemove?.stderr ?? "").trim();
+    if (report.pluginRemove?.status !== 0 && pluginStderr) {
+      console.error(`  plugin remove: ${pluginStderr}`);
+    }
+    if (report.marketplaceRemove?.status !== 0 && marketStderr) {
+      console.error(`  marketplace remove: ${marketStderr}`);
+    }
+    console.error("nlm: disconnected from Codex.");
+    console.error(report.mcpServerRemoved
+      ? "  Stripped [mcp_servers.nlm-memory] block from ~/.codex/config.toml"
+      : "  No [mcp_servers.nlm-memory] block to remove from ~/.codex/config.toml");
+    if (opts.withHooks) {
+      console.error(report.legacyHooksRemoved
+        ? "  Stripped our entries from ~/.codex/hooks.json"
+        : "  No legacy hooks to remove from ~/.codex/hooks.json");
+    }
   });
 
 program.parseAsync().catch((e) => {

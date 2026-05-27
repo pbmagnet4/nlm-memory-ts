@@ -1,0 +1,22 @@
+{
+  "name": "nlm-memory",
+  "version": "0.3.0",
+  "description": "Local-first persistent memory for AI coding agents. Recalls relevant prior sessions on every prompt; learns which sessions actually get cited. Owner-edited timeline beats append-only memory layers.",
+  "author": {
+    "name": "Edward Chalupa",
+    "url": "https://github.com/pbmagnet4"
+  },
+  "license": "MIT",
+  "homepage": "https://github.com/pbmagnet4/nlm-memory-ts",
+  "repository": "https://github.com/pbmagnet4/nlm-memory-ts",
+  "keywords": [
+    "memory",
+    "context",
+    "recall",
+    "agent",
+    "rag",
+    "session"
+  ],
+  "mcpServers": "./.mcp.json",
+  "hooks": "./hooks/hooks.json"
+}

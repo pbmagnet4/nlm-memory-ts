@@ -16,9 +16,11 @@ import { appendFileSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { clearSurfaced } from "../core/hook/memo.js";
+import { clearCited } from "../core/hook/cite-memo.js";
 export function runSessionEnd(conversationId) {
-    const cleared = clearSurfaced(conversationId);
-    return { conversationId, cleared };
+    const surfacedCleared = clearSurfaced(conversationId);
+    const citedCleared = clearCited(conversationId);
+    return { conversationId, cleared: surfacedCleared || citedCleared };
 }
 function readStdin() {
     return new Promise((resolve) => {

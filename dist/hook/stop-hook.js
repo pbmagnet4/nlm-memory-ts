@@ -21,7 +21,8 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { detectCitations, } from "../core/hook/citation-detect.js";
 import { loadSurfaced } from "../core/hook/memo.js";
-import { readLastAssistantTurn } from "../core/hook/transcript.js";
+import { loadCited, recordCited } from "../core/hook/cite-memo.js";
+import { readAllAssistantTurns, } from "../core/hook/transcript.js";
 const RESPONSE_PREVIEW_CHARS = 200;
 const POST_TIMEOUT_MS = 1500;
 export async function runStopHook(input, deps) {
@@ -46,8 +47,8 @@ export async function runStopHook(input, deps) {
             skipped: false,
         };
     }
-    const turn = readLastAssistantTurn(input.transcriptPath);
-    if (!turn.text && turn.toolUses.length === 0) {
+    const turns = readAllAssistantTurns(input.transcriptPath);
+    if (turns.length === 0) {
         return {
             conversationId: input.conversationId,
             surfacedCount: surfaced.size,
@@ -56,24 +57,43 @@ export async function runStopHook(input, deps) {
             skipped: false,
         };
     }
-    const citations = detectCitations({
-        responseText: turn.text,
-        toolUses: turn.toolUses,
+    const allToolUses = [];
+    const textParts = [];
+    for (const turn of turns) {
+        if (turn.text)
+            textParts.push(turn.text);
+        for (const tu of turn.toolUses)
+            allToolUses.push(tu);
+    }
+    const unionText = textParts.join("\n");
+    const detected = detectCitations({
+        responseText: unionText,
+        toolUses: allToolUses,
         surfacedIds: surfaced,
     });
-    const preview = turn.text.slice(0, RESPONSE_PREVIEW_CHARS);
-    for (const c of citations) {
+    const alreadyCited = loadCited(input.conversationId);
+    const fresh = detected.filter((c) => !alreadyCited.has(c.id));
+    // Preview is the LAST turn's prose — that's what Edward saw when Stop
+    // fired. Stable substrate for the citation log even when detection
+    // ranges across earlier turns.
+    const lastText = turns[turns.length - 1]?.text ?? "";
+    const preview = lastText.slice(0, RESPONSE_PREVIEW_CHARS);
+    for (const c of fresh) {
         try {
             await deps.postCitation(input.conversationId, c.id, c.kind, preview);
         }
         catch {
-            // Daemon down or HTTP error — log entry below still records cited locally.
+            // Daemon down or HTTP error — local memo update below still records
+            // the citation so we don't repost on the next Stop fire.
         }
+    }
+    if (fresh.length > 0) {
+        recordCited(input.conversationId, fresh.map((c) => c.id));
     }
     return {
         conversationId: input.conversationId,
         surfacedCount: surfaced.size,
-        citations,
+        citations: fresh,
         responsePreview: preview,
         skipped: false,
     };
