@@ -83,9 +83,11 @@ export function smokeTestHookCommand(
 
 export type ClaudeHookEvent =
   | "UserPromptSubmit"
+  | "SessionStart"
   | "SessionEnd"
   | "Stop"
   | "PreCompact"
+  | "SubagentStart"
   | "PostToolUse"
   | "PreToolUse";
 

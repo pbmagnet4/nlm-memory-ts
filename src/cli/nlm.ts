@@ -146,7 +146,7 @@ const program = new Command();
 program
   .name("nlm")
   .description("Local-first memory operating system for AI operators")
-  .version("0.2.0-dev");
+  .version("0.3.0");
 
 program
   .command("start")
@@ -519,19 +519,25 @@ program
   });
 
 const HOOK_JS = resolve(__dirname, "../hook/prompt-recall-hook.js");
+const SESSION_START_HOOK_JS = resolve(__dirname, "../hook/session-start-hook.js");
 const SESSION_END_HOOK_JS = resolve(__dirname, "../hook/session-end-hook.js");
 const STOP_HOOK_JS = resolve(__dirname, "../hook/stop-hook.js");
+const PRE_COMPACT_HOOK_JS = resolve(__dirname, "../hook/pre-compact-hook.js");
+const SUBAGENT_START_HOOK_JS = resolve(__dirname, "../hook/subagent-start-hook.js");
 
 interface HookSpec {
-  readonly event: "UserPromptSubmit" | "SessionEnd" | "Stop";
+  readonly event: "UserPromptSubmit" | "SessionStart" | "SessionEnd" | "Stop" | "PreCompact" | "SubagentStart";
   readonly script: string;
   readonly label: string;
 }
 
 const ALL_HOOKS: ReadonlyArray<HookSpec> = [
   { event: "UserPromptSubmit", script: HOOK_JS, label: "recall" },
+  { event: "SessionStart", script: SESSION_START_HOOK_JS, label: "session-start" },
   { event: "SessionEnd", script: SESSION_END_HOOK_JS, label: "session-end" },
   { event: "Stop", script: STOP_HOOK_JS, label: "stop" },
+  { event: "PreCompact", script: PRE_COMPACT_HOOK_JS, label: "pre-compact" },
+  { event: "SubagentStart", script: SUBAGENT_START_HOOK_JS, label: "subagent-start" },
 ];
 
 function claudeSettingsPath(): string {
@@ -579,8 +585,8 @@ hook
     for (const spec of installed) {
       console.error(`  - ${spec.event} → ${spec.label}-hook`);
     }
-    console.error("  Smoke tests passed — both hooks appended synthetic entries to hook-log.jsonl.");
-    console.error("  Recall hook logs to ~/.nlm/hook-log.jsonl and injects nothing in shadow mode.");
+    console.error("  Smoke tests passed — all hooks appended synthetic entries to hook-log.jsonl.");
+    console.error("  Recall hooks log to ~/.nlm/hook-log.jsonl and inject nothing in shadow mode.");
     console.error("  Session-end hook cleans up ~/.nlm/hook-state/<session>.json on session close.");
     console.error("  To go live later: change NLM_HOOK_MODE=shadow to live for the recall hook.");
     console.error("  To remove: nlm hook uninstall");
