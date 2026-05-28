@@ -286,6 +286,33 @@ export function createApp(deps: HttpDeps): Hono {
     return c.json(stats);
   });
 
+  // Explicit citation from the cite_session MCP tool. One POST per session
+  // the agent explicitly declares it referenced. Source is always "mcp_tool"
+  // so the training extractor can distinguish deterministic tool citations
+  // from stop-hook detected prose citations.
+  app.post("/api/citation/explicit", async (c) => {
+    let body: Record<string, unknown>;
+    try {
+      body = (await c.req.json()) as Record<string, unknown>;
+    } catch {
+      return c.json({ error: "body must be JSON" }, 400);
+    }
+    const id = body["id"];
+    if (typeof id !== "string" || !id) {
+      return c.json({ error: "id required" }, 400);
+    }
+    await appendCitation(
+      {
+        conversationId: typeof body["conversation_id"] === "string" ? body["conversation_id"] : "mcp_tool",
+        citedId: id,
+        kind: "tool_use",
+        ...(typeof body["note"] === "string" ? { responsePreview: body["note"] } : {}),
+      },
+      ...(deps.citationLogPath !== undefined ? [deps.citationLogPath] : []),
+    );
+    return c.json({ logged: true, id, source: "mcp_tool" });
+  });
+
   // ── Fact recall (Phase B.3 surface, exposed over HTTP for the MCP proxy) ──
 
   app.get("/api/recall/facts", async (c) => {

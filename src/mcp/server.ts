@@ -15,6 +15,7 @@ import { encode as toonEncode } from "@toon-format/toon";
 import { z } from "zod";
 import { logQuery } from "@core/recall/query-log.js";
 import { logFactQuery } from "@core/recall-facts/fact-query-log.js";
+import { appendCitation } from "@core/recall/citation-log.js";
 import type { FactRecallService } from "@core/recall-facts/fact-recall-service.js";
 import type { RecallService } from "@core/recall/recall-service.js";
 import type { FactStore } from "@ports/fact-store.js";
@@ -207,6 +208,8 @@ export async function getFactHistoryHandler(
   }
 }
 
+const CITE_SESSION_DESCRIPTION = `Log that you used a previously-surfaced session in your response. Pass the session ID. This lets NLM learn which surfaced sessions are actually useful, training a per-operator reranker over time. Call after writing your response, with one cite per surfaced session you actually drew from.`;
+
 const RECALL_DESCRIPTION = `Search prior AI sessions across every runtime the user has connected (Claude Code,
 Hermes, pi, Codex, Gemini, Aider). Local-first, fast (~200-400ms warm), idempotent,
 safe to call eagerly. No rate limit; no cost per call.
@@ -239,6 +242,8 @@ questions). Call get_session for the full body when a digest looks relevant.
 Skip ONLY when the request is purely forward-looking with no plausible prior
 context — drafting wholly new content, naming something new, brainstorming
 greenfield ideas. When in doubt, call.
+
+When you reference a returned session in your response, call \`cite_session(id)\` to log it so the recall layer can learn what is useful.
 
 Args:
   - query: keyword(s) to search. Token-weighted match against label, decisions,
@@ -328,6 +333,34 @@ Args:
   - subject: normalized (lowercase-kebab) entity or topic name.
   - predicate: optional — narrow to a single (subject, predicate) chain. When
                omitted, returns one chain per predicate for this subject.`;
+
+// Minimum length for a session ID to be treated as valid.
+const MIN_CITE_ID_LEN = 6;
+
+export interface CiteSessionInput {
+  readonly id: string;
+  readonly conversation_id?: string | undefined;
+  readonly note?: string | undefined;
+}
+
+export async function citeSessionHandler(
+  input: CiteSessionInput,
+): Promise<ToolResult> {
+  if (!input.id || input.id.length < MIN_CITE_ID_LEN) {
+    return err(new Error(`id must be at least ${MIN_CITE_ID_LEN} characters`));
+  }
+  try {
+    await appendCitation({
+      conversationId: input.conversation_id ?? "mcp_tool",
+      citedId: input.id,
+      kind: "tool_use",
+      ...(input.note !== undefined ? { responsePreview: input.note } : {}),
+    });
+    return ok({ logged: true, id: input.id });
+  } catch (e) {
+    return err(e);
+  }
+}
 
 export function createMcpServer(deps: McpDeps): McpServer {
   const server = new McpServer({
@@ -470,6 +503,32 @@ export function createMcpServer(deps: McpDeps): McpServer {
       async (args) => getFactHistoryHandler(deps, args) as never,
     );
   }
+
+  server.registerTool(
+    "cite_session",
+    {
+      title: "Cite NLM Session",
+      description: CITE_SESSION_DESCRIPTION,
+      inputSchema: {
+        id: z.string().min(MIN_CITE_ID_LEN).describe("Session ID returned by recall_sessions that you referenced in your response."),
+        conversation_id: z
+          .string()
+          .optional()
+          .describe("Current conversation ID. Optional — NLM infers from context when absent."),
+        note: z
+          .string()
+          .optional()
+          .describe("Short rationale for why this session was useful. Optional."),
+      },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: false,
+      },
+    },
+    async (args) => citeSessionHandler(args) as never,
+  );
 
   return server;
 }

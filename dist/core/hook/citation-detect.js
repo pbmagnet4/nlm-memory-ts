@@ -30,13 +30,29 @@ export function detectCitations(input) {
     }
     const cited = [];
     const claimedByToolUse = new Set();
-    // Channel A: tool_use. Stringify each input and substring-scan for
-    // surfaced IDs. The NLM MCP tools (get_session, recall_sessions,
-    // recall_facts, get_fact_history) all accept ids via top-level fields,
-    // so the full JSON serialization always includes the id when used.
+    // Channel A: tool_use. Two sub-cases:
+    //
+    // A1: cite_session — the model called the explicit citation primitive with
+    //     the session ID in tu.input.id. Strongest possible signal: structured,
+    //     deterministic, zero ambiguity. ID must be a surfaced session ID.
+    //
+    // A2: other NLM tools (get_session, recall_sessions, recall_facts,
+    //     get_fact_history) — stringify the input and substring-scan for surfaced
+    //     IDs. These tools accept ids via top-level fields, so the serialization
+    //     always includes the id when used.
     for (const tu of input.toolUses) {
         if (!isNlmTool(tu.name))
             continue;
+        if (isCiteSessionTool(tu.name)) {
+            // A1: explicit cite_session call — id is in tu.input.id directly.
+            const explicitId = safeInputId(tu.input);
+            if (explicitId && surfaced.includes(explicitId) && !claimedByToolUse.has(explicitId)) {
+                cited.push({ id: explicitId, kind: "tool_use" });
+                claimedByToolUse.add(explicitId);
+            }
+            continue;
+        }
+        // A2: other NLM tools — serialize and substring-scan.
         const serialized = safeStringify(tu.input);
         if (!serialized)
             continue;
@@ -75,6 +91,17 @@ function isNlmTool(name) {
     // server name is "nlm-memory" in the user's .mcp.json today; accept any
     // server name containing "nlm" so future renames stay covered.
     return /^mcp__[^_]*nlm[^_]*__/.test(name);
+}
+function isCiteSessionTool(name) {
+    return name.endsWith("__cite_session");
+}
+function safeInputId(input) {
+    if (typeof input === "object" && input !== null && "id" in input) {
+        const id = input["id"];
+        if (typeof id === "string")
+            return id;
+    }
+    return undefined;
 }
 function safeStringify(value) {
     try {

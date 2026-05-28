@@ -21,6 +21,14 @@ function detectCitations(input) {
   const claimedByToolUse = /* @__PURE__ */ new Set();
   for (const tu of input.toolUses) {
     if (!isNlmTool(tu.name)) continue;
+    if (isCiteSessionTool(tu.name)) {
+      const explicitId = safeInputId(tu.input);
+      if (explicitId && surfaced.includes(explicitId) && !claimedByToolUse.has(explicitId)) {
+        cited.push({ id: explicitId, kind: "tool_use" });
+        claimedByToolUse.add(explicitId);
+      }
+      continue;
+    }
     const serialized = safeStringify(tu.input);
     if (!serialized) continue;
     for (const id of surfaced) {
@@ -43,6 +51,16 @@ function detectCitations(input) {
 }
 function isNlmTool(name) {
   return /^mcp__[^_]*nlm[^_]*__/.test(name);
+}
+function isCiteSessionTool(name) {
+  return name.endsWith("__cite_session");
+}
+function safeInputId(input) {
+  if (typeof input === "object" && input !== null && "id" in input) {
+    const id = input["id"];
+    if (typeof id === "string") return id;
+  }
+  return void 0;
 }
 function safeStringify(value) {
   try {
