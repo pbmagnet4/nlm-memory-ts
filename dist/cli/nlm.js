@@ -48,6 +48,7 @@ import { ScanScheduler } from "../core/scheduler/scheduler.js";
 import { MemoSweepScheduler } from "../core/hook/memo-sweep.js";
 import { isAgentLoaded, isBenignBootoutError } from "./launchctl-helpers.js";
 import { adapterFromSource } from "../core/adapters/from-source.js";
+import { scanUsefulHits } from "../core/recall/useful-scan.js";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const MIGRATIONS_DIR = resolve(__dirname, "../../migrations");
@@ -665,6 +666,19 @@ disconnect
             ? "  Stripped our entries from ~/.codex/hooks.json"
             : "  No legacy hooks to remove from ~/.codex/hooks.json");
     }
+});
+program
+    .command("useful-scan")
+    .description("Scan hook log for useful recall hits; writes to ~/.nlm/useful-hit-log.jsonl")
+    .option("-d, --days <n>", "rolling window in days", (v) => Number.parseInt(v, 10), 1)
+    .option("--dry-run", "compute without writing to disk")
+    .action(async (opts) => {
+    const result = await scanUsefulHits({ days: opts.days, ...(opts.dryRun ? { dryRun: true } : {}) });
+    const rate = result.measurable === 0
+        ? "no measurable entries"
+        : `${result.useful}/${result.measurable} useful (${Math.round((result.useful / result.measurable) * 100)}%)`;
+    console.error(`nlm useful-scan: scanned ${result.total} recalls in the last ${opts.days}d — ${rate}` +
+        (opts.dryRun ? " (dry-run)" : `, ${result.appended} appended`));
 });
 program.parseAsync().catch((e) => {
     console.error("nlm: fatal", e);

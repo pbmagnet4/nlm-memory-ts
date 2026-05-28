@@ -13,6 +13,7 @@ import { appendFile, mkdir, readFile, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
 import type { RecallKindFilter, RecallMode } from "@shared/types.js";
+import { readUsefulHitRate, defaultUsefulHitLogPath } from "./useful-scan.js";
 
 export interface LogEntry {
   readonly source: string;
@@ -30,9 +31,9 @@ export interface StatsResult {
   readonly total: number;
   readonly with_results: number;
   readonly hit_rate: number;
-  // null until nlm useful-scan is implemented and populates useful-hit-log.jsonl.
-  // Forward-compat stub so the daily digest schema doesn't need a version bump.
-  readonly useful_hit_rate: null;
+  // null until nlm useful-scan has run and populated useful-hit-log.jsonl with
+  // measurable entries. Non-null once ≥1 measurable entry exists in the window.
+  readonly useful_hit_rate: number | null;
   readonly by_source: Record<string, number>;
   readonly top_queries: ReadonlyArray<{ readonly query: string; readonly count: number }>;
   readonly log_present: boolean;
@@ -68,13 +69,16 @@ export async function logQuery(
 export async function recallStats(
   days: number,
   logPath: string = defaultLogPath(),
+  usefulHitLogPath: string = defaultUsefulHitLogPath(),
 ): Promise<StatsResult> {
+  const useful_hit_rate = await readUsefulHitRate(usefulHitLogPath, days);
+
   const base: StatsResult = {
     days,
     total: 0,
     with_results: 0,
     hit_rate: 0,
-    useful_hit_rate: null,
+    useful_hit_rate,
     by_source: {},
     top_queries: [],
     log_present: false,
@@ -137,7 +141,7 @@ export async function recallStats(
     total,
     with_results: withResults,
     hit_rate: total === 0 ? 0 : Math.round((withResults / total) * 1000) / 1000,
-    useful_hit_rate: null,
+    useful_hit_rate,
     by_source: Object.fromEntries(sortedSources),
     top_queries: sortedQueries.map(([query, count]) => ({ query, count })),
     log_present: true,

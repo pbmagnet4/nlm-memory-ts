@@ -24,7 +24,7 @@ export interface StatsResult {
     readonly total: number;
     readonly with_results: number;
     readonly hit_rate: number;
-    readonly useful_hit_rate: null;
+    readonly useful_hit_rate: number | null;
     readonly by_source: Record<string, number>;
     readonly top_queries: ReadonlyArray<{
         readonly query: string;
@@ -33,4 +33,4 @@ export interface StatsResult {
     readonly log_present: boolean;
 }
 export declare function logQuery(entry: LogEntry, logPath?: string): Promise<void>;
-export declare function recallStats(days: number, logPath?: string): Promise<StatsResult>;
+export declare function recallStats(days: number, logPath?: string, usefulHitLogPath?: string): Promise<StatsResult>;

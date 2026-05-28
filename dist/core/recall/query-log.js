@@ -11,6 +11,7 @@
 import { appendFile, mkdir, readFile, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
+import { readUsefulHitRate, defaultUsefulHitLogPath } from "./useful-scan.js";
 function defaultLogPath() {
     return process.env["NLM_QUERY_LOG"] ?? join(homedir(), ".nlm", "query_log.jsonl");
 }
@@ -34,13 +35,14 @@ export async function logQuery(entry, logPath = defaultLogPath()) {
         // Telemetry must never break the call path.
     }
 }
-export async function recallStats(days, logPath = defaultLogPath()) {
+export async function recallStats(days, logPath = defaultLogPath(), usefulHitLogPath = defaultUsefulHitLogPath()) {
+    const useful_hit_rate = await readUsefulHitRate(usefulHitLogPath, days);
     const base = {
         days,
         total: 0,
         with_results: 0,
         hit_rate: 0,
-        useful_hit_rate: null,
+        useful_hit_rate,
         by_source: {},
         top_queries: [],
         log_present: false,
@@ -101,7 +103,7 @@ export async function recallStats(days, logPath = defaultLogPath()) {
         total,
         with_results: withResults,
         hit_rate: total === 0 ? 0 : Math.round((withResults / total) * 1000) / 1000,
-        useful_hit_rate: null,
+        useful_hit_rate,
         by_source: Object.fromEntries(sortedSources),
         top_queries: sortedQueries.map(([query, count]) => ({ query, count })),
         log_present: true,
