@@ -58,7 +58,7 @@ export declare function getFactHistoryHandler(deps: McpDeps, input: {
 export interface CiteSessionInput {
     readonly id: string;
     readonly conversation_id?: string | undefined;
-    readonly note?: string | undefined;
+    readonly reason?: string | undefined;
 }
 export declare function citeSessionHandler(input: CiteSessionInput): Promise<ToolResult>;
 export declare function createMcpServer(deps: McpDeps): McpServer;

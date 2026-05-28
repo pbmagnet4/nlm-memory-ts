@@ -18,7 +18,7 @@ import { appendCitation } from "../core/recall/citation-log.js";
 const CHARACTER_LIMIT = 25_000;
 const DEFAULT_LIMIT = 10;
 const SERVER_NAME = "nlm-memory-mcp-server";
-const SERVER_VERSION = "0.3.0";
+const SERVER_VERSION = "0.4.0";
 /** TOON encoding cuts token usage on large recall payloads. Opt in via
  *  NLM_FORMAT=toon in the MCP server's env (see .mcp.json). Defaults to JSON. */
 const USE_TOON = process.env.NLM_FORMAT === "toon";
@@ -275,7 +275,7 @@ export async function citeSessionHandler(input) {
             conversationId: input.conversation_id ?? "mcp_tool",
             citedId: input.id,
             kind: "tool_use",
-            ...(input.note !== undefined ? { responsePreview: input.note } : {}),
+            ...(input.reason !== undefined ? { responsePreview: input.reason } : {}),
         });
         return ok({ logged: true, id: input.id });
     }
@@ -413,10 +413,10 @@ export function createMcpServer(deps) {
                 .string()
                 .optional()
                 .describe("Current conversation ID. Optional — NLM infers from context when absent."),
-            note: z
+            reason: z
                 .string()
                 .optional()
-                .describe("Short rationale for why this session was useful. Optional."),
+                .describe("Why this session was useful. Optional but encouraged — articulating the reason is a weak training signal."),
         },
         annotations: {
             readOnlyHint: false,
