@@ -14,8 +14,9 @@
  * session state to manage. The existing stdio MCP path is untouched.
  */
 
-import { existsSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { extname, join, normalize, sep } from "node:path";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { dirname, extname, join, normalize, sep } from "node:path";
 import { Hono } from "hono";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { createMcpServer } from "../mcp/server.js";
@@ -28,6 +29,7 @@ import type { RecallService } from "@core/recall/recall-service.js";
 import { logQuery, recallStats } from "@core/recall/query-log.js";
 import { recentQueryLog } from "@core/recall/recent-log.js";
 import { appendCitation, citationStats } from "@core/recall/citation-log.js";
+import { clearSurfaced, loadSurfaced } from "@core/hook/memo.js";
 import type { FactRecallService } from "@core/recall-facts/fact-recall-service.js";
 import { factRecallStats, logFactQuery } from "@core/recall-facts/fact-query-log.js";
 import type { FactStore } from "@ports/fact-store.js";
@@ -311,6 +313,75 @@ export function createApp(deps: HttpDeps): Hono {
       ...(deps.citationLogPath !== undefined ? [deps.citationLogPath] : []),
     );
     return c.json({ logged: true, id, source: "mcp_tool" });
+  });
+
+  // ── Hook endpoints (Phase 1d) ─────────────────────────────────────────────
+
+  // PreCompact hook: flush surfaced-ID memo for the compacting conversation
+  // and stamp a compaction record so post-compaction recalls don't get
+  // suppressed by stale "already surfaced" gates.
+  // Payload: { conversation_id, transcript_path?, surfaced_set?, ts? }
+  app.post("/api/hook/pre-compact", async (c) => {
+    let body: Record<string, unknown>;
+    try {
+      body = (await c.req.json()) as Record<string, unknown>;
+    } catch {
+      return c.json({ error: "body must be JSON" }, 400);
+    }
+    const conversationId = body["conversation_id"];
+    if (typeof conversationId !== "string" || !conversationId) {
+      return c.json({ error: "conversation_id required" }, 400);
+    }
+    const flushed = loadSurfaced(conversationId).size;
+    clearSurfaced(conversationId);
+    const compactedAt = new Date().toISOString();
+    const logPath = process.env["NLM_HOOK_LOG"] ?? join(homedir(), ".nlm", "hook-log.jsonl");
+    try {
+      mkdirSync(dirname(logPath), { recursive: true });
+      appendFileSync(
+        logPath,
+        `${JSON.stringify({ ts: compactedAt, kind: "pre-compact", conversationId, flushed })}\n`,
+        "utf8",
+      );
+    } catch {
+      // Log failure must not fail the endpoint.
+    }
+    return c.json({ ok: true, flushed, compacted_at: compactedAt });
+  });
+
+  // SubagentStart hook: logging-only stub. Records the parent→subagent link
+  // so future corpus-linking logic can correlate subagent sessions back to
+  // their dispatching conversation.
+  // Payload: { parent_conversation_id, subagent_session_id, subagent_description?, ts? }
+  app.post("/api/hook/subagent-start", async (c) => {
+    let body: Record<string, unknown>;
+    try {
+      body = (await c.req.json()) as Record<string, unknown>;
+    } catch {
+      return c.json({ error: "body must be JSON" }, 400);
+    }
+    const parentConversationId = body["parent_conversation_id"];
+    const subagentSessionId = body["subagent_session_id"];
+    if (typeof parentConversationId !== "string" || !parentConversationId) {
+      return c.json({ error: "parent_conversation_id required" }, 400);
+    }
+    if (typeof subagentSessionId !== "string" || !subagentSessionId) {
+      return c.json({ error: "subagent_session_id required" }, 400);
+    }
+    const subagentDescription = typeof body["subagent_description"] === "string" ? body["subagent_description"] : "";
+    const ts = typeof body["ts"] === "string" ? body["ts"] : new Date().toISOString();
+    const logPath = process.env["NLM_SUBAGENT_LOG"] ?? join(homedir(), ".nlm", "subagent-log.jsonl");
+    try {
+      mkdirSync(dirname(logPath), { recursive: true });
+      appendFileSync(
+        logPath,
+        `${JSON.stringify({ ts, parent_conversation_id: parentConversationId, subagent_session_id: subagentSessionId, subagent_description: subagentDescription })}\n`,
+        "utf8",
+      );
+    } catch {
+      // Log failure must not fail the endpoint.
+    }
+    return c.json({ ok: true, recorded: true });
   });
 
   // ── Fact recall (Phase B.3 surface, exposed over HTTP for the MCP proxy) ──
