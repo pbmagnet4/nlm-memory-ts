@@ -12,6 +12,7 @@ import type { SourceRow } from "../sources/source-registry.js";
 import { ClaudeCodeAdapter } from "./claude-code.js";
 import { HermesAdapter } from "./hermes.js";
 import { JsonlGenericAdapter, type JsonlGenericConfig } from "./jsonl-generic.js";
+import { OpenCodeAdapter } from "./opencode.js";
 import { PiAdapter } from "./pi.js";
 
 export function adapterFromSource(source: SourceRow): TranscriptAdapter | null {
@@ -24,6 +25,10 @@ export function adapterFromSource(source: SourceRow): TranscriptAdapter | null {
       return source.pathOrUrl
         ? new HermesAdapter({ sessionsPath: source.pathOrUrl })
         : new HermesAdapter();
+    case "opencode":
+      return source.pathOrUrl
+        ? new OpenCodeAdapter({ dbPath: source.pathOrUrl })
+        : new OpenCodeAdapter();
     case "pi":
       return source.pathOrUrl
         ? new PiAdapter({ sessionsPath: source.pathOrUrl })

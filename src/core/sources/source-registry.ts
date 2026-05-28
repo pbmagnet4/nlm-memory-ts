@@ -18,8 +18,9 @@ import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type Database from "better-sqlite3";
+import { defaultDbPath as defaultOpenCodeDbPath } from "../adapters/opencode.js";
 
-export type SourceKind = "claude-code" | "hermes" | "pi" | "jsonl-generic" | "webhook";
+export type SourceKind = "claude-code" | "hermes" | "opencode" | "pi" | "jsonl-generic" | "webhook";
 
 export interface SourceRow {
   readonly id: number;
@@ -204,6 +205,8 @@ export class SourceRegistry {
     const piPath = process.env["PI_SESSIONS_PATH"]
       ?? join(homedir(), ".pi", "agent", "sessions");
 
+    const openCodeDbPath = defaultOpenCodeDbPath();
+
     const presets: SourceInsert[] = [
       {
         kind: "claude-code",
@@ -218,6 +221,13 @@ export class SourceRegistry {
         pathOrUrl: hermesPath,
         runtimeLabel: "hermes/1.0",
         enabled: existsSync(hermesPath),
+      },
+      {
+        kind: "opencode",
+        name: "OpenCode",
+        pathOrUrl: openCodeDbPath,
+        runtimeLabel: "opencode/1.0",
+        enabled: existsSync(openCodeDbPath),
       },
       {
         kind: "pi",
