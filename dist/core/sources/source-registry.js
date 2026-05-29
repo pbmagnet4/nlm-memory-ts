@@ -16,8 +16,11 @@ import { randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { defaultHistoryFile as defaultAiderHistoryFile } from "../adapters/aider.js";
+import { defaultDbPath as defaultCursorDbPath } from "../adapters/cursor.js";
 import { defaultDbPath as defaultHermesAgentDbPath } from "../adapters/hermes-agent.js";
 import { defaultDbPath as defaultOpenCodeDbPath } from "../adapters/opencode.js";
+import { defaultUserDir as defaultWindsurfUserDir } from "../adapters/windsurf.js";
 function rowFromDb(r, revealedToken = null) {
     let parsed = {};
     try {
@@ -155,6 +158,9 @@ export class SourceRegistry {
             ?? join(homedir(), ".pi", "agent", "sessions");
         const openCodeDbPath = defaultOpenCodeDbPath();
         const hermesAgentDbPath = defaultHermesAgentDbPath();
+        const aiderHistoryFile = defaultAiderHistoryFile();
+        const cursorDbPath = defaultCursorDbPath();
+        const windsurfUserDir = defaultWindsurfUserDir();
         const presets = [
             {
                 kind: "claude-code",
@@ -176,6 +182,27 @@ export class SourceRegistry {
                 pathOrUrl: hermesAgentDbPath,
                 runtimeLabel: "hermes-agent/1.0",
                 enabled: existsSync(hermesAgentDbPath),
+            },
+            {
+                kind: "aider",
+                name: "Aider",
+                pathOrUrl: aiderHistoryFile,
+                runtimeLabel: "aider/1.0",
+                enabled: existsSync(aiderHistoryFile),
+            },
+            {
+                kind: "cursor",
+                name: "Cursor",
+                pathOrUrl: cursorDbPath,
+                runtimeLabel: "cursor/1.0",
+                enabled: existsSync(cursorDbPath),
+            },
+            {
+                kind: "windsurf",
+                name: "Windsurf",
+                pathOrUrl: windsurfUserDir,
+                runtimeLabel: "windsurf/1.0",
+                enabled: existsSync(windsurfUserDir),
             },
             {
                 kind: "opencode",

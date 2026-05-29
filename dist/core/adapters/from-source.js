@@ -6,18 +6,29 @@
  * The `jsonl-generic` kind delegates to JsonlGenericAdapter with the row's
  * parseConfig. `webhook` returns null — push-based ingest doesn't poll.
  */
+import { AiderAdapter } from "./aider.js";
 import { ClaudeCodeAdapter } from "./claude-code.js";
+import { CursorAdapter } from "./cursor.js";
 import { HermesAdapter } from "./hermes.js";
 import { HermesAgentAdapter } from "./hermes-agent.js";
 import { JsonlGenericAdapter } from "./jsonl-generic.js";
 import { OpenCodeAdapter } from "./opencode.js";
 import { PiAdapter } from "./pi.js";
+import { WindsurfAdapter } from "./windsurf.js";
 export function adapterFromSource(source) {
     switch (source.kind) {
+        case "aider":
+            return source.pathOrUrl
+                ? new AiderAdapter({ historyFile: source.pathOrUrl })
+                : new AiderAdapter();
         case "claude-code":
             return source.pathOrUrl
                 ? new ClaudeCodeAdapter({ projectsPath: source.pathOrUrl })
                 : new ClaudeCodeAdapter();
+        case "cursor":
+            return source.pathOrUrl
+                ? new CursorAdapter({ dbPath: source.pathOrUrl })
+                : new CursorAdapter();
         case "hermes":
             return source.pathOrUrl
                 ? new HermesAdapter({ sessionsPath: source.pathOrUrl })
@@ -34,6 +45,10 @@ export function adapterFromSource(source) {
             return source.pathOrUrl
                 ? new PiAdapter({ sessionsPath: source.pathOrUrl })
                 : new PiAdapter();
+        case "windsurf":
+            return source.pathOrUrl
+                ? new WindsurfAdapter({ userDir: source.pathOrUrl })
+                : new WindsurfAdapter();
         case "jsonl-generic":
             if (!source.pathOrUrl)
                 return null;

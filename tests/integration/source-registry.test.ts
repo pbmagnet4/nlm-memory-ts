@@ -31,18 +31,20 @@ describe("SourceRegistry", () => {
     rmSync(tmp, { recursive: true, force: true });
   });
 
-  it("starts empty and seeds six presets", () => {
+  it("starts empty and seeds eight presets", () => {
     expect(registry.list()).toEqual([]);
     registry.seedDefaults();
     const rows = registry.list();
-    expect(rows.map((r) => r.kind)).toEqual(["claude-code", "hermes", "hermes-agent", "aider", "opencode", "pi"]);
+    expect(rows.map((r) => r.kind)).toEqual([
+      "claude-code", "hermes", "hermes-agent", "aider", "cursor", "windsurf", "opencode", "pi",
+    ]);
     expect(rows.every((r) => r.runtimeLabel.endsWith("/1.0"))).toBe(true);
   });
 
   it("seedDefaults is idempotent", () => {
     registry.seedDefaults();
     registry.seedDefaults();
-    expect(registry.list().length).toBe(6);
+    expect(registry.list().length).toBe(8);
   });
 
   it("inserts a custom JSONL source and round-trips parse config", () => {

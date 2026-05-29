@@ -13,7 +13,7 @@
  * See docs/plans/desktop-product.md (Phase 0).
  */
 import type Database from "better-sqlite3";
-export type SourceKind = "claude-code" | "hermes" | "hermes-agent" | "opencode" | "pi" | "jsonl-generic" | "webhook";
+export type SourceKind = "claude-code" | "hermes" | "hermes-agent" | "aider" | "cursor" | "windsurf" | "opencode" | "pi" | "jsonl-generic" | "webhook";
 export interface SourceRow {
     readonly id: number;
     readonly kind: SourceKind;
