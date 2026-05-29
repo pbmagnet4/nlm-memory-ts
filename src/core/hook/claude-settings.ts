@@ -84,7 +84,7 @@ export function smokeTestHookCommand(
       encoding: "utf8",
     },
   );
-  if (result.error) {
+  if (result.error && (result.error as NodeJS.ErrnoException).code !== "EPIPE") {
     return { ok: false, reason: `spawn failed: ${result.error.message}` };
   }
   if (result.status !== 0) {
