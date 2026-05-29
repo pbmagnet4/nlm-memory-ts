@@ -3,7 +3,7 @@
 // src/hook/stop-hook.ts
 import { pathToFileURL } from "node:url";
 import { appendFileSync, mkdirSync as mkdirSync3 } from "node:fs";
-import { homedir as homedir3 } from "node:os";
+import { homedir as homedir4 } from "node:os";
 import { dirname, join as join3 } from "node:path";
 
 // src/core/hook/citation-detect.ts
@@ -162,6 +162,56 @@ function readAllAssistantTurns(transcriptPath) {
   return turns;
 }
 
+// src/llm/env-autoload.ts
+import { readFileSync as readFileSync4, existsSync as existsSync4 } from "node:fs";
+import { homedir as homedir3 } from "node:os";
+import { resolve } from "node:path";
+var DEFAULT_SEARCH_PATHS = [
+  "~/.nlm/.env",
+  "./.env",
+  "../.env",
+  "../../.env"
+];
+function expandHome(p) {
+  if (p.startsWith("~/")) return resolve(homedir3(), p.slice(2));
+  return p;
+}
+function autoloadEnv(extraPaths = []) {
+  const loaded = [];
+  const paths = [...DEFAULT_SEARCH_PATHS, ...extraPaths];
+  for (const raw of paths) {
+    const path = expandHome(raw);
+    if (!existsSync4(path)) continue;
+    try {
+      const content = readFileSync4(path, "utf8");
+      for (const line of content.split("\n")) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith("#") || !trimmed.includes("=")) continue;
+        const eq = trimmed.indexOf("=");
+        const key = trimmed.slice(0, eq).trim();
+        let value = trimmed.slice(eq + 1).trim();
+        if (value.startsWith('"') && value.endsWith('"') || value.startsWith("'") && value.endsWith("'")) {
+          value = value.slice(1, -1);
+        }
+        if (key && process.env[key] === void 0) {
+          process.env[key] = value;
+        }
+      }
+      loaded.push(path);
+    } catch {
+      continue;
+    }
+  }
+  return loaded;
+}
+
+// src/hook/hook-auth.ts
+function hookAuthHeaders(extra = {}) {
+  const token = process.env["NLM_MCP_TOKEN"];
+  if (!token) return { ...extra };
+  return { ...extra, authorization: `Bearer ${token}` };
+}
+
 // src/hook/stop-hook.ts
 var RESPONSE_PREVIEW_CHARS = 200;
 var POST_TIMEOUT_MS = 1500;
@@ -229,7 +279,7 @@ async function runStopHook(input, deps) {
   };
 }
 function logPath() {
-  return process.env["NLM_HOOK_LOG"] ?? join3(homedir3(), ".nlm", "hook-log.jsonl");
+  return process.env["NLM_HOOK_LOG"] ?? join3(homedir4(), ".nlm", "hook-log.jsonl");
 }
 function logStopResult(result) {
   try {
@@ -254,12 +304,12 @@ function logStopResult(result) {
   }
 }
 function readStdin() {
-  return new Promise((resolve) => {
+  return new Promise((resolve2) => {
     let data = "";
     process.stdin.setEncoding("utf8");
     process.stdin.on("data", (chunk) => data += chunk);
-    process.stdin.on("end", () => resolve(data));
-    process.stdin.on("error", () => resolve(data));
+    process.stdin.on("end", () => resolve2(data));
+    process.stdin.on("error", () => resolve2(data));
   });
 }
 async function postCitationOverHttp(conversationId, citedId, kind, responsePreview) {
@@ -270,7 +320,7 @@ async function postCitationOverHttp(conversationId, citedId, kind, responsePrevi
   try {
     await fetch(url, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: hookAuthHeaders({ "content-type": "application/json" }),
       body: JSON.stringify({
         conversation_id: conversationId,
         cited_id: citedId,
@@ -285,6 +335,7 @@ async function postCitationOverHttp(conversationId, citedId, kind, responsePrevi
 }
 async function main() {
   try {
+    autoloadEnv();
     const raw = await readStdin();
     const payload = JSON.parse(raw);
     const conversationId = typeof payload.session_id === "string" ? payload.session_id : "unknown";

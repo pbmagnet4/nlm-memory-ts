@@ -347,8 +347,9 @@ export class SqliteSessionStore {
             return null;
         const entities = this.loadEntities([sessionId]);
         const markers = this.loadMarkers([sessionId]);
+        const edges = this.loadSessionEdges([sessionId]);
         const overlay = loadActionOverlay(this.db);
-        return this.rowToSession(row, entities, markers, overlay);
+        return this.rowToSession(row, entities, markers, overlay, edges);
     }
     /**
      * Batched session fetch for the recall path. Deliberately omits the
@@ -481,6 +482,11 @@ export class SqliteSessionStore {
         session.decisions.forEach((d, i) => markerStmt.run(session.id, "decision", d, i));
         session.open.forEach((q, i) => markerStmt.run(session.id, "open", q, i));
     }
+    insertEdgeForTest(fromSession, toSession, kind = "supersedes") {
+        this.db
+            .prepare("INSERT OR IGNORE INTO session_edges (from_session, to_session, kind) VALUES (?, ?, ?)")
+            .run(fromSession, toSession, kind);
+    }
     insertEmbeddingForTest(sessionId, vector) {
         this.insertChunkEmbeddingForTest(sessionId, 0, vector);
     }
@@ -510,6 +516,32 @@ export class SqliteSessionStore {
         }
         return out;
     }
+    loadSessionEdges(ids) {
+        if (ids.length === 0)
+            return new Map();
+        const placeholders = ids.map(() => "?").join(",");
+        const rows = this.db
+            .prepare(`
+        SELECT from_session, to_session
+        FROM session_edges
+        WHERE kind = 'supersedes'
+          AND (from_session IN (${placeholders}) OR to_session IN (${placeholders}))
+      `)
+            .all(...ids, ...ids);
+        const out = new Map();
+        for (const id of ids) {
+            out.set(id, { supersededBy: null, supersedes: [] });
+        }
+        for (const r of rows) {
+            const fromEntry = out.get(r.from_session);
+            if (fromEntry)
+                fromEntry.supersedes.push(r.to_session);
+            const toEntry = out.get(r.to_session);
+            if (toEntry)
+                toEntry.supersededBy = r.from_session;
+        }
+        return out;
+    }
     loadMarkers(ids) {
         if (ids.length === 0)
             return new Map();
@@ -536,7 +568,7 @@ export class SqliteSessionStore {
         }
         return out;
     }
-    rowToSession(row, entitiesById, markersById, overlay) {
+    rowToSession(row, entitiesById, markersById, overlay, edgesById) {
         const m = markersById.get(row.id);
         const rawDecisions = m?.decisions ?? [];
         const rawOpen = m?.open ?? [];
@@ -553,6 +585,7 @@ export class SqliteSessionStore {
             }
             activeOpen.push(text);
         }
+        const edges = edgesById?.get(row.id);
         return {
             id: row.id,
             runtime: row.runtime,
@@ -569,6 +602,9 @@ export class SqliteSessionStore {
             entities: entitiesById.get(row.id) ?? [],
             decisions: [...rawDecisions, ...promotedDecisions],
             open: activeOpen,
+            ...(edges !== undefined
+                ? { supersededBy: edges.supersededBy, supersedes: edges.supersedes }
+                : {}),
         };
     }
 }

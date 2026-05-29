@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useDataset, relativeAge } from "../lib/dataset.js";
 import type { DatasetSession } from "../lib/dataset.js";
 import { SessionDrawer } from "../components/SessionDrawer.js";
+import { Skeleton } from "../components/Skeleton.js";
 import { readViewSettings } from "../lib/view-settings.js";
 
 type Span = "7d" | "30d" | "90d" | "all";
@@ -68,7 +69,12 @@ export function RiverPage() {
       }))
       .sort((a, b) => b.total - a.total)
       .slice(0, 24);
-    return { dates, laneRows, total: filtered.length };
+    const recentEntities = new Set<string>(
+      filtered
+        .filter(s => s.started_at && (now - Date.parse(s.started_at)) < 86_400_000)
+        .flatMap(s => s.entities)
+    );
+    return { dates, laneRows, total: filtered.length, recentEntities };
   }, [data, span]);
 
   const onCellClick = (entity: string, date: string) => {
@@ -135,7 +141,19 @@ export function RiverPage() {
     setDragRange(null);
   };
 
-  if (loading && !data) return <div className="page-pad"><div className="muted">Loading dataset…</div></div>;
+  if (loading && !data) return (
+    <div className="page-pad">
+      <div className="river-toolbar"><Skeleton h={22} w={80} /></div>
+      <div className="card" style={{ padding: 12 }}>
+        {Array.from({ length: 8 }).map((_, i) => (
+          <div key={i} className="river-row" style={{ marginBottom: 3 }}>
+            <Skeleton h={14} w={160} />
+            <Skeleton h={20} />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
   if (error && !data) return <div className="page-pad"><div className="muted error">{error}</div></div>;
   if (!data || !view) return null;
 
@@ -153,6 +171,13 @@ export function RiverPage() {
             onClick={() => setSpan(s)}
           >{s}</button>
         ))}
+        <div className="river-legend" aria-label="Activity scale">
+          <span className="muted small">less</span>
+          {([0, 1, 2, 3, 4] as const).map((t) => (
+            <span key={t} className={`river-legend-cell tier-${t}`} />
+          ))}
+          <span className="muted small">more</span>
+        </div>
       </div>
 
       <div
@@ -173,40 +198,52 @@ export function RiverPage() {
         <div className="river-row river-row-dates">
           <div className="river-lane-label river-lane-label--header" aria-hidden="true" />
           <div className="river-cells">
-            {view.dates.map((d) => (
-              <div key={d} className="river-date-cell" title={d}>{d.slice(5)}</div>
-            ))}
+            {(() => {
+              const len = view.dates.length;
+              const stride = len <= 60 ? 1 : len <= 120 ? 2 : len <= 250 ? 7 : 14;
+              return view.dates.map((d, index) => {
+                const isMonthStart = d.slice(8, 10) === "01";
+                const cls = ["river-date-cell", isMonthStart ? "river-date-cell--month-start" : ""].filter(Boolean).join(" ");
+                return (
+                  <div key={d} className={cls} title={d}>
+                    {index % stride === 0 ? d.slice(5) : ""}
+                  </div>
+                );
+              });
+            })()}
           </div>
         </div>
-        {view.laneRows.map(({ entity, perDate, total }) => (
-          <div key={entity} className="river-row">
-            <button
-              type="button"
-              className="river-lane-label"
-              onClick={() => navigate(`/thread?entity=${encodeURIComponent(entity)}`)}
-            >
-              <span className="dot" style={{ background: data.entity_colors[entity] ?? "#666" }} />
-              <span className="river-lane-name">{entity}</span>
-              <span className="muted small">{total}</span>
-            </button>
-            <div className="river-cells">
-              {view.dates.map((d) => {
-                const v = perDate.get(d) ?? 0;
-                return (
-                  <div
-                    key={d}
-                    className={`river-cell tier-${tier(v)}`}
-                    onMouseEnter={(e) => setHover({ entity, date: d, count: v, x: e.clientX, y: e.clientY })}
-                    onMouseMove={(e) => setHover({ entity, date: d, count: v, x: e.clientX, y: e.clientY })}
-                    onMouseLeave={() => setHover(null)}
-                    onClick={() => v > 0 && onCellClick(entity, d)}
-                    style={v > 0 ? { cursor: "pointer" } : {}}
-                  />
-                );
-              })}
+        {view.laneRows.map(({ entity, perDate, total }) => {
+          const isRecent = view.recentEntities.has(entity);
+          return (
+            <div key={entity} className="river-row">
+              <button
+                type="button"
+                className="river-lane-label"
+                onClick={() => navigate(`/thread?entity=${encodeURIComponent(entity)}`)}
+              >
+                <span className={`dot${isRecent ? " dot-pulse" : ""}`} style={{ background: data.entity_colors[entity] ?? "#666" }} />
+                <span className="river-lane-name">{entity}</span>
+                <span className="muted small">{total}</span>
+              </button>
+              <div className="river-cells">
+                {view.dates.map((d) => {
+                  const v = perDate.get(d) ?? 0;
+                  return (
+                    <div
+                      key={d}
+                      className={`river-cell tier-${tier(v)}`}
+                      onMouseEnter={(e) => setHover({ entity, date: d, count: v, x: e.clientX, y: e.clientY })}
+                      onMouseLeave={() => setHover(null)}
+                      onClick={() => v > 0 && onCellClick(entity, d)}
+                      style={v > 0 ? { cursor: "pointer" } : {}}
+                    />
+                  );
+                })}
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {view.laneRows.length === 0 && <div className="muted">No entities in this window.</div>}
@@ -229,17 +266,26 @@ export function RiverPage() {
         />
       )}
 
-      {sessionId && (
-        <SessionDrawer
-          sessionId={sessionId}
-          onClose={() => setSessionId(null)}
-          entityColor={(() => {
-            const s = data.sessions.find((x) => x.id === sessionId);
-            const e = s?.entities[0];
-            return e ? data.entity_colors[e] : undefined;
-          })()}
-        />
-      )}
+      {sessionId && (() => {
+        const siblingList = cellDrawer
+          ? cellDrawer.sessions
+          : [...data.sessions].filter((s) => s.started_at !== null).sort((a, b) => (b.started_at ?? "").localeCompare(a.started_at ?? ""));
+        const idx = siblingList.findIndex((s) => s.id === sessionId);
+        const prevId = idx < siblingList.length - 1 ? siblingList[idx + 1]!.id : null;
+        const nextId = idx > 0 ? siblingList[idx - 1]!.id : null;
+        const s = data.sessions.find((x) => x.id === sessionId);
+        const e = s?.entities[0];
+        return (
+          <SessionDrawer
+            sessionId={sessionId}
+            onClose={() => setSessionId(null)}
+            onNavigate={setSessionId}
+            prevSessionId={prevId}
+            nextSessionId={nextId}
+            entityColor={e ? data.entity_colors[e] : undefined}
+          />
+        );
+      })()}
     </div>
   );
 }

@@ -26,7 +26,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, resolve, join } from "node:path";
 import { homedir } from "node:os";
 import { mkdirSync, writeFileSync, existsSync, rmSync } from "node:fs";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { Command } from "commander";
 import { serve } from "@hono/node-server";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
@@ -45,7 +45,9 @@ import { OllamaClient } from "../llm/ollama-client.js";
 import { autoloadEnv } from "../llm/env-autoload.js";
 import { addHook, buildHookCommand, removeHook, smokeTestHookCommand } from "../core/hook/claude-settings.js";
 import { codexBinaryAvailable, connectCodex, disconnectCodex, pluginScriptsDir, } from "../install/codex.js";
-import { connectClaudeCode, disconnectClaudeCode, installClaudeCodeHooks } from "../install/claude-code.js";
+import { connectClaudeCode, disconnectClaudeCode, installClaudeCodeHooks, mcpConfigPath } from "../install/claude-code.js";
+import { hardenNlmDirPermissions } from "../install/nlm-dir-perms.js";
+import { ensureMcpToken } from "../install/ollama.js";
 import { connectCursor, disconnectCursor } from "../install/cursor.js";
 import { connectHermes, disconnectHermes, hermesConfigPath } from "../install/hermes.js";
 import { connectHermesAgent, disconnectHermesAgent, hermesAgentPluginDir } from "../install/hermes-agent.js";
@@ -158,6 +160,13 @@ program
     .option("--no-scheduler", "HTTP only; skip the ingest tick loop")
     .option("--interval-min <n>", "scheduler tick interval (min, default 30)", (v) => Number.parseInt(v, 10), 30)
     .action(async (opts) => {
+    // Self-heal perms on every daemon start. Idempotent. Covers upgrade
+    // path from pre-v0.4.2 installs where ~/.nlm contents were world-readable.
+    hardenNlmDirPermissions();
+    // Generate NLM_MCP_TOKEN if missing so /api/* gets Bearer-protected for
+    // non-browser callers. Idempotent: re-reads persisted token first.
+    autoloadEnv();
+    ensureMcpToken();
     const { store, facts, sources, providers, recall, factRecall, embedder, classifier } = buildStack();
     const { existsSync } = await import("node:fs");
     const hasMcpToken = Boolean(process.env["NLM_MCP_TOKEN"]);
@@ -389,6 +398,37 @@ program
 });
 const LAUNCH_AGENT_LABEL = "com.github.pbmagnet4.nlm-memory";
 const LAUNCH_AGENT_PLIST = join(homedir(), "Library", "LaunchAgents", `${LAUNCH_AGENT_LABEL}.plist`);
+const LINUX_SYSTEMD_UNIT_NAME = "nlm.service";
+const LINUX_SYSTEMD_UNIT_PATH = join(homedir(), ".config", "systemd", "user", LINUX_SYSTEMD_UNIT_NAME);
+function buildSystemdUnit(nodeExec, nlmJs) {
+    const logDir = join(homedir(), ".nlm", "logs");
+    return `[Unit]
+Description=NLM Memory — local AI session memory daemon
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=${nodeExec} ${nlmJs} start
+WorkingDirectory=${homedir()}
+Restart=on-failure
+RestartSec=10
+StandardOutput=append:${logDir}/daemon-out.log
+StandardError=append:${logDir}/daemon-err.log
+
+[Install]
+WantedBy=default.target
+`;
+}
+// systemd user instance needs XDG_RUNTIME_DIR (a real user session) and
+// systemctl --user to respond. Both are missing on headless servers without
+// loginctl enable-linger and in many minimal containers.
+function linuxSystemdUserAvailable() {
+    if (process.platform !== "linux")
+        return false;
+    if (!process.env["XDG_RUNTIME_DIR"])
+        return false;
+    return spawnSync("systemctl", ["--user", "--version"], { encoding: "utf8" }).status === 0;
+}
 function buildPlist(nodeExec, nlmJs) {
     const logDir = join(homedir(), ".nlm", "logs");
     return `<?xml version="1.0" encoding="UTF-8"?>
@@ -426,38 +466,91 @@ function buildPlist(nodeExec, nlmJs) {
 }
 program
     .command("install")
-    .description("Install the macOS LaunchAgent so nlm-memory auto-starts on login")
+    .description("Install the auto-start daemon (LaunchAgent on macOS, systemd user unit on Linux)")
     .action(() => {
-    if (process.platform !== "darwin") {
-        console.error("nlm install: only macOS is supported. On Linux, add `nlm start` to your init system manually.");
-        process.exit(1);
+    // Harden before installing the daemon so the persisted unit owner-
+    // checks succeed against locked-down ~/.nlm logs.
+    hardenNlmDirPermissions();
+    if (process.platform === "darwin") {
+        const uid = process.getuid?.();
+        if (uid === undefined) {
+            console.error("nlm install: could not determine UID");
+            process.exit(1);
+        }
+        mkdirSync(join(homedir(), ".nlm", "logs"), { recursive: true });
+        writeFileSync(LAUNCH_AGENT_PLIST, buildPlist(process.execPath, __filename), "utf8");
+        console.error(`nlm: wrote ${LAUNCH_AGENT_PLIST}`);
+        try {
+            execFileSync("launchctl", ["bootout", `gui/${uid}`, LAUNCH_AGENT_LABEL], { stdio: "ignore" });
+        }
+        catch {
+            // not loaded yet — expected on first install
+        }
+        execFileSync("launchctl", ["bootstrap", `gui/${uid}`, LAUNCH_AGENT_PLIST]);
+        console.error("nlm: daemon installed and started.");
+        console.error(`  UI:       http://localhost:${port()}/ui`);
+        console.error(`  To stop:  launchctl stop ${LAUNCH_AGENT_LABEL}`);
+        console.error("  To remove: nlm uninstall");
+        return;
     }
-    const uid = process.getuid?.();
-    if (uid === undefined) {
-        console.error("nlm install: could not determine UID");
-        process.exit(1);
+    if (process.platform === "linux") {
+        if (!linuxSystemdUserAvailable()) {
+            console.error("nlm install: systemd user instance not available.");
+            console.error("  XDG_RUNTIME_DIR missing or `systemctl --user` did not respond.");
+            console.error("  Common on headless servers without an active user session.");
+            console.error("  Start manually with: nlm start &");
+            console.error("  Or enable lingering so user units run without login:");
+            console.error("    sudo loginctl enable-linger $USER");
+            console.error("  Then re-run: nlm install");
+            process.exit(1);
+        }
+        mkdirSync(dirname(LINUX_SYSTEMD_UNIT_PATH), { recursive: true });
+        mkdirSync(join(homedir(), ".nlm", "logs"), { recursive: true });
+        writeFileSync(LINUX_SYSTEMD_UNIT_PATH, buildSystemdUnit(process.execPath, __filename), "utf8");
+        console.error(`nlm: wrote ${LINUX_SYSTEMD_UNIT_PATH}`);
+        execFileSync("systemctl", ["--user", "daemon-reload"]);
+        execFileSync("systemctl", ["--user", "enable", "--now", LINUX_SYSTEMD_UNIT_NAME]);
+        console.error("nlm: daemon installed and started.");
+        console.error(`  UI:        http://localhost:${port()}/ui`);
+        console.error(`  Status:    systemctl --user status ${LINUX_SYSTEMD_UNIT_NAME}`);
+        console.error(`  To stop:   systemctl --user stop ${LINUX_SYSTEMD_UNIT_NAME}`);
+        console.error("  To remove: nlm uninstall");
+        console.error("  Headless? Run `sudo loginctl enable-linger $USER` so the daemon survives logout.");
+        return;
     }
-    mkdirSync(join(homedir(), ".nlm", "logs"), { recursive: true });
-    writeFileSync(LAUNCH_AGENT_PLIST, buildPlist(process.execPath, __filename), "utf8");
-    console.error(`nlm: wrote ${LAUNCH_AGENT_PLIST}`);
-    try {
-        execFileSync("launchctl", ["bootout", `gui/${uid}`, LAUNCH_AGENT_LABEL], { stdio: "ignore" });
-    }
-    catch {
-        // not loaded yet — expected on first install
-    }
-    execFileSync("launchctl", ["bootstrap", `gui/${uid}`, LAUNCH_AGENT_PLIST]);
-    console.error("nlm: daemon installed and started.");
-    console.error(`  UI:       http://localhost:${port()}/ui`);
-    console.error(`  To stop:  launchctl stop ${LAUNCH_AGENT_LABEL}`);
-    console.error("  To remove: nlm uninstall");
+    console.error("nlm install: only macOS and Linux (systemd) are supported.");
+    console.error("  On Windows, run `nlm start` manually or via Task Scheduler.");
+    process.exit(1);
 });
 program
     .command("uninstall")
-    .description("Remove the macOS LaunchAgent")
+    .description("Remove the auto-start daemon (LaunchAgent on macOS, systemd user unit on Linux)")
     .action(() => {
+    if (process.platform === "linux") {
+        // Stop + disable, then remove the unit. Idempotent: ignore "not loaded"
+        // errors so re-running uninstall on a half-removed state still finishes.
+        try {
+            execFileSync("systemctl", ["--user", "disable", "--now", LINUX_SYSTEMD_UNIT_NAME], { stdio: "pipe" });
+            console.error(`nlm: stopped and disabled ${LINUX_SYSTEMD_UNIT_NAME}`);
+        }
+        catch {
+            // Unit wasn't loaded — fine, proceed to file cleanup.
+        }
+        if (existsSync(LINUX_SYSTEMD_UNIT_PATH)) {
+            rmSync(LINUX_SYSTEMD_UNIT_PATH);
+            console.error(`nlm: removed ${LINUX_SYSTEMD_UNIT_PATH}`);
+        }
+        try {
+            execFileSync("systemctl", ["--user", "daemon-reload"], { stdio: "pipe" });
+        }
+        catch {
+            // systemd unavailable — file already removed, nothing more to do.
+        }
+        console.error("nlm: uninstalled. Run `nlm install` to reinstall.");
+        return;
+    }
     if (process.platform !== "darwin") {
-        console.error("nlm uninstall: only macOS is supported.");
+        console.error("nlm uninstall: only macOS and Linux (systemd) are supported.");
         process.exit(1);
     }
     const uid = process.getuid?.();
@@ -529,7 +622,7 @@ const hook = program
     .description("Manage the Claude Code NLM hooks");
 hook
     .command("install")
-    .description("Add the NLM hooks (recall + session-end + stop) to ~/.claude/settings.json (shadow mode)")
+    .description("Add the NLM hooks (recall + session-end + stop) to ~/.claude/settings.json (live mode)")
     .action(() => {
     const path = claudeSettingsPath();
     const hookLogPath = process.env["NLM_HOOK_LOG"] ?? join(homedir(), ".nlm", "hook-log.jsonl");
@@ -539,7 +632,7 @@ hook
     // partial failure is the bug class we shipped #161 to prevent.
     const installed = [];
     for (const spec of ALL_HOOKS) {
-        const command = buildHookCommand(process.execPath, spec.script, "shadow");
+        const command = buildHookCommand(process.execPath, spec.script, "live");
         addHook(path, command, spec.event);
         const smoke = smokeTestHookCommand(command, hookLogPath);
         if (!smoke.ok) {
@@ -559,14 +652,14 @@ hook
         }
         installed.push(spec);
     }
-    console.error(`nlm: NLM hooks installed in ${path} (shadow mode):`);
+    console.error(`nlm: NLM hooks installed in ${path} (live mode):`);
     for (const spec of installed) {
         console.error(`  - ${spec.event} → ${spec.label}-hook`);
     }
     console.error("  Smoke tests passed — all hooks appended synthetic entries to hook-log.jsonl.");
-    console.error("  Recall hooks log to ~/.nlm/hook-log.jsonl and inject nothing in shadow mode.");
+    console.error("  Recall hooks inject prior-session context on UserPromptSubmit and log to ~/.nlm/hook-log.jsonl.");
     console.error("  Session-end hook cleans up ~/.nlm/hook-state/<session>.json on session close.");
-    console.error("  To go live later: change NLM_HOOK_MODE=shadow to live for the recall hook.");
+    console.error("  To run silently for calibration (no injection): set NLM_HOOK_MODE=shadow in the command.");
     console.error("  To remove: nlm hook uninstall");
 });
 hook
@@ -639,7 +732,7 @@ connect
     .action((opts) => {
     if (opts.dryRun) {
         console.error("nlm connect claude-code (dry run):");
-        console.error(`  write [mcpServers.nlm-memory] to ${join(homedir(), ".mcp.json")}`);
+        console.error(`  write [mcpServers.nlm-memory] to ${mcpConfigPath()}`);
         if (opts.withHooks)
             console.error("  install 6 Claude Code hooks");
         return;
@@ -896,6 +989,10 @@ program
         launchAgentLabel: LAUNCH_AGENT_LABEL,
         launchAgentPlist: LAUNCH_AGENT_PLIST,
         buildPlist,
+        linuxSystemdUnitName: LINUX_SYSTEMD_UNIT_NAME,
+        linuxSystemdUnitPath: LINUX_SYSTEMD_UNIT_PATH,
+        buildSystemdUnit,
+        linuxSystemdUserAvailable,
         claudeSettingsPath: claudeSettingsPath(),
         allHooks: ALL_HOOKS,
         addHook,

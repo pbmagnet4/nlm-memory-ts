@@ -17,6 +17,8 @@ import { appendHookLog } from "@core/hook/hook-log.js";
 import { loadSurfaced, recordSurfaced } from "@core/hook/memo.js";
 import { formatPointerBlock } from "@core/hook/pointer-block.js";
 import { selectHits, type RecallHitInput } from "@core/hook/select.js";
+import { autoloadEnv } from "../llm/env-autoload.js";
+import { hookAuthHeaders } from "./hook-auth.js";
 
 const SCORE_THRESHOLD = 0;
 const PER_FIRE_CAP = 3;
@@ -103,7 +105,7 @@ async function recallOverHttp(query: string): Promise<ReadonlyArray<RecallHitInp
   const timer = setTimeout(() => controller.abort(), RECALL_TIMEOUT_MS);
   try {
     const res = await fetch(url, {
-      headers: { "x-recall-source": "session-start-hook" },
+      headers: hookAuthHeaders({ "x-recall-source": "session-start-hook" }),
       signal: controller.signal,
     });
     if (!res.ok) return [];
@@ -134,6 +136,7 @@ async function recallOverHttp(query: string): Promise<ReadonlyArray<RecallHitInp
 
 async function main(): Promise<void> {
   try {
+    autoloadEnv();
     const raw = await readStdin();
     const payload = JSON.parse(raw) as {
       session_id?: unknown;

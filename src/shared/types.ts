@@ -31,6 +31,10 @@ export interface Session {
   readonly entities: ReadonlyArray<string>;
   readonly decisions: ReadonlyArray<string>;
   readonly open: ReadonlyArray<string>;
+  /** IDs of sessions this session supersedes (newer → older). Populated by getById; absent on bulk reads. */
+  readonly supersedes?: ReadonlyArray<string>;
+  /** ID of the session that superseded this one, if any. Populated by getById; absent on bulk reads. */
+  readonly supersededBy?: string | null;
 }
 
 export type RecallMode = "keyword" | "semantic" | "hybrid";

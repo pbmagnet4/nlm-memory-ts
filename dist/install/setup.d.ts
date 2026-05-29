@@ -19,6 +19,10 @@ export interface SetupOptions {
     readonly launchAgentLabel: string;
     readonly launchAgentPlist: string;
     readonly buildPlist: (nodeExec: string, binPath: string) => string;
+    readonly linuxSystemdUnitName: string;
+    readonly linuxSystemdUnitPath: string;
+    readonly buildSystemdUnit: (nodeExec: string, binPath: string) => string;
+    readonly linuxSystemdUserAvailable: () => boolean;
     readonly claudeSettingsPath: string;
     readonly allHooks: ReadonlyArray<{
         event: ClaudeHookEvent;

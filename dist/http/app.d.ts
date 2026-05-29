@@ -62,4 +62,6 @@ export interface HttpDeps {
      */
     readonly mcpDeps?: McpDeps;
 }
+export declare function isLoopbackHost(host: string | undefined, port: number): boolean;
+export declare function isLoopbackOrigin(origin: string | undefined, port: number): boolean;
 export declare function createApp(deps: HttpDeps): Hono;

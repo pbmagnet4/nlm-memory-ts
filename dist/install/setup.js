@@ -12,15 +12,41 @@
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { homedir, platform } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { cancel, confirm, intro, isCancel, log, multiselect, outro, password, select, spinner, } from "@clack/prompts";
 import { connectClaudeCode } from "./claude-code.js";
 import { connectHermes } from "./hermes.js";
 import { codexBinaryAvailable, connectCodex, pluginScriptsDir } from "./codex.js";
 import { defaultDbPath as openCodeDefaultDbPath } from "../core/adapters/opencode.js";
-import { EMBEDDING_MODEL, embeddingModelPresent, installOllama, ollamaBinaryAvailable, ollamaServerRunning, pullEmbeddingModel, startOllamaServer, waitForOllamaServer, writeClassifierConfig, } from "./ollama.js";
+import { EMBEDDING_MODEL, embeddingModelPresent, ensureMcpToken, installOllama, ollamaBinaryAvailable, ollamaServerRunning, pullEmbeddingModel, startOllamaServer, waitForOllamaServer, writeClassifierConfig, } from "./ollama.js";
 import { installClaudeCodeHooks } from "./claude-code.js";
+import { hardenNlmDirPermissions } from "./nlm-dir-perms.js";
 const OS = platform();
+// Embedding-only tags shouldn't be offered as classifier models — they
+// can't run chat completions and the call would fail at first ingest.
+const EMBEDDING_MODEL_PREFIXES = ["nomic-embed", "mxbai-embed", "snowflake-arctic-embed", "bge-"];
+async function fetchOllamaChatModels(timeoutMs = 5000) {
+    const baseUrl = process.env["NLM_OLLAMA_URL"] ?? "http://localhost:11434";
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+        const res = await fetch(`${baseUrl}/api/tags`, { signal: controller.signal });
+        if (!res.ok)
+            return [];
+        const data = (await res.json());
+        return (data.models ?? [])
+            .map((m) => m.name)
+            .filter((n) => typeof n === "string")
+            .filter((n) => !EMBEDDING_MODEL_PREFIXES.some((p) => n.startsWith(p)))
+            .sort();
+    }
+    catch {
+        return [];
+    }
+    finally {
+        clearTimeout(timer);
+    }
+}
 function detectRuntimes() {
     const claudeProjectsPath = process.env["NLM_CLAUDE_PROJECTS_PATH"]
         ?? join(homedir(), ".claude", "projects");
@@ -151,18 +177,28 @@ export async function runSetup(opts) {
     if (ollamaBinaryAvailable() && embeddingModelPresent()) {
         log.success(`Ollama ready — ${EMBEDDING_MODEL} present`);
     }
-    // ── Step 3: classifier API key ────────────────────────────────────────
-    const wantKey = await confirm({ message: "Add a classifier API key? (enables accurate session tagging; DeepSeek is ~$0.002/session)" });
-    if (isCancel(wantKey)) {
+    // ── Step 3: classifier (provider + model + key) ───────────────────────
+    const wantConfigure = await confirm({
+        message: "Configure the session classifier? (controls how new sessions are tagged)",
+    });
+    if (isCancel(wantConfigure)) {
         cancel("Setup cancelled.");
         process.exit(0);
     }
-    if (wantKey) {
+    if (wantConfigure) {
         const classifierChoice = await select({
-            message: "Which classifier?",
+            message: "Which classifier provider?",
             options: [
-                { value: "deepseek", label: "DeepSeek", hint: "recommended — fast, cheap, needs DEEPSEEK_API_KEY" },
-                { value: "ollama-offline", label: "Ollama (offline)", hint: "free, no API key, slower and less accurate" },
+                {
+                    value: "deepseek",
+                    label: "DeepSeek (cloud)",
+                    hint: "fast, cheap (~$0.002/session). Transcripts are sent to api.deepseek.com.",
+                },
+                {
+                    value: "ollama-offline",
+                    label: "Ollama (local)",
+                    hint: "private — runs on this machine via your local Ollama. Slower; needs a chat model pulled.",
+                },
             ],
         });
         if (isCancel(classifierChoice)) {
@@ -170,23 +206,70 @@ export async function runSetup(opts) {
             process.exit(0);
         }
         if (classifierChoice === "deepseek") {
+            log.info("Heads up: DeepSeek classification sends up to 30K chars of each session transcript to api.deepseek.com.");
+            log.info("  Anything in a transcript (pasted keys, client names, internal URLs) leaves this machine.");
+            log.info("  Pick Ollama (local) above if that's not acceptable.");
+            const model = await select({
+                message: "Which DeepSeek model?",
+                options: [
+                    { value: "deepseek-v4-flash", label: "deepseek-v4-flash", hint: "recommended — fast + cheap, ~$0.002/session" },
+                    { value: "deepseek-v4-pro", label: "deepseek-v4-pro", hint: "higher quality, ~10× cost" },
+                    { value: "deepseek-chat", label: "deepseek-chat", hint: "legacy chat model" },
+                ],
+            });
+            if (isCancel(model)) {
+                cancel("Setup cancelled.");
+                process.exit(0);
+            }
             const key = await password({ message: "DeepSeek API key (get one at platform.deepseek.com):" });
             if (isCancel(key)) {
                 cancel("Setup cancelled.");
                 process.exit(0);
             }
-            if (key && key.trim()) {
-                writeClassifierConfig("deepseek", key.trim());
-                log.success("DeepSeek API key saved to ~/.nlm/.env");
+            const apiKey = key && key.trim() ? key.trim() : undefined;
+            writeClassifierConfig(apiKey !== undefined
+                ? { choice: "deepseek", model: model, apiKey }
+                : { choice: "deepseek", model: model });
+            if (apiKey) {
+                log.success(`DeepSeek (${model}) configured — credentials saved to ~/.nlm/.env`);
             }
             else {
-                log.warn("No key entered — set DEEPSEEK_API_KEY in ~/.nlm/.env later.");
+                log.warn(`DeepSeek (${model}) configured — set DEEPSEEK_API_KEY in ~/.nlm/.env before running.`);
             }
         }
         else {
-            writeClassifierConfig("ollama-offline");
-            log.success("Classifier set to Ollama offline (saved to ~/.nlm/.env)");
+            const ollamaModels = await fetchOllamaChatModels();
+            let modelValue = "phi4-mini:latest";
+            if (ollamaModels.length > 0) {
+                const model = await select({
+                    message: "Which Ollama chat model?",
+                    options: ollamaModels.map((m) => ({
+                        value: m,
+                        label: m,
+                        hint: m === "phi4-mini:latest" ? "recommended default — small, fast" : undefined,
+                    })),
+                });
+                if (isCancel(model)) {
+                    cancel("Setup cancelled.");
+                    process.exit(0);
+                }
+                modelValue = model;
+            }
+            else {
+                log.warn("No Ollama chat models detected. Defaulting to phi4-mini:latest.");
+                log.warn("  Pull a model with: ollama pull phi4-mini  (or any chat model you prefer)");
+            }
+            writeClassifierConfig({ choice: "ollama-offline", model: modelValue });
+            log.success(`Ollama classifier (${modelValue}) saved to ~/.nlm/.env`);
         }
+    }
+    // ── Step 3.5: HTTP API auth token ─────────────────────────────────────
+    // Generate a token if one isn't set so /api/* gets Bearer-protected for
+    // non-browser callers (curl, port-forwarded clients). The UI still works
+    // because browsers send Origin and we exempt loopback origins.
+    const token = ensureMcpToken();
+    if (token === process.env["NLM_MCP_TOKEN"] && token.length === 64) {
+        log.success("HTTP API auth token saved to ~/.nlm/.env (NLM_MCP_TOKEN)");
     }
     // ── Step 4: migrations ────────────────────────────────────────────────
     const ms = spinner();
@@ -201,6 +284,13 @@ export async function runSetup(opts) {
         ms.stop("Migration failed");
         log.error(`${e instanceof Error ? e.message : String(e)}`);
         process.exit(1);
+    }
+    // ── Step 4.5: harden ~/.nlm permissions ────────────────────────────────
+    // Idempotent. Covers upgrade from pre-v0.4.2 installs where files were
+    // written without explicit chmod, leaving secrets world-readable.
+    const perms = hardenNlmDirPermissions();
+    if (perms.filesHardened + perms.dirsHardened > 0) {
+        log.success(`Hardened perms on ${perms.dirsHardened} dirs and ${perms.filesHardened} files in ${perms.nlmDir}`);
     }
     // ── Step 5: daemon ────────────────────────────────────────────────────
     if (OS === "darwin") {
@@ -233,9 +323,38 @@ export async function runSetup(opts) {
         }
     }
     else if (OS === "linux") {
-        log.info("Linux daemon: add `nlm start` to your init system to auto-start on boot.");
-        log.info("  systemd example:  sudo systemctl enable --now nlm  (after creating a unit file)");
-        log.info("  Quick start now:  nlm start &");
+        if (opts.linuxSystemdUserAvailable()) {
+            const installDaemon = await confirm({ message: "Install systemd user unit (auto-start on login)?" });
+            if (isCancel(installDaemon)) {
+                cancel("Setup cancelled.");
+                process.exit(0);
+            }
+            if (installDaemon) {
+                const ds = spinner();
+                ds.start("Installing systemd user unit");
+                try {
+                    mkdirSync(dirname(opts.linuxSystemdUnitPath), { recursive: true });
+                    mkdirSync(join(homedir(), ".nlm", "logs"), { recursive: true });
+                    writeFileSync(opts.linuxSystemdUnitPath, opts.buildSystemdUnit(opts.nodeExecPath, opts.nlmBinPath), "utf8");
+                    execFileSync("systemctl", ["--user", "daemon-reload"]);
+                    execFileSync("systemctl", ["--user", "enable", "--now", opts.linuxSystemdUnitName]);
+                    ds.stop("systemd user unit installed — daemon running");
+                    log.info(`  Status:  systemctl --user status ${opts.linuxSystemdUnitName}`);
+                    log.info("  Headless? Run `sudo loginctl enable-linger $USER` so the daemon survives logout.");
+                }
+                catch (e) {
+                    ds.stop("systemd install failed");
+                    log.error(`${e instanceof Error ? e.message : String(e)}`);
+                    log.warn("Run `nlm install` manually later, or start now with: nlm start &");
+                }
+            }
+        }
+        else {
+            log.info("systemd user instance not available (no XDG_RUNTIME_DIR or `systemctl --user`).");
+            log.info("  Common on headless servers — start manually with: nlm start &");
+            log.info("  Or enable lingering, then re-run `nlm install`:");
+            log.info("    sudo loginctl enable-linger $USER");
+        }
     }
     else if (OS === "win32") {
         log.info("Windows daemon: run `nlm start` at login via Task Scheduler.");
@@ -324,6 +443,10 @@ export async function runSetup(opts) {
             case "pi":
                 log.success("pi.dev: session scanning enabled (passive — no extra config needed)");
                 break;
+            default: {
+                const _ = id;
+                log.warn(`Unknown runtime: ${_} — skipping.`);
+            }
         }
     }
     // ── Summary ───────────────────────────────────────────────────────────

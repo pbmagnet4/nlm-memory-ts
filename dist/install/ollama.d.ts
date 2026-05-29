@@ -47,8 +47,25 @@ export declare function waitForOllamaServer(maxAttempts?: number, intervalMs?: n
  */
 export declare function pullEmbeddingModel(): OllamaResult;
 export type ClassifierChoice = "deepseek" | "ollama-offline";
+export interface ClassifierConfigInput {
+    readonly choice: ClassifierChoice;
+    readonly model?: string;
+    readonly apiKey?: string;
+}
 /**
  * Write classifier config to ~/.nlm/.env. Merges into the existing file —
  * only the lines we manage are updated; anything the user added by hand stays.
+ *
+ * Manages three keys: DEEPSEEK_API_KEY, NLM_CLASSIFIER, NLM_CLASSIFIER_MODEL.
+ * Backwards-compatible: passing positional (choice, apiKey) still works.
  */
-export declare function writeClassifierConfig(choice: ClassifierChoice, apiKey?: string): void;
+export declare function writeClassifierConfig(choiceOrInput: ClassifierChoice | ClassifierConfigInput, apiKey?: string): void;
+/**
+ * Generate and persist an NLM_MCP_TOKEN if one isn't already set. Returns
+ * the token that's active for this process. Called during setup and on
+ * `nlm start` so installs that pre-date token-gated /api/* still get
+ * Bearer-protected without operator intervention.
+ *
+ * Token is hex-encoded crypto.randomBytes — 64 chars, 256 bits of entropy.
+ */
+export declare function ensureMcpToken(): string;

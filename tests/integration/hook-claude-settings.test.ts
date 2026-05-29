@@ -15,6 +15,8 @@ interface Settings {
   hooks?: {
     UserPromptSubmit?: Array<{ hooks: Array<{ type: string; command: string }> }>;
     PostToolUse?: Array<{ hooks: Array<{ type: string; command: string }> }>;
+    SessionEnd?: Array<{ hooks: Array<{ type: string; command: string }> }>;
+    [event: string]: Array<{ hooks: Array<{ type: string; command: string }> }> | undefined;
   };
 }
 
@@ -105,14 +107,27 @@ describe("claude-settings hook editor", () => {
     expect(shEcho(shellQuote(tricky))).toBe(tricky);
   });
 
-  it("buildHookCommand quotes both paths", () => {
+  it("buildHookCommand quotes both paths (POSIX)", () => {
     const cmd = buildHookCommand(
       "/usr/local/bin/node",
       "~/projects/nlm/dist/hook/prompt-recall-hook.js",
       "shadow",
+      "darwin",
     );
     expect(cmd).toBe(
       "NLM_HOOK_MODE=shadow '/usr/local/bin/node' '~/projects/nlm/dist/hook/prompt-recall-hook.js'",
+    );
+  });
+
+  it("buildHookCommand emits cmd.exe format on Windows", () => {
+    const cmd = buildHookCommand(
+      "C:\\Program Files\\nodejs\\node.exe",
+      "C:\\Users\\Test\\AppData\\Roaming\\npm\\node_modules\\nlm-memory\\dist\\hook\\prompt-recall-hook.js",
+      "live",
+      "win32",
+    );
+    expect(cmd).toBe(
+      'set NLM_HOOK_MODE=live && "C:\\Program Files\\nodejs\\node.exe" "C:\\Users\\Test\\AppData\\Roaming\\npm\\node_modules\\nlm-memory\\dist\\hook\\prompt-recall-hook.js"',
     );
   });
 

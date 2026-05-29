@@ -30,6 +30,8 @@ import {
   readAllAssistantTurns,
   type ToolUseBlock,
 } from "@core/hook/transcript.js";
+import { autoloadEnv } from "../llm/env-autoload.js";
+import { hookAuthHeaders } from "./hook-auth.js";
 
 const RESPONSE_PREVIEW_CHARS = 200;
 const POST_TIMEOUT_MS = 1500;
@@ -193,7 +195,7 @@ async function postCitationOverHttp(
   try {
     await fetch(url, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: hookAuthHeaders({ "content-type": "application/json" }),
       body: JSON.stringify({
         conversation_id: conversationId,
         cited_id: citedId,
@@ -209,6 +211,7 @@ async function postCitationOverHttp(
 
 async function main(): Promise<void> {
   try {
+    autoloadEnv();
     const raw = await readStdin();
     const payload = JSON.parse(raw) as {
       session_id?: unknown;

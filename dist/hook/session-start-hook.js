@@ -16,6 +16,8 @@ import { appendHookLog } from "../core/hook/hook-log.js";
 import { loadSurfaced, recordSurfaced } from "../core/hook/memo.js";
 import { formatPointerBlock } from "../core/hook/pointer-block.js";
 import { selectHits } from "../core/hook/select.js";
+import { autoloadEnv } from "../llm/env-autoload.js";
+import { hookAuthHeaders } from "./hook-auth.js";
 const SCORE_THRESHOLD = 0;
 const PER_FIRE_CAP = 3;
 const PER_CONVERSATION_CAP = 10;
@@ -79,7 +81,7 @@ async function recallOverHttp(query) {
     const timer = setTimeout(() => controller.abort(), RECALL_TIMEOUT_MS);
     try {
         const res = await fetch(url, {
-            headers: { "x-recall-source": "session-start-hook" },
+            headers: hookAuthHeaders({ "x-recall-source": "session-start-hook" }),
             signal: controller.signal,
         });
         if (!res.ok)
@@ -104,6 +106,7 @@ async function recallOverHttp(query) {
 }
 async function main() {
     try {
+        autoloadEnv();
         const raw = await readStdin();
         const payload = JSON.parse(raw);
         const conversationId = typeof payload.session_id === "string" ? payload.session_id : "unknown";

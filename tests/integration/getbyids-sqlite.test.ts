@@ -58,3 +58,43 @@ describe("SqliteSessionStore.getByIds", () => {
     expect(s1?.body).toBe("");
   });
 });
+
+describe("SqliteSessionStore.getById — supersedence edges", () => {
+  let tmp: string;
+  let store: SqliteSessionStore;
+
+  beforeEach(() => {
+    tmp = mkdtempSync(join(tmpdir(), "nlm-getbyid-edges-"));
+    store = new SqliteSessionStore({
+      dbPath: join(tmp, "canonical.sqlite"),
+      migrationsDir: MIGRATIONS_DIR,
+    });
+    store.insertSessionForTest(makeSession({ id: "old", label: "old session" }));
+    store.insertSessionForTest(makeSession({ id: "new", label: "new session" }));
+    store.insertEdgeForTest("new", "old", "supersedes");
+  });
+
+  afterEach(() => {
+    store.close();
+    rmSync(tmp, { recursive: true, force: true });
+  });
+
+  it("superseding session reports what it supersedes", async () => {
+    const s = await store.getById("new");
+    expect(s?.supersedes).toEqual(["old"]);
+    expect(s?.supersededBy).toBeNull();
+  });
+
+  it("superseded session reports what superseded it", async () => {
+    const s = await store.getById("old");
+    expect(s?.supersededBy).toBe("new");
+    expect(s?.supersedes).toEqual([]);
+  });
+
+  it("session with no edges has null supersededBy and empty supersedes", async () => {
+    store.insertSessionForTest(makeSession({ id: "unrelated", label: "standalone" }));
+    const s = await store.getById("unrelated");
+    expect(s?.supersededBy).toBeNull();
+    expect(s?.supersedes).toEqual([]);
+  });
+});

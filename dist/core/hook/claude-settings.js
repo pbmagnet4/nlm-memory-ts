@@ -28,18 +28,33 @@ const HOOK_SCRIPT_MARKERS = [
 export function shellQuote(arg) {
     return `'${arg.replace(/'/g, "'\\''")}'`;
 }
-export function buildHookCommand(execPath, hookJs, mode) {
+/**
+ * Double-quote a cmd.exe argument. Embedded double quotes are doubled per
+ * cmd.exe parsing rules. Used for hook commands on Windows where Claude
+ * Code dispatches via cmd.exe /c rather than sh -c.
+ */
+export function cmdQuote(arg) {
+    return `"${arg.replace(/"/g, '""')}"`;
+}
+export function buildHookCommand(execPath, hookJs, mode, targetPlatform = process.platform) {
+    if (targetPlatform === "win32") {
+        // cmd.exe: `set VAR=val && "exec" "script"`. The set is scoped to the
+        // cmd /c invocation so the env var is visible to the chained child.
+        return `set NLM_HOOK_MODE=${mode} && ${cmdQuote(execPath)} ${cmdQuote(hookJs)}`;
+    }
     return `NLM_HOOK_MODE=${mode} ${shellQuote(execPath)} ${shellQuote(hookJs)}`;
 }
 /**
- * Invoke the wired command exactly the way Claude Code does (sh -c with
- * JSON on stdin) and confirm the hook log gained an entry. Catches the
- * class of failures where settings.json looks valid but the hook fails
- * at startup (path tokenization, missing modules, etc.).
+ * Invoke the wired command exactly the way Claude Code does (sh -c on
+ * POSIX, cmd.exe /c on Windows) with JSON on stdin and confirm the hook
+ * log gained an entry. Catches the class of failures where settings.json
+ * looks valid but the hook fails at startup (path tokenization, missing
+ * modules, missing shell, etc.).
  */
 export function smokeTestHookCommand(command, hookLogPath, timeoutMs = 5000) {
     const sizeBefore = existsSync(hookLogPath) ? statSync(hookLogPath).size : 0;
-    const result = spawnSync("sh", ["-c", command], {
+    const isWin = process.platform === "win32";
+    const result = spawnSync(isWin ? "cmd.exe" : "sh", [isWin ? "/c" : "-c", command], {
         input: JSON.stringify({ prompt: "smoke test", session_id: "install-smoke" }),
         timeout: timeoutMs,
         encoding: "utf8",

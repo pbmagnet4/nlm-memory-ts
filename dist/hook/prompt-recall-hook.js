@@ -15,6 +15,8 @@ import { appendHookLog } from "../core/hook/hook-log.js";
 import { loadSurfaced, recordSurfaced } from "../core/hook/memo.js";
 import { formatPointerBlock } from "../core/hook/pointer-block.js";
 import { selectHits } from "../core/hook/select.js";
+import { autoloadEnv } from "../llm/env-autoload.js";
+import { hookAuthHeaders } from "./hook-auth.js";
 // Keyword recall returns raw BM25 scores (unbounded, not the 0..1 hybrid
 // scale). FTS5 MATCH already gates relevance — only lexically-matching
 // sessions come back — so the floor starts at 0 and a real cutoff is
@@ -94,7 +96,7 @@ async function recallOverHttp(prompt) {
     const timer = setTimeout(() => controller.abort(), RECALL_TIMEOUT_MS);
     try {
         const res = await fetch(url, {
-            headers: { "x-recall-source": "hook" },
+            headers: hookAuthHeaders({ "x-recall-source": "hook" }),
             signal: controller.signal,
         });
         if (!res.ok)
@@ -119,6 +121,10 @@ async function recallOverHttp(prompt) {
 }
 async function main() {
     try {
+        // Load ~/.nlm/.env so NLM_MCP_TOKEN is available before we hit /api/recall.
+        // Hooks run as short-lived processes spawned by Claude Code with no shell
+        // env beyond what the parent passed — explicit .env load is required.
+        autoloadEnv();
         const raw = await readStdin();
         const payload = JSON.parse(raw);
         const prompt = typeof payload.prompt === "string" ? payload.prompt : "";

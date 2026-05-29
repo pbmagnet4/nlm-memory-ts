@@ -23,6 +23,8 @@ import { detectCitations, } from "../core/hook/citation-detect.js";
 import { loadSurfaced } from "../core/hook/memo.js";
 import { loadCited, recordCited } from "../core/hook/cite-memo.js";
 import { readAllAssistantTurns, } from "../core/hook/transcript.js";
+import { autoloadEnv } from "../llm/env-autoload.js";
+import { hookAuthHeaders } from "./hook-auth.js";
 const RESPONSE_PREVIEW_CHARS = 200;
 const POST_TIMEOUT_MS = 1500;
 export async function runStopHook(input, deps) {
@@ -137,7 +139,7 @@ async function postCitationOverHttp(conversationId, citedId, kind, responsePrevi
     try {
         await fetch(url, {
             method: "POST",
-            headers: { "content-type": "application/json" },
+            headers: hookAuthHeaders({ "content-type": "application/json" }),
             body: JSON.stringify({
                 conversation_id: conversationId,
                 cited_id: citedId,
@@ -153,6 +155,7 @@ async function postCitationOverHttp(conversationId, citedId, kind, responsePrevi
 }
 async function main() {
     try {
+        autoloadEnv();
         const raw = await readStdin();
         const payload = JSON.parse(raw);
         const conversationId = typeof payload.session_id === "string" ? payload.session_id : "unknown";

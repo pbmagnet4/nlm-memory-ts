@@ -147,6 +147,18 @@ describe("MCP adapter", () => {
     expect(body.entities).toContain("NLM");
   });
 
+  it("get_session includes supersedence links when an edge exists", async () => {
+    store.insertEdgeForTest("sess_a", "sess_b", "supersedes");
+    const newer = await getSessionHandler({ recall, store }, { id: "sess_a" });
+    const older = await getSessionHandler({ recall, store }, { id: "sess_b" });
+    const newerBody = parsePayload(newer) as { supersedes: string[]; supersededBy: string | null };
+    const olderBody = parsePayload(older) as { supersedes: string[]; supersededBy: string | null };
+    expect(newerBody.supersedes).toEqual(["sess_b"]);
+    expect(newerBody.supersededBy).toBeNull();
+    expect(olderBody.supersededBy).toBe("sess_a");
+    expect(olderBody.supersedes).toEqual([]);
+  });
+
   it("get_session returns an error tool result on missing id", async () => {
     const result = await getSessionHandler(
       { recall, store },

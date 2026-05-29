@@ -87,6 +87,56 @@ function selectHits(params) {
   return eligible.slice(0, limit);
 }
 
+// src/llm/env-autoload.ts
+import { readFileSync as readFileSync2, existsSync as existsSync2 } from "node:fs";
+import { homedir as homedir3 } from "node:os";
+import { resolve } from "node:path";
+var DEFAULT_SEARCH_PATHS = [
+  "~/.nlm/.env",
+  "./.env",
+  "../.env",
+  "../../.env"
+];
+function expandHome(p) {
+  if (p.startsWith("~/")) return resolve(homedir3(), p.slice(2));
+  return p;
+}
+function autoloadEnv(extraPaths = []) {
+  const loaded = [];
+  const paths = [...DEFAULT_SEARCH_PATHS, ...extraPaths];
+  for (const raw of paths) {
+    const path = expandHome(raw);
+    if (!existsSync2(path)) continue;
+    try {
+      const content = readFileSync2(path, "utf8");
+      for (const line of content.split("\n")) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith("#") || !trimmed.includes("=")) continue;
+        const eq = trimmed.indexOf("=");
+        const key = trimmed.slice(0, eq).trim();
+        let value = trimmed.slice(eq + 1).trim();
+        if (value.startsWith('"') && value.endsWith('"') || value.startsWith("'") && value.endsWith("'")) {
+          value = value.slice(1, -1);
+        }
+        if (key && process.env[key] === void 0) {
+          process.env[key] = value;
+        }
+      }
+      loaded.push(path);
+    } catch {
+      continue;
+    }
+  }
+  return loaded;
+}
+
+// src/hook/hook-auth.ts
+function hookAuthHeaders(extra = {}) {
+  const token = process.env["NLM_MCP_TOKEN"];
+  if (!token) return { ...extra };
+  return { ...extra, authorization: `Bearer ${token}` };
+}
+
 // src/hook/prompt-recall-hook.ts
 var SCORE_THRESHOLD = 0;
 var PER_FIRE_CAP = 3;
@@ -143,12 +193,12 @@ async function runHook(input, deps) {
   return "";
 }
 function readStdin() {
-  return new Promise((resolve) => {
+  return new Promise((resolve2) => {
     let data = "";
     process.stdin.setEncoding("utf8");
     process.stdin.on("data", (chunk) => data += chunk);
-    process.stdin.on("end", () => resolve(data));
-    process.stdin.on("error", () => resolve(data));
+    process.stdin.on("end", () => resolve2(data));
+    process.stdin.on("error", () => resolve2(data));
   });
 }
 async function recallOverHttp(prompt) {
@@ -158,7 +208,7 @@ async function recallOverHttp(prompt) {
   const timer = setTimeout(() => controller.abort(), RECALL_TIMEOUT_MS);
   try {
     const res = await fetch(url, {
-      headers: { "x-recall-source": "hook" },
+      headers: hookAuthHeaders({ "x-recall-source": "hook" }),
       signal: controller.signal
     });
     if (!res.ok) return [];
@@ -180,6 +230,7 @@ async function recallOverHttp(prompt) {
 }
 async function main() {
   try {
+    autoloadEnv();
     const raw = await readStdin();
     const payload = JSON.parse(raw);
     const prompt = typeof payload.prompt === "string" ? payload.prompt : "";

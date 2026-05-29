@@ -43,7 +43,7 @@ export function installClaudeCodeHooks(opts) {
     const installed = [];
     for (const spec of opts.hooks) {
         try {
-            const command = opts.buildHookCommand(opts.nodeExecPath, spec.script, "shadow");
+            const command = opts.buildHookCommand(opts.nodeExecPath, spec.script, "live");
             opts.addHook(opts.settingsPath, command, spec.event);
             const smoke = opts.smokeTestHookCommand(command, opts.hookLogPath);
             if (!smoke.ok) {

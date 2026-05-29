@@ -144,9 +144,11 @@ export declare class SqliteSessionStore implements SessionStore {
     keywordSearch(query: string, limit: number): Promise<ReadonlyArray<KeywordNeighbor>>;
     updateStatus(sessionId: string, status: SessionStatus): Promise<void>;
     insertSessionForTest(session: Session): void;
+    insertEdgeForTest(fromSession: string, toSession: string, kind?: "supersedes" | "continues"): void;
     insertEmbeddingForTest(sessionId: string, vector: Float32Array): void;
     insertChunkEmbeddingForTest(sessionId: string, chunkIdx: number, vector: Float32Array): void;
     private loadEntities;
+    private loadSessionEdges;
     private loadMarkers;
     private rowToSession;
 }

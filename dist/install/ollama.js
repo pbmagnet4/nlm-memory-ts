@@ -15,6 +15,7 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "n
 import { homedir, platform } from "node:os";
 import { join } from "node:path";
 import { spawnSync, spawn } from "node:child_process";
+import { randomBytes } from "node:crypto";
 export const EMBEDDING_MODEL = "nomic-embed-text";
 const OS = platform();
 // ── Detection ─────────────────────────────────────────────────────────────
@@ -154,8 +155,14 @@ export function pullEmbeddingModel() {
 /**
  * Write classifier config to ~/.nlm/.env. Merges into the existing file —
  * only the lines we manage are updated; anything the user added by hand stays.
+ *
+ * Manages three keys: DEEPSEEK_API_KEY, NLM_CLASSIFIER, NLM_CLASSIFIER_MODEL.
+ * Backwards-compatible: passing positional (choice, apiKey) still works.
  */
-export function writeClassifierConfig(choice, apiKey) {
+export function writeClassifierConfig(choiceOrInput, apiKey) {
+    const input = typeof choiceOrInput === "string"
+        ? { choice: choiceOrInput, ...(apiKey !== undefined ? { apiKey } : {}) }
+        : choiceOrInput;
     const envPath = join(homedir(), ".nlm", ".env");
     const nlmDir = join(homedir(), ".nlm");
     mkdirSync(nlmDir, { recursive: true, mode: 0o700 });
@@ -163,19 +170,67 @@ export function writeClassifierConfig(choice, apiKey) {
     const existing = existsSync(envPath) ? readFileSync(envPath, "utf8") : "";
     const kept = existing
         .split("\n")
-        .filter((l) => !l.startsWith("DEEPSEEK_API_KEY=") && !l.startsWith("NLM_CLASSIFIER="))
+        .filter((l) => !l.startsWith("DEEPSEEK_API_KEY=") &&
+        !l.startsWith("NLM_CLASSIFIER=") &&
+        !l.startsWith("NLM_CLASSIFIER_MODEL="))
         .join("\n")
         .replace(/\n{3,}/g, "\n\n")
         .trim();
     const additions = [];
-    if (choice === "deepseek" && apiKey) {
-        // Strip newlines that clipboard paste can introduce.
-        const sanitized = apiKey.replace(/[\r\n]/g, "").trim();
-        additions.push(`DEEPSEEK_API_KEY=${sanitized}`);
+    if (input.choice === "deepseek") {
+        additions.push("NLM_CLASSIFIER=deepseek");
+        if (input.apiKey) {
+            // Strip newlines that clipboard paste can introduce.
+            const sanitized = input.apiKey.replace(/[\r\n]/g, "").trim();
+            additions.push(`DEEPSEEK_API_KEY=${sanitized}`);
+        }
     }
-    if (choice === "ollama-offline")
+    if (input.choice === "ollama-offline")
         additions.push("NLM_CLASSIFIER=ollama");
+    if (input.model)
+        additions.push(`NLM_CLASSIFIER_MODEL=${input.model}`);
     writeFileSync(envPath, [kept, ...additions].filter(Boolean).join("\n") + "\n", { mode: 0o600 });
     chmodSync(envPath, 0o600);
+}
+const TOKEN_BYTES = 32;
+/**
+ * Generate and persist an NLM_MCP_TOKEN if one isn't already set. Returns
+ * the token that's active for this process. Called during setup and on
+ * `nlm start` so installs that pre-date token-gated /api/* still get
+ * Bearer-protected without operator intervention.
+ *
+ * Token is hex-encoded crypto.randomBytes — 64 chars, 256 bits of entropy.
+ */
+export function ensureMcpToken() {
+    const existing = process.env["NLM_MCP_TOKEN"];
+    if (existing)
+        return existing;
+    const token = randomBytes(TOKEN_BYTES).toString("hex");
+    const envPath = join(homedir(), ".nlm", ".env");
+    const nlmDir = join(homedir(), ".nlm");
+    mkdirSync(nlmDir, { recursive: true, mode: 0o700 });
+    chmodSync(nlmDir, 0o700);
+    const fileExisting = existsSync(envPath) ? readFileSync(envPath, "utf8") : "";
+    // Idempotent re-read: another setup run could have written the token
+    // between our env check and now. Prefer the persisted value.
+    for (const line of fileExisting.split("\n")) {
+        if (line.startsWith("NLM_MCP_TOKEN=")) {
+            const persisted = line.slice("NLM_MCP_TOKEN=".length).trim();
+            if (persisted) {
+                process.env["NLM_MCP_TOKEN"] = persisted;
+                return persisted;
+            }
+        }
+    }
+    const kept = fileExisting
+        .split("\n")
+        .filter((l) => !l.startsWith("NLM_MCP_TOKEN="))
+        .join("\n")
+        .replace(/\n{3,}/g, "\n\n")
+        .trim();
+    writeFileSync(envPath, [kept, `NLM_MCP_TOKEN=${token}`].filter(Boolean).join("\n") + "\n", { mode: 0o600 });
+    chmodSync(envPath, 0o600);
+    process.env["NLM_MCP_TOKEN"] = token;
+    return token;
 }
 //# sourceMappingURL=ollama.js.map

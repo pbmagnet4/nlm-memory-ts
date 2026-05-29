@@ -139,12 +139,90 @@ function parseLimit(raw: string | undefined, fallback: number, max: number): num
   return Math.min(max, n);
 }
 
+// Accept Host headers that point to loopback, with or without the bound port.
+// Rejecting non-loopback Hosts closes the DNS-rebinding hole: a malicious
+// site can resolve attacker.com to 127.0.0.1 in the browser but cannot
+// forge a Host header browsers send automatically.
+export function isLoopbackHost(host: string | undefined, port: number): boolean {
+  if (!host) return false;
+  const lower = host.toLowerCase();
+  return (
+    lower === "localhost" ||
+    lower === `localhost:${port}` ||
+    lower === "127.0.0.1" ||
+    lower === `127.0.0.1:${port}` ||
+    lower === "[::1]" ||
+    lower === `[::1]:${port}`
+  );
+}
+
+// Browser Origin headers are set automatically and cannot be spoofed by
+// page-level JS. A request with a non-loopback Origin reaching loopback
+// means the user is on attacker.com — the page is trying to read our data.
+export function isLoopbackOrigin(origin: string | undefined, port: number): boolean {
+  if (!origin) return false;
+  const lower = origin.toLowerCase();
+  return (
+    lower === `http://localhost:${port}` ||
+    lower === `http://127.0.0.1:${port}` ||
+    lower === `http://[::1]:${port}`
+  );
+}
+
 const VALID_MODES: ReadonlyArray<RecallMode> = ["keyword", "semantic", "hybrid"];
 const VALID_KINDS: ReadonlyArray<RecallKindFilter> = ["decision", "open"];
 const VALID_FACT_KINDS: ReadonlyArray<FactKind> = ["decision", "open", "attribute"];
 
 export function createApp(deps: HttpDeps): Hono {
   const app = new Hono();
+  const boundPort = process.env["NLM_PORT"] ? Number.parseInt(process.env["NLM_PORT"], 10) : 3940;
+
+  // ── Local-only access middleware (defense in depth on top of 127.0.0.1 bind) ──
+  //
+  // Threat model: server binds to loopback so external network is blocked.
+  // What's left:
+  //   1. DNS rebinding from a malicious tab — Host check blocks it
+  //   2. Browser drive-by from a cross-origin tab — Origin check blocks it
+  //   3. Port forwarding (ssh -L, ngrok) reaching another machine — Bearer blocks it
+  //
+  // Applied to /api/* and /mcp. Static UI (/ui/*) and /api/health pass through
+  // the host check but skip Origin/Bearer so SPAs and liveness probes work.
+  // Skip entirely under Vitest — in-process app.request() calls have no real
+  // network surface and synthesize requests without a Host header.
+  const skipLocalGate = !!process.env["VITEST"] || process.env["NODE_ENV"] === "test";
+  app.use("/api/*", async (c, next) => {
+    if (skipLocalGate) return next();
+    const host = c.req.header("host");
+    if (!isLoopbackHost(host, boundPort)) {
+      return c.json({ error: "host header not allowed" }, 403);
+    }
+    if (c.req.path === "/api/health") {
+      return next();
+    }
+    const origin = c.req.header("origin");
+    if (origin !== undefined) {
+      if (!isLoopbackOrigin(origin, boundPort)) {
+        return c.json({ error: "origin not allowed" }, 403);
+      }
+      // Loopback origin → same-origin UI request. Allow.
+      return next();
+    }
+    // No Origin → not a browser fetch. Require Bearer if a token is configured.
+    const token = process.env["NLM_MCP_TOKEN"];
+    if (!token) {
+      // No token configured → local-only daemon with loopback Host already verified.
+      // Acceptable for single-user dev installs; production users should set the token.
+      return next();
+    }
+    const auth = c.req.header("authorization") ?? "";
+    const match = /^Bearer\s+(\S+)$/i.exec(auth);
+    const given = Buffer.from(match?.[1] ?? "", "utf8");
+    const want = Buffer.from(token, "utf8");
+    if (!match || given.length !== want.length || !timingSafeEqual(given, want)) {
+      return c.json({ error: "unauthorized" }, 401);
+    }
+    return next();
+  });
 
   app.get("/api/health", (c) =>
     c.json({ status: "ok", service: "nlm-memory", version: "0.2.0-dev" }),

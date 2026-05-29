@@ -1,0 +1,1 @@
+{"version":3,"file":"hook-auth.js","sourceRoot":"","sources":["../../src/hook/hook-auth.ts"],"names":[],"mappings":"AAAA;;;;;;;;;;;GAWG;AAEH,MAAM,UAAU,eAAe,CAAC,QAAgC,EAAE;IAChE,MAAM,KAAK,GAAG,OAAO,CAAC,GAAG,CAAC,eAAe,CAAC,CAAC;IAC3C,IAAI,CAAC,KAAK;QAAE,OAAO,EAAE,GAAG,KAAK,EAAE,CAAC;IAChC,OAAO,EAAE,GAAG,KAAK,EAAE,aAAa,EAAE,UAAU,KAAK,EAAE,EAAE,CAAC;AACxD,CAAC"}

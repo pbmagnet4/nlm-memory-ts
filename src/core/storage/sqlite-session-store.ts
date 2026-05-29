@@ -491,8 +491,9 @@ export class SqliteSessionStore implements SessionStore {
     if (!row) return null;
     const entities = this.loadEntities([sessionId]);
     const markers = this.loadMarkers([sessionId]);
+    const edges = this.loadSessionEdges([sessionId]);
     const overlay = loadActionOverlay(this.db);
-    return this.rowToSession(row, entities, markers, overlay);
+    return this.rowToSession(row, entities, markers, overlay, edges);
   }
 
   /**
@@ -650,6 +651,18 @@ export class SqliteSessionStore implements SessionStore {
     session.open.forEach((q, i) => markerStmt.run(session.id, "open", q, i));
   }
 
+  insertEdgeForTest(
+    fromSession: string,
+    toSession: string,
+    kind: "supersedes" | "continues" = "supersedes",
+  ): void {
+    this.db
+      .prepare(
+        "INSERT OR IGNORE INTO session_edges (from_session, to_session, kind) VALUES (?, ?, ?)",
+      )
+      .run(fromSession, toSession, kind);
+  }
+
   insertEmbeddingForTest(sessionId: string, vector: Float32Array): void {
     this.insertChunkEmbeddingForTest(sessionId, 0, vector);
   }
@@ -680,6 +693,33 @@ export class SqliteSessionStore implements SessionStore {
       const list = out.get(r.session_id);
       if (list) list.push(r.entity_canonical);
       else out.set(r.session_id, [r.entity_canonical]);
+    }
+    return out;
+  }
+
+  private loadSessionEdges(
+    ids: ReadonlyArray<string>,
+  ): Map<string, { supersededBy: string | null; supersedes: string[] }> {
+    if (ids.length === 0) return new Map();
+    const placeholders = ids.map(() => "?").join(",");
+    const rows = this.db
+      .prepare<string[], { from_session: string; to_session: string }>(`
+        SELECT from_session, to_session
+        FROM session_edges
+        WHERE kind = 'supersedes'
+          AND (from_session IN (${placeholders}) OR to_session IN (${placeholders}))
+      `)
+      .all(...ids, ...ids);
+
+    const out = new Map<string, { supersededBy: string | null; supersedes: string[] }>();
+    for (const id of ids) {
+      out.set(id, { supersededBy: null, supersedes: [] });
+    }
+    for (const r of rows) {
+      const fromEntry = out.get(r.from_session);
+      if (fromEntry) fromEntry.supersedes.push(r.to_session);
+      const toEntry = out.get(r.to_session);
+      if (toEntry) toEntry.supersededBy = r.from_session;
     }
     return out;
   }
@@ -716,6 +756,7 @@ export class SqliteSessionStore implements SessionStore {
     entitiesById: Map<string, string[]>,
     markersById: Map<string, { decisions: string[]; open: string[] }>,
     overlay: ActionOverlay,
+    edgesById?: Map<string, { supersededBy: string | null; supersedes: string[] }>,
   ): Session {
     const m = markersById.get(row.id);
     const rawDecisions = m?.decisions ?? [];
@@ -732,6 +773,7 @@ export class SqliteSessionStore implements SessionStore {
       }
       activeOpen.push(text);
     }
+    const edges = edgesById?.get(row.id);
     return {
       id: row.id,
       runtime: row.runtime,
@@ -748,6 +790,9 @@ export class SqliteSessionStore implements SessionStore {
       entities: entitiesById.get(row.id) ?? [],
       decisions: [...rawDecisions, ...promotedDecisions],
       open: activeOpen,
+      ...(edges !== undefined
+        ? { supersededBy: edges.supersededBy, supersedes: edges.supersedes }
+        : {}),
     };
   }
 }
