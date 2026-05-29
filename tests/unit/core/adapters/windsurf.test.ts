@@ -113,7 +113,7 @@ describe("discover()", () => {
     ]);
 
     const ids = await adapter.discover();
-    expect(ids.sort()).toEqual(["ws_tab-aaa", "ws_tab-bbb", "ws_tab-ccc"].sort());
+    expect([...ids].sort()).toEqual(["ws_tab-aaa", "ws_tab-bbb", "ws_tab-ccc"].sort());
   });
 
   it("skips tabs with no bubbles", async () => {
