@@ -14,6 +14,7 @@
  * session state to manage. The existing stdio MCP path is untouched.
  */
 import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { timingSafeEqual } from "node:crypto";
 import { homedir } from "node:os";
 import { dirname, extname, join, normalize, sep } from "node:path";
 import { Hono } from "hono";
@@ -88,7 +89,9 @@ export function createApp(deps) {
         app.all("/mcp", async (c) => {
             const auth = c.req.header("authorization") ?? "";
             const match = /^Bearer\s+(\S+)$/i.exec(auth);
-            if (!match || match[1] !== mcpToken) {
+            const given = Buffer.from(match?.[1] ?? "", "utf8");
+            const want = Buffer.from(mcpToken, "utf8");
+            if (!match || given.length !== want.length || !timingSafeEqual(given, want)) {
                 return c.json({ error: "unauthorized" }, 401);
             }
             // No sessionIdGenerator = stateless mode: no session ID in responses,
@@ -521,6 +524,16 @@ export function createApp(deps) {
         });
     });
     app.get("/api/data/backup", (c) => {
+        const adminToken = process.env["NLM_MCP_TOKEN"];
+        if (adminToken) {
+            const auth = c.req.header("authorization") ?? "";
+            const m = /^Bearer\s+(\S+)$/i.exec(auth);
+            const given = Buffer.from(m?.[1] ?? "", "utf8");
+            const want = Buffer.from(adminToken, "utf8");
+            if (!m || given.length !== want.length || !timingSafeEqual(given, want)) {
+                return c.json({ error: "unauthorized" }, 401);
+            }
+        }
         if (!deps.liveStore || !deps.dbPath) {
             return c.json({ error: "backup requires liveStore + dbPath" }, 503);
         }
@@ -541,6 +554,16 @@ export function createApp(deps) {
         }
     });
     app.post("/api/data/restore", async (c) => {
+        const adminToken = process.env["NLM_MCP_TOKEN"];
+        if (adminToken) {
+            const auth = c.req.header("authorization") ?? "";
+            const m = /^Bearer\s+(\S+)$/i.exec(auth);
+            const given = Buffer.from(m?.[1] ?? "", "utf8");
+            const want = Buffer.from(adminToken, "utf8");
+            if (!m || given.length !== want.length || !timingSafeEqual(given, want)) {
+                return c.json({ error: "unauthorized" }, 401);
+            }
+        }
         if (!deps.dbPath)
             return c.json({ error: "restore requires dbPath" }, 503);
         const form = await c.req.parseBody().catch(() => null);

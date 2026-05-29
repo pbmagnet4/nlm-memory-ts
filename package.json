@@ -1,6 +1,6 @@
 {
   "name": "nlm-memory",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Local-first non-linear memory operating system for AI operators.",
   "type": "module",
   "license": "Apache-2.0",
@@ -8,7 +8,7 @@
     "node": ">=20.0.0"
   },
   "bin": {
-    "nlm": "./dist/cli/nlm.js"
+    "nlm": "dist/cli/nlm.js"
   },
   "scripts": {
     "dev": "tsx watch src/cli/nlm.ts start",

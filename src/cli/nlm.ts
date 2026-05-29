@@ -188,7 +188,7 @@ program
         : {}),
     });
     const p = port();
-    serve({ fetch: app.fetch, port: p }, (info) => {
+    serve({ fetch: app.fetch, port: p, hostname: "127.0.0.1" }, (info) => {
       console.error(`nlm-memory http listening on http://localhost:${info.port}`);
       if (hasMcpToken) {
         console.error(`  mcp:    http://localhost:${info.port}/mcp (token-gated)`);
