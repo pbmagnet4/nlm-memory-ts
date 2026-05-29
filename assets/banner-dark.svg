@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 360" role="img" aria-label="nlm-memory — Local-first non-linear memory OS">
+  <defs>
+    <style>
+      .bg { fill: #0d1117; }
+      .grid { stroke: #21262d; stroke-width: 1; }
+      .rail { stroke: #30363d; stroke-width: 2; }
+      .session { fill: #5ecbb4; }
+      .session-faded { fill: #5ecbb4; opacity: 0.45; }
+      .session-recent { fill: #5ecbb4; opacity: 0.85; }
+      .session-superseded { fill: #0d1117; stroke: #5ecbb4; stroke-width: 2; stroke-dasharray: 3 2; }
+      .arrow { fill: none; stroke: #f0b56b; stroke-width: 2.5; }
+      .arrowhead { fill: #f0b56b; }
+      .wordmark { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; font-size: 88px; font-weight: 700; letter-spacing: -2px; fill: #e6edf3; }
+      .accent { fill: #5ecbb4; }
+      .tagline { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; font-size: 22px; font-weight: 500; fill: #8b949e; }
+      .meta { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; font-size: 16px; font-weight: 400; fill: #6e7681; letter-spacing: 0.5px; }
+      .label { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; font-size: 13px; font-weight: 400; fill: #6e7681; }
+    </style>
+  </defs>
+
+  <rect class="bg" width="1200" height="360" />
+
+  <!-- Session timeline (the editable timeline visual) -->
+  <g transform="translate(150, 70)">
+    <line x1="0" y1="20" x2="900" y2="20" class="rail" />
+
+    <!-- 14 session dots representing a non-linear timeline -->
+    <circle cx="0"   cy="20" r="9" class="session-faded" />
+    <circle cx="69"  cy="20" r="9" class="session-faded" />
+    <circle cx="138" cy="20" r="9" class="session-faded" />
+    <circle cx="207" cy="20" r="9" class="session-faded" />
+    <circle cx="276" cy="20" r="11" class="session-superseded" />  <!-- the patched one -->
+    <circle cx="345" cy="20" r="9" class="session-faded" />
+    <circle cx="414" cy="20" r="9" class="session-faded" />
+    <circle cx="483" cy="20" r="11" class="session-recent" />       <!-- the patcher -->
+    <circle cx="552" cy="20" r="9" class="session-recent" />
+    <circle cx="621" cy="20" r="9" class="session-recent" />
+    <circle cx="690" cy="20" r="9" class="session-recent" />
+    <circle cx="759" cy="20" r="9" class="session" />
+    <circle cx="828" cy="20" r="9" class="session" />
+    <circle cx="900" cy="20" r="9" class="session" />
+
+    <!-- Supersedence arrow: from the patcher (483) back to the patched (276) -->
+    <path d="M 483 32 Q 380 90 285 32" class="arrow" />
+    <polygon points="278,25 290,28 285,38" class="arrowhead" />
+
+    <!-- Labels -->
+    <text x="276" y="-12" text-anchor="middle" class="label">superseded</text>
+    <text x="483" y="-12" text-anchor="middle" class="label">supersedes</text>
+  </g>
+
+  <!-- Wordmark + tagline block -->
+  <g transform="translate(600, 245)">
+    <text x="0" y="0" text-anchor="middle" class="wordmark">
+      <tspan>nlm</tspan><tspan class="accent">-</tspan><tspan>memory</tspan>
+    </text>
+    <text x="0" y="40" text-anchor="middle" class="tagline">Local-first non-linear memory OS</text>
+    <text x="0" y="75" text-anchor="middle" class="meta">session-grained recall &#xb7; editable timeline &#xb7; cross-runtime</text>
+  </g>
+</svg>

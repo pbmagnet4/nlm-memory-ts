@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 360" role="img" aria-label="nlm-memory — Local-first non-linear memory OS">
+  <defs>
+    <style>
+      .bg { fill: #ffffff; }
+      .grid { stroke: #eaeef2; stroke-width: 1; }
+      .rail { stroke: #d0d7de; stroke-width: 2; }
+      .session { fill: #1f8a73; }
+      .session-faded { fill: #1f8a73; opacity: 0.4; }
+      .session-recent { fill: #1f8a73; opacity: 0.8; }
+      .session-superseded { fill: #ffffff; stroke: #1f8a73; stroke-width: 2; stroke-dasharray: 3 2; }
+      .arrow { fill: none; stroke: #b8741a; stroke-width: 2.5; }
+      .arrowhead { fill: #b8741a; }
+      .wordmark { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; font-size: 88px; font-weight: 700; letter-spacing: -2px; fill: #1f2328; }
+      .accent { fill: #1f8a73; }
+      .tagline { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; font-size: 22px; font-weight: 500; fill: #59636e; }
+      .meta { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; font-size: 16px; font-weight: 400; fill: #818b98; letter-spacing: 0.5px; }
+      .label { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; font-size: 13px; font-weight: 400; fill: #818b98; }
+    </style>
+  </defs>
+
+  <rect class="bg" width="1200" height="360" />
+
+  <g transform="translate(150, 70)">
+    <line x1="0" y1="20" x2="900" y2="20" class="rail" />
+
+    <circle cx="0"   cy="20" r="9" class="session-faded" />
+    <circle cx="69"  cy="20" r="9" class="session-faded" />
+    <circle cx="138" cy="20" r="9" class="session-faded" />
+    <circle cx="207" cy="20" r="9" class="session-faded" />
+    <circle cx="276" cy="20" r="11" class="session-superseded" />
+    <circle cx="345" cy="20" r="9" class="session-faded" />
+    <circle cx="414" cy="20" r="9" class="session-faded" />
+    <circle cx="483" cy="20" r="11" class="session-recent" />
+    <circle cx="552" cy="20" r="9" class="session-recent" />
+    <circle cx="621" cy="20" r="9" class="session-recent" />
+    <circle cx="690" cy="20" r="9" class="session-recent" />
+    <circle cx="759" cy="20" r="9" class="session" />
+    <circle cx="828" cy="20" r="9" class="session" />
+    <circle cx="900" cy="20" r="9" class="session" />
+
+    <path d="M 483 32 Q 380 90 285 32" class="arrow" />
+    <polygon points="278,25 290,28 285,38" class="arrowhead" />
+
+    <text x="276" y="-12" text-anchor="middle" class="label">superseded</text>
+    <text x="483" y="-12" text-anchor="middle" class="label">supersedes</text>
+  </g>
+
+  <g transform="translate(600, 245)">
+    <text x="0" y="0" text-anchor="middle" class="wordmark">
+      <tspan>nlm</tspan><tspan class="accent">-</tspan><tspan>memory</tspan>
+    </text>
+    <text x="0" y="40" text-anchor="middle" class="tagline">Local-first non-linear memory OS</text>
+    <text x="0" y="75" text-anchor="middle" class="meta">session-grained recall &#xb7; editable timeline &#xb7; cross-runtime</text>
+  </g>
+</svg>

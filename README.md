@@ -1,6 +1,9 @@
 <p align="center">
-  <strong>nlm-memory</strong><br/>
-  Local-first non-linear memory OS for AI operators
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/banner-dark.svg" />
+    <source media="(prefers-color-scheme: light)" srcset="assets/banner-light.svg" />
+    <img alt="nlm-memory — Local-first non-linear memory OS" src="assets/banner-light.svg" width="720" />
+  </picture>
 </p>
 
 <p align="center">
@@ -30,8 +33,8 @@
 `nlm-memory` indexes every session from Claude Code, Codex, OpenCode, Cursor, Windsurf, Hermes, Aider, and pi into a single searchable store on your machine. Three properties no other memory layer ships together:
 
 1. **Cross-runtime reach.** One index, every adapter.
-2. **Editable timeline.** Sessions can be superseded, retired, or marked aborted. Patch history retroactively — no other tool lets you do this.
-3. **97.2% R@5 baseline.** On a 14-month corpus, keyword recall surfaces the right session in the top 5 on 97.2% of evaluator queries. No fine-tuning, no cloud, no account.
+2. **Editable timeline.** Sessions can be superseded by newer ones; entities can be retired. Patch history retroactively — no other tool lets you do this. See [docs/supersedence.md](docs/supersedence.md).
+3. **97.2% R@5 baseline.** On a 14-month corpus, keyword recall surfaces the right session in the top 5 on 97.2% of evaluator queries. No fine-tuning, no cloud, no account. See [docs/methodology-recall-baseline.md](docs/methodology-recall-baseline.md).
 
 Everything stays on your machine. No telemetry, no account beyond your classifier of choice.
 
@@ -94,7 +97,7 @@ Two delivery paths. They share the same index.
 
 ### 1. Hooks (Claude Code) — automatic context injection
 
-Five hooks installed into `~/.claude/settings.json`:
+Five hooks installed into `~/.claude/settings.json`. Full lifecycle, modes, logging surface, and the load-bearing daily liveness canary documented in [docs/hooks.md](docs/hooks.md).
 
 | Event | What NLM does | Mode |
 |---|---|---|
@@ -288,6 +291,15 @@ Old installs have `NLM_HOOK_MODE=shadow` hardcoded in `~/.claude/settings.json` 
 | **License** | Apache 2.0 | Apache 2.0 | Apache 2.0 | — |
 
 The defining property is the editable timeline. mem0 and Letta append; NLM lets you reach back and mark a session as superseded by a newer one, retire one as no-longer-relevant, or flag one as aborted-mid-flight. The next recall surfaces the corrected version, not the stale one. A claim from 6 months ago can be patched today.
+
+---
+
+## Docs
+
+- [docs/supersedence.md](docs/supersedence.md) — the editable timeline: statuses, what gets recorded when, how supersedence flows through recall
+- [docs/hooks.md](docs/hooks.md) — full hook lifecycle, modes, selection logic, pointer-block format, logging surface, daily liveness canary
+- [docs/methodology-recall-baseline.md](docs/methodology-recall-baseline.md) — how R@5 = 97.2% is measured + how to run LongMemEval-S on your own machine
+- [SECURITY.md](SECURITY.md) — threat model + responsible disclosure
 
 ---
 
