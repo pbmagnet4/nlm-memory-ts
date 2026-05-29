@@ -19,6 +19,7 @@ import { timingSafeEqual } from "node:crypto";
 import { homedir } from "node:os";
 import { dirname, extname, join, normalize, sep } from "node:path";
 import { Hono } from "hono";
+import pkg from "../../package.json" with { type: "json" };
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { createMcpServer } from "../mcp/server.js";
 import {
@@ -225,7 +226,7 @@ export function createApp(deps: HttpDeps): Hono {
   });
 
   app.get("/api/health", (c) =>
-    c.json({ status: "ok", service: "nlm-memory", version: "0.2.0-dev" }),
+    c.json({ status: "ok", service: "nlm-memory", version: pkg.version }),
   );
 
   // ── MCP over HTTP (for container agents — e.g. Hermes WebUI) ─────────
