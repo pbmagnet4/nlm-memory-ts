@@ -21,5 +21,6 @@
  *   nlm connect codex        — install Codex marketplace plugin
  *   nlm disconnect claude-code — remove MCP block from ~/.mcp.json
  *   nlm disconnect codex       — remove Codex plugin
+ *   nlm digest   — print a daily-activity digest (or --telegram to post)
  */
 export {};

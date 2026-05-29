@@ -21,6 +21,7 @@
  *   nlm connect codex        — install Codex marketplace plugin
  *   nlm disconnect claude-code — remove MCP block from ~/.mcp.json
  *   nlm disconnect codex       — remove Codex plugin
+ *   nlm digest   — print a daily-activity digest (or --telegram to post)
  */
 import { fileURLToPath } from "node:url";
 import { dirname, resolve, join } from "node:path";
@@ -63,6 +64,7 @@ import { MemoSweepScheduler } from "../core/hook/memo-sweep.js";
 import { isAgentLoaded, isBenignBootoutError } from "./launchctl-helpers.js";
 import { adapterFromSource } from "../core/adapters/from-source.js";
 import { scanUsefulHits } from "../core/recall/useful-scan.js";
+import { runDigest } from "./digest.js";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const MIGRATIONS_DIR = resolve(__dirname, "../../migrations");
@@ -1014,6 +1016,27 @@ program
         : `${result.useful}/${result.measurable} useful (${Math.round((result.useful / result.measurable) * 100)}%)`;
     console.error(`nlm useful-scan: scanned ${result.total} recalls in the last ${opts.days}d — ${rate}` +
         (opts.dryRun ? " (dry-run)" : `, ${result.appended} appended`));
+});
+program
+    .command("digest")
+    .description("Compose a daily-activity digest from the running daemon (optionally post to Telegram)")
+    .option("-p, --port <n>", "daemon port", (v) => Number.parseInt(v, 10), Number.parseInt(process.env["NLM_PORT"] ?? "3940", 10))
+    .option("--telegram", "post to Telegram instead of printing to stdout (requires TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID)")
+    .action(async (opts) => {
+    autoloadEnv();
+    try {
+        const result = await runDigest({
+            port: opts.port,
+            telegram: opts.telegram === true,
+        });
+        if (!result.daemonReachable) {
+            process.exit(1);
+        }
+    }
+    catch (e) {
+        console.error("nlm digest:", e instanceof Error ? e.message : e);
+        process.exit(1);
+    }
 });
 program.parseAsync().catch((e) => {
     console.error("nlm: fatal", e);

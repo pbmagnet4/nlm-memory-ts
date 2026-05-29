@@ -94,6 +94,23 @@ Open `http://localhost:3940/ui` after the daemon starts.
 
 ---
 
+## Daily digest
+
+Get a once-a-day summary of yesterday's recall activity:
+
+```sh
+nlm digest                    # print to stdout
+nlm digest --telegram         # post to Telegram (set TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID)
+```
+
+The digest reports 24-hour real-traffic volume (probes filtered), 7-day hit rate, top queries, and a hook-liveness alert if Claude Code ran but the recall hook didn't fire. Wire it to cron for a morning push:
+
+```cron
+0 7 * * *  TELEGRAM_BOT_TOKEN=… TELEGRAM_CHAT_ID=… nlm digest --telegram
+```
+
+---
+
 ## Security
 
 NLM is local-first by design. The daemon:
