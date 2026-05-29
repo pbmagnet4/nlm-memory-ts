@@ -14,6 +14,7 @@ import { SqliteFactStore } from "../../src/core/storage/sqlite-fact-store.js";
 import { SqliteSessionStore } from "../../src/core/storage/sqlite-session-store.js";
 import { ClaudeCodeAdapter } from "../../src/core/adapters/claude-code.js";
 import { ScanScheduler } from "../../src/core/scheduler/scheduler.js";
+import { MAX_CLASSIFY_FAILURES } from "../../src/core/scheduler/scan-once.js";
 import type {
   ClassifyResult,
   EmbedResult,
@@ -322,6 +323,51 @@ describe("ScanScheduler.tick", () => {
     const count = store.rawDb()
       .prepare<[], { c: number }>("SELECT COUNT(*) AS c FROM fact_embeddings").get();
     expect(count?.c).toBe(2);
+  });
+
+  it("classifier failure increments failure_count in adapter_state", async () => {
+    const adapter = new ClaudeCodeAdapter({ projectsPath: projects, idleMinutes: 15 });
+    const classifier = new StubClassifier(undefined, true);
+    const scheduler = new ScanScheduler({
+      store, adapters: [adapter], classifier, embedder: null, logger: () => {},
+    });
+    await scheduler.tick();
+    const row = store.rawDb()
+      .prepare<[], { failure_count: number }>(
+        "SELECT COALESCE(failure_count, 0) AS failure_count FROM adapter_state WHERE adapter_name = 'claude-code'",
+      ).get();
+    expect(row?.failure_count).toBe(1);
+  });
+
+  it("file is skipped on next tick once failure_count reaches ceiling", async () => {
+    const adapter = new ClaudeCodeAdapter({ projectsPath: projects, idleMinutes: 15 });
+    const failClassifier = new StubClassifier(undefined, true);
+    const scheduler = new ScanScheduler({
+      store, adapters: [adapter], classifier: failClassifier, embedder: null, logger: () => {},
+    });
+    // Drive failure_count to the ceiling
+    for (let i = 0; i < MAX_CLASSIFY_FAILURES; i++) {
+      store.rawDb().prepare(
+        "UPDATE adapter_state SET failure_count = ?, file_size = file_size - 1 WHERE adapter_name = 'claude-code'",
+      ).run(i);
+      await scheduler.tick();
+    }
+    // Now failure_count === MAX_CLASSIFY_FAILURES and file_size matches disk — next tick should skip
+    const db = store.rawDb();
+    db.prepare(
+      "UPDATE adapter_state SET file_size = (SELECT size FROM (SELECT ? AS size)), failure_count = ?",
+    );
+    // Reset: set file_size to actual disk size so scanOnce sees "unchanged"
+    const { statSync: ss } = require("node:fs") as typeof import("node:fs");
+    const filePath = join(projects, "project_a", "fixture.jsonl");
+    const realSize = ss(filePath).size;
+    db.prepare(
+      "UPDATE adapter_state SET file_size = ?, failure_count = ? WHERE adapter_name = 'claude-code'",
+    ).run(realSize, MAX_CLASSIFY_FAILURES);
+
+    const skipReport = await scheduler.tick();
+    expect(skipReport.chunksSeen).toBe(0);
+    expect(skipReport.classifyFailures).toBe(0);
   });
 
   it("re-ingest replaces facts (no duplicate fact rows across ticks)", async () => {

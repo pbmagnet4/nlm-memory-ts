@@ -10,11 +10,15 @@
  * Contract (per file under adapter.discover()):
  *   - If `now - mtime < idleMinutes * 60s` → still active, skip
  *   - Lookup adapter_state by (adapterName, sourcePath):
- *       no row + file idle      → NEW: parse + return (chunk, supersedes=null)
- *       row exists, size match  → UNCHANGED: skip
- *       row exists, file grew   → RESUMED: parse + return (chunk, prior.session_id)
+ *       no row + file idle                       → NEW: parse + return (chunk, supersedes=null)
+ *       row exists, size match, failures < ceil  → UNCHANGED: skip
+ *       row exists, size match, failures >= ceil → FAILED_CEILING: skip (log once per session)
+ *       row exists, file grew                    → RESUMED: parse + return, reset failure_count
  *   - After successful classify+insert downstream, call `recordClassified`
  *     to upsert adapter_state with the new size + session_id.
+ *   - On classify/storage failure, call `recordFailed` to increment failure_count.
+ *     When failure_count reaches MAX_CLASSIFY_FAILURES and the file hasn't grown,
+ *     the file is permanently skipped until new content arrives.
  */
 
 import { statSync } from "node:fs";
@@ -29,10 +33,13 @@ export interface ScanResult {
   readonly supersedes: string | null;
 }
 
+export const MAX_CLASSIFY_FAILURES = 3;
+
 interface AdapterStateRow {
   source_path: string;
   file_size: number | null;
   session_id: string | null;
+  failure_count: number;
 }
 
 export async function scanOnce(
@@ -44,7 +51,7 @@ export async function scanOnce(
   const idleMs = idleMinutes * 60 * 1000;
   const stateRows = db
     .prepare<[string], AdapterStateRow>(
-      "SELECT source_path, file_size, session_id FROM adapter_state WHERE adapter_name = ?",
+      "SELECT source_path, file_size, session_id, COALESCE(failure_count, 0) AS failure_count FROM adapter_state WHERE adapter_name = ?",
     )
     .all(adapter.name);
   const byPath = new Map<string, AdapterStateRow>(stateRows.map((r) => [r.source_path, r]));
@@ -65,8 +72,17 @@ export async function scanOnce(
     const prior = byPath.get(path);
     let supersedes: string | null = null;
     if (prior) {
-      if ((prior.file_size ?? 0) === st.size) {
-        continue; // unchanged since last classification
+      const sizeUnchanged = (prior.file_size ?? 0) === st.size;
+      if (sizeUnchanged) {
+        // File hasn't grown — skip whether clean or failed. Failures only
+        // retry when the transcript file receives new content.
+        continue;
+      }
+      // File grew: reset failure_count so resume gets a clean slate.
+      if (prior.failure_count >= MAX_CLASSIFY_FAILURES) {
+        db.prepare(
+          "UPDATE adapter_state SET failure_count = 0 WHERE adapter_name = ? AND source_path = ?",
+        ).run(adapter.name, path);
       }
       supersedes = prior.session_id;
     }
@@ -92,12 +108,35 @@ export function recordClassified(
   }
   db.prepare(
     `INSERT INTO adapter_state
-       (adapter_name, source_path, last_offset, file_size, session_id, last_processed_at)
-     VALUES (?, ?, ?, ?, ?, datetime('now'))
+       (adapter_name, source_path, last_offset, file_size, session_id, failure_count, last_processed_at)
+     VALUES (?, ?, ?, ?, ?, 0, datetime('now'))
      ON CONFLICT(adapter_name, source_path) DO UPDATE SET
        last_offset = excluded.last_offset,
        file_size = excluded.file_size,
        session_id = excluded.session_id,
+       failure_count = 0,
        last_processed_at = excluded.last_processed_at`,
   ).run(adapterName, sourcePath, size, size, sessionId);
+}
+
+export function recordFailed(
+  db: Database.Database,
+  adapterName: string,
+  sourcePath: string,
+): void {
+  let size = 0;
+  try {
+    size = statSync(sourcePath).size;
+  } catch {
+    return;
+  }
+  db.prepare(
+    `INSERT INTO adapter_state
+       (adapter_name, source_path, last_offset, file_size, session_id, failure_count, last_processed_at)
+     VALUES (?, ?, ?, ?, NULL, 1, datetime('now'))
+     ON CONFLICT(adapter_name, source_path) DO UPDATE SET
+       file_size = excluded.file_size,
+       failure_count = failure_count + 1,
+       last_processed_at = excluded.last_processed_at`,
+  ).run(adapterName, sourcePath, size, size);
 }

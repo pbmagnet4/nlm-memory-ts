@@ -25,7 +25,7 @@ import type {
   IngestRecord,
   SqliteSessionStore,
 } from "@core/storage/sqlite-session-store.js";
-import { recordClassified, scanOnce } from "./scan-once.js";
+import { MAX_CLASSIFY_FAILURES, recordClassified, recordFailed, scanOnce } from "./scan-once.js";
 
 const DEFAULT_INTERVAL_MS = 30 * 60 * 1000; // 30 min, matches Python default
 const DEFAULT_CLASSIFY_TIMEOUT_MS = 120_000;
@@ -135,9 +135,16 @@ export class ScanScheduler {
           );
         } catch (e) {
           classifyFailures += 1;
-          this.opts.logger(
-            `[scheduler] classifier ${e instanceof TimeoutError ? "timed out" : "error"} for ${chunk.id} — skipping`,
-          );
+          const reason = e instanceof TimeoutError ? "timed out" : `error: ${e instanceof Error ? e.message : String(e)}`;
+          recordFailed(this.opts.store.rawDb(), adapter.name, chunk.sourcePath);
+          const failureRow = this.opts.store.rawDb()
+            .prepare<[string, string], { failure_count: number }>(
+              "SELECT COALESCE(failure_count, 0) AS failure_count FROM adapter_state WHERE adapter_name = ? AND source_path = ?",
+            )
+            .get(adapter.name, chunk.sourcePath);
+          const count = failureRow?.failure_count ?? 1;
+          const ceiling = count >= MAX_CLASSIFY_FAILURES ? ` (failure ${count}/${MAX_CLASSIFY_FAILURES} — will skip until file grows)` : ` (failure ${count}/${MAX_CLASSIFY_FAILURES})`;
+          this.opts.logger(`[scheduler] classifier ${reason} for ${chunk.id}${ceiling}`);
           continue;
         }
 
@@ -189,6 +196,7 @@ export class ScanScheduler {
           inserted += 1;
         } catch (e) {
           storageFailures += 1;
+          recordFailed(this.opts.store.rawDb(), adapter.name, chunk.sourcePath);
           this.opts.logger(
             `[scheduler] storage error for ${chunk.id}: ${e instanceof Error ? e.message : String(e)}`,
           );

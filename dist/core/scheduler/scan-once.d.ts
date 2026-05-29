@@ -10,11 +10,15 @@
  * Contract (per file under adapter.discover()):
  *   - If `now - mtime < idleMinutes * 60s` → still active, skip
  *   - Lookup adapter_state by (adapterName, sourcePath):
- *       no row + file idle      → NEW: parse + return (chunk, supersedes=null)
- *       row exists, size match  → UNCHANGED: skip
- *       row exists, file grew   → RESUMED: parse + return (chunk, prior.session_id)
+ *       no row + file idle                       → NEW: parse + return (chunk, supersedes=null)
+ *       row exists, size match, failures < ceil  → UNCHANGED: skip
+ *       row exists, size match, failures >= ceil → FAILED_CEILING: skip (log once per session)
+ *       row exists, file grew                    → RESUMED: parse + return, reset failure_count
  *   - After successful classify+insert downstream, call `recordClassified`
  *     to upsert adapter_state with the new size + session_id.
+ *   - On classify/storage failure, call `recordFailed` to increment failure_count.
+ *     When failure_count reaches MAX_CLASSIFY_FAILURES and the file hasn't grown,
+ *     the file is permanently skipped until new content arrives.
  */
 import type Database from "better-sqlite3";
 import type { SessionChunk, TranscriptAdapter } from "../../ports/transcript-adapter.js";
@@ -22,5 +26,7 @@ export interface ScanResult {
     readonly chunk: SessionChunk;
     readonly supersedes: string | null;
 }
+export declare const MAX_CLASSIFY_FAILURES = 3;
 export declare function scanOnce(adapter: TranscriptAdapter, idleMinutes: number, db: Database.Database, now?: number): Promise<ReadonlyArray<ScanResult>>;
 export declare function recordClassified(db: Database.Database, adapterName: string, sourcePath: string, sessionId: string): void;
+export declare function recordFailed(db: Database.Database, adapterName: string, sourcePath: string): void;
