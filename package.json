@@ -1,6 +1,6 @@
 {
   "name": "nlm-memory",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Local-first non-linear memory operating system for AI operators.",
   "type": "module",
   "license": "Apache-2.0",
@@ -26,6 +26,7 @@
     "lint": "eslint src tests"
   },
   "dependencies": {
+    "@clack/prompts": "^1.4.0",
     "@hono/node-server": "^2.0.3",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@toon-format/toon": "^2.3.0",
@@ -33,6 +34,7 @@
     "commander": "^12.1.0",
     "hono": "^4.6.0",
     "sqlite-vec": "^0.1.6",
+    "yaml": "^2.9.0",
     "zod": "^3.23.0"
   },
   "devDependencies": {
