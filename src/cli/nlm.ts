@@ -715,6 +715,11 @@ program
   .command("ui")
   .description("Open the WebUI, bootstrapping a session cookie from NLM_MCP_TOKEN")
   .action(() => {
+    // The daemon autoloads .env at startup, but a fresh shell invoking
+    // `nlm ui` won't have NLM_MCP_TOKEN exported unless the user sourced
+    // it manually. Mirror the daemon's lookup so this command works from
+    // any shell on the same machine.
+    autoloadEnv();
     const p = port();
     const token = process.env["NLM_MCP_TOKEN"];
     const target = token
