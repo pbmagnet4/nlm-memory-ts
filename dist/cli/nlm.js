@@ -719,7 +719,8 @@ config
 program
     .command("ui")
     .description("Open the WebUI, bootstrapping a session cookie via single-use nonce")
-    .action(async () => {
+    .option("--print", "Print the bootstrap URL to stdout instead of opening a browser (use over SSH when the daemon host is headless or you're accessing via Tailscale)")
+    .action(async (opts) => {
     // The daemon autoloads .env at startup, but a fresh shell invoking
     // `nlm ui` won't have NLM_MCP_TOKEN exported unless the user sourced
     // it manually. Mirror the daemon's lookup so this command works from
@@ -750,6 +751,18 @@ program
             console.error(`  ${e instanceof Error ? e.message : String(e)}`);
             process.exit(1);
         }
+    }
+    if (opts.print) {
+        // stdout (not stderr) so the URL can be piped or captured cleanly.
+        // The accompanying status line goes to stderr.
+        if (token) {
+            console.error(`nlm ui: paste this URL into your browser within ~60s (nonce expires):`);
+        }
+        else {
+            console.error("nlm ui: visit this URL in your browser:");
+        }
+        process.stdout.write(`${target}\n`);
+        return;
     }
     const opener = process.platform === "darwin"
         ? "open"

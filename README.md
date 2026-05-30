@@ -265,6 +265,27 @@ No telemetry. No vendor pings. No account.
 
 Report vulnerabilities via [SECURITY.md](SECURITY.md).
 
+### Remote access
+
+The daemon binds to `127.0.0.1`. If you want to reach the UI from another device — phone, second laptop — don't change the bind. Put a tunnel in front instead.
+
+**Tailscale (recommended for personal use).** Run once on the daemon host:
+
+```sh
+tailscale serve --bg http://localhost:3940
+```
+
+Then visit `https://<machine>.<tailnet>.ts.net/ui/` from any tailnet device. Tailscale Serve rewrites the upstream `Host` header to `localhost:3940`, so the loopback check passes without any nlm-memory config. WireGuard + your tailnet ACLs are the auth layer — for a single-user tailnet this is strictly stronger than `NLM_UI_AUTH=cookie`, so leave that off.
+
+**If you do enable `NLM_UI_AUTH=cookie`** (defense in depth, or you've added untrusted devices to your tailnet), bootstrapping a cookie from a remote device needs one extra step. `nlm ui` only opens a browser on the daemon host; for the remote browser:
+
+```sh
+ssh <daemon-host> 'nlm ui --print'   # mints a nonce, prints the URL
+# Paste the URL into the remote browser within ~60s (nonce TTL)
+```
+
+**Do not expose the daemon directly to the public internet.** The cookie is a shared-HMAC speed bump, not real public-internet auth. If you absolutely must, put it behind something with real authentication (Cloudflare Access, Tailscale Funnel with auth in front, etc.).
+
 ---
 
 ## Upgrading from v0.4.x
