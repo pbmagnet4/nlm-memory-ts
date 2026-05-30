@@ -32,6 +32,7 @@ import { appendCitation, citationStats } from "../core/recall/citation-log.js";
 import { appendSupersedence } from "../core/storage/supersedence-log.js";
 import { getUpdateStatus } from "../core/update-check/check.js";
 import { buildClearCookie, buildSessionCookie, deriveSessionValue, parseCookies, sanitizeNextPath, SESSION_COOKIE_NAME, verifySessionCookie, } from "./ui-auth.js";
+import { createNonceStore } from "./auth-nonce.js";
 import { clearSurfaced, loadSurfaced, recordSurfaced } from "../core/hook/memo.js";
 import { clearCited } from "../core/hook/cite-memo.js";
 import { classifyPrompt } from "../core/hook/gate.js";
@@ -125,12 +126,23 @@ export function createApp(deps) {
     registerIngestRoute(app, deps);
     registerProviderRoutes(app, deps);
     registerSessionRoute(app, deps);
+    const nonceStore = createNonceStore();
+    registerNonceRoute(app, nonceStore);
     if (deps.uiDist) {
         installUiGate(app);
-        registerUiAuthRoutes(app);
+        registerUiAuthRoutes(app, nonceStore);
         mountSpa(app, deps.uiDist);
     }
     return app;
+}
+function registerNonceRoute(app, nonceStore) {
+    // Bearer-protected via the existing /api/* gate. The CLI calls this
+    // with NLM_MCP_TOKEN already in its env (autoloaded), gets a nonce,
+    // then opens /ui/auth?nonce=<short-lived-single-use> in the browser.
+    app.post("/api/ui-bootstrap-nonce", (c) => {
+        const minted = nonceStore.mint();
+        return c.json(minted);
+    });
 }
 // ── Local-only access middleware (defense in depth on top of 127.0.0.1 bind) ──
 //
@@ -216,7 +228,7 @@ function installUiGate(app) {
         return c.redirect(`/ui/auth?next=${encodeURIComponent(here)}`);
     });
 }
-function registerUiAuthRoutes(app) {
+function registerUiAuthRoutes(app, nonceStore) {
     app.get("/ui/auth", (c) => {
         const token = process.env["NLM_MCP_TOKEN"];
         const next = sanitizeNextPath(c.req.query("next"));
@@ -225,19 +237,14 @@ function registerUiAuthRoutes(app) {
             // user straight in; the /api/* gate is also pass-through in this mode.
             return c.redirect(next);
         }
-        const provided = c.req.query("t");
-        if (provided) {
-            const given = Buffer.from(provided, "utf8");
-            const want = Buffer.from(token, "utf8");
-            const ok = given.length === want.length && timingSafeEqual(given, want);
-            if (ok) {
-                c.header("Set-Cookie", buildSessionCookie(deriveSessionValue(token)));
-                return c.redirect(next);
-            }
-            // Wrong token → render the same instructions page as the no-token case.
-            // No "Invalid token" message: an attacker should not be able to tell
-            // whether their guess was wrong or they're just missing the bootstrap.
+        const nonce = c.req.query("nonce");
+        if (nonce && nonceStore.redeem(nonce)) {
+            c.header("Set-Cookie", buildSessionCookie(deriveSessionValue(token)));
+            return c.redirect(next);
         }
+        // Missing/expired/forged nonce → render the same instructions page.
+        // No discrimination in the response: an attacker can't tell whether
+        // their nonce was wrong, expired, already redeemed, or never existed.
         return c.html(renderAuthPage());
     });
     app.post("/ui/logout", (c) => {

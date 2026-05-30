@@ -713,8 +713,8 @@ program
 
 program
   .command("ui")
-  .description("Open the WebUI, bootstrapping a session cookie from NLM_MCP_TOKEN")
-  .action(() => {
+  .description("Open the WebUI, bootstrapping a session cookie via single-use nonce")
+  .action(async () => {
     // The daemon autoloads .env at startup, but a fresh shell invoking
     // `nlm ui` won't have NLM_MCP_TOKEN exported unless the user sourced
     // it manually. Mirror the daemon's lookup so this command works from
@@ -722,9 +722,29 @@ program
     autoloadEnv();
     const p = port();
     const token = process.env["NLM_MCP_TOKEN"];
-    const target = token
-      ? `http://localhost:${p}/ui/auth?t=${encodeURIComponent(token)}`
-      : `http://localhost:${p}/ui/`;
+    let target = `http://localhost:${p}/ui/`;
+    if (token) {
+      // Mint a single-use nonce server-side and put THAT in the URL,
+      // not the long-lived token. Browser history retains the nonce
+      // but the nonce dies on first use or after ~60 seconds. Replay
+      // from any leaked URL fails.
+      try {
+        const res = await fetch(`http://localhost:${p}/api/ui-bootstrap-nonce`, {
+          method: "POST",
+          headers: { authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) {
+          console.error(`nlm ui: daemon rejected nonce request (HTTP ${res.status}). Is NLM_MCP_TOKEN current?`);
+          process.exit(1);
+        }
+        const { nonce } = (await res.json()) as { nonce: string };
+        target = `http://localhost:${p}/ui/auth?nonce=${encodeURIComponent(nonce)}`;
+      } catch (e) {
+        console.error(`nlm ui: could not reach the daemon at localhost:${p}. Is it running?`);
+        console.error(`  ${e instanceof Error ? e.message : String(e)}`);
+        process.exit(1);
+      }
+    }
     const opener = process.platform === "darwin"
       ? "open"
       : process.platform === "linux"

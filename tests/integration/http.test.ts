@@ -651,26 +651,52 @@ describe("HTTP UI gate", () => {
     expect(body).not.toMatch(/<input[^>]*name="t"/);
   });
 
-  it("/ui/auth?t=<valid> mints a cookie and redirects", async () => {
-    const res = await app.request("/ui/auth?t=test-token&next=/ui/pulse");
-    expect([301, 302, 303, 307, 308]).toContain(res.status);
-    expect(res.headers.get("location")).toBe("/ui/pulse");
-    const setCookie = res.headers.get("set-cookie") ?? "";
+  it("/ui/auth?nonce=<valid> mints a cookie, redirects, and is single-use", async () => {
+    // Mint via the Bearer-protected nonce endpoint, then redeem via browser path.
+    const mintRes = await app.request("/api/ui-bootstrap-nonce", {
+      method: "POST",
+      headers: { host: "localhost:3940", authorization: "Bearer test-token" },
+    });
+    expect(mintRes.status).toBe(200);
+    const { nonce } = (await mintRes.json()) as { nonce: string };
+
+    const first = await app.request(`/ui/auth?nonce=${encodeURIComponent(nonce)}&next=/ui/pulse`);
+    expect([301, 302, 303, 307, 308]).toContain(first.status);
+    expect(first.headers.get("location")).toBe("/ui/pulse");
+    const setCookie = first.headers.get("set-cookie") ?? "";
     expect(setCookie).toMatch(/^nlm_ui_session=/);
     expect(setCookie).toContain("HttpOnly");
     expect(setCookie).toContain("SameSite=Strict");
+
+    // Second attempt with the same nonce must NOT mint a cookie.
+    const second = await app.request(`/ui/auth?nonce=${encodeURIComponent(nonce)}`);
+    expect(second.headers.get("set-cookie")).toBeNull();
+    expect(second.status).toBe(200);
   });
 
-  it("/ui/auth?t=<wrong> returns the same instructions page as no-token (no oracle)", async () => {
-    const wrongRes = await app.request("/ui/auth?t=wrong");
+  it("/ui/auth?nonce=<wrong> returns the same instructions page as no-nonce (no oracle)", async () => {
+    const wrongRes = await app.request("/ui/auth?nonce=fake-nonce-value");
     const emptyRes = await app.request("/ui/auth");
     expect(wrongRes.status).toBe(emptyRes.status);
     expect(await wrongRes.text()).toBe(await emptyRes.text());
     expect(wrongRes.headers.get("set-cookie")).toBeNull();
   });
 
-  it("/ui/auth?t=<valid>&next=https://evil.com collapses to /ui/ (open-redirect guard)", async () => {
-    const res = await app.request("/ui/auth?t=test-token&next=https://evil.com");
+  it("nonce endpoint requires Bearer (or cookie) — anonymous callers can't mint", async () => {
+    const res = await app.request("/api/ui-bootstrap-nonce", {
+      method: "POST",
+      headers: { host: "localhost:3940" },
+    });
+    expect(res.status).toBe(401);
+  });
+
+  it("/ui/auth?nonce=<valid>&next=https://evil.com collapses to /ui/ (open-redirect guard)", async () => {
+    const mintRes = await app.request("/api/ui-bootstrap-nonce", {
+      method: "POST",
+      headers: { host: "localhost:3940", authorization: "Bearer test-token" },
+    });
+    const { nonce } = (await mintRes.json()) as { nonce: string };
+    const res = await app.request(`/ui/auth?nonce=${encodeURIComponent(nonce)}&next=https://evil.com`);
     expect(res.headers.get("location")).toBe("/ui/");
   });
 
