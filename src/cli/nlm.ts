@@ -70,7 +70,7 @@ import { normalizeEmbeddings } from "../core/embedding/embed-normalize.js";
 import { ScanScheduler } from "../core/scheduler/scheduler.js";
 import { MemoSweepScheduler } from "../core/hook/memo-sweep.js";
 import { isAgentLoaded, isBenignBootoutError } from "./launchctl-helpers.js";
-import { planRestart } from "./restart-helpers.js";
+import { DAEMON_PKILL_PATTERN, planRestart } from "./restart-helpers.js";
 import { adapterFromSource } from "../core/adapters/from-source.js";
 import type { TranscriptAdapter } from "../ports/transcript-adapter.js";
 import { scanUsefulHits } from "../core/recall/useful-scan.js";
@@ -691,7 +691,10 @@ program
         return;
       case "pkill-respawn":
         try {
-          execFileSync("pkill", ["-f", "nlm.*start"], { stdio: "ignore" });
+          // Pattern matches the daemon entry point specifically. A naive
+          // "nlm.*start" would also match this `nlm restart` invocation and
+          // kill the process running pkill before it can spawn a replacement.
+          execFileSync("pkill", ["-f", DAEMON_PKILL_PATTERN], { stdio: "ignore" });
         } catch {
           // No matching process — fine, we'll just start a fresh one.
         }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { planRestart, type RestartContext } from "../../../src/cli/restart-helpers.js";
+import { DAEMON_PKILL_PATTERN, planRestart, type RestartContext } from "../../../src/cli/restart-helpers.js";
 
 const base: RestartContext = {
   platform: "darwin",
@@ -72,5 +72,30 @@ describe("planRestart — other platforms", () => {
   it("flags Windows as unsupported", () => {
     const plan = planRestart({ ...base, platform: "win32" });
     expect(plan.kind).toBe("unsupported");
+  });
+});
+
+describe("DAEMON_PKILL_PATTERN", () => {
+  // pkill -f matches against the full argv joined by spaces. The pattern
+  // must hit the daemon's entry point but miss the `nlm restart` command
+  // that runs pkill, otherwise pkill kills its own caller.
+  function matches(argv: string): boolean {
+    return new RegExp(DAEMON_PKILL_PATTERN).test(argv);
+  }
+
+  it("matches a dist daemon invocation", () => {
+    expect(matches("node /usr/local/lib/node_modules/nlm-memory/dist/cli/nlm.js start")).toBe(true);
+  });
+
+  it("matches a tsx dev daemon invocation", () => {
+    expect(matches("node --import tsx/loader src/cli/nlm.ts start")).toBe(true);
+  });
+
+  it("does NOT match an `nlm restart` invocation", () => {
+    expect(matches("node /usr/local/lib/node_modules/nlm-memory/dist/cli/nlm.js restart")).toBe(false);
+  });
+
+  it("does NOT match the pkill command line itself", () => {
+    expect(matches("pkill -f nlm\\.(js|ts) start")).toBe(false);
   });
 });

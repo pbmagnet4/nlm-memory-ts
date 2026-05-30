@@ -7,6 +7,14 @@
  * out here so it can be unit-tested without spawning launchctl/systemctl.
  */
 
+/**
+ * Pattern fed to `pkill -f` when no managed unit owns the daemon. Must
+ * match the daemon's entry-point invocation but NOT the `nlm restart`
+ * command running pkill — otherwise pkill would kill its own caller
+ * before the replacement is spawned.
+ */
+export const DAEMON_PKILL_PATTERN = "nlm\\.(js|ts) start";
+
 export type RestartStrategy =
   | { kind: "launchctl-kickstart"; uid: number; label: string }
   | { kind: "launchctl-bootstrap"; uid: number; plist: string }
