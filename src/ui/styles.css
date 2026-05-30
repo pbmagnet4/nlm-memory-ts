@@ -613,6 +613,19 @@ input[type="file"].file-input:disabled::file-selector-button {
   text-underline-offset: 2px;
 }
 .update-banner-link:hover { color: var(--text-1); }
+.update-banner-nudge {
+  margin: 8px 0 0;
+  padding: 6px 8px;
+  background: var(--bg-1);
+  border-left: 2px solid var(--accent, #4a8);
+  border-radius: 3px;
+  color: var(--text-2, var(--text-1));
+}
+.update-banner-nudge code {
+  padding: 1px 4px;
+  background: var(--bg-0, var(--bg-1));
+  border-radius: 3px;
+}
 
 /* Collapsed sidenav state — just a dot. */
 .update-banner--collapsed {

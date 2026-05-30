@@ -28,7 +28,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, resolve, join } from "node:path";
 import { homedir } from "node:os";
 import { mkdirSync, writeFileSync, existsSync, rmSync } from "node:fs";
-import { execFileSync, spawnSync } from "node:child_process";
+import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { Command } from "commander";
 import pkg from "../../package.json" with { type: "json" };
 import { serve } from "@hono/node-server";
@@ -70,6 +70,7 @@ import { normalizeEmbeddings } from "../core/embedding/embed-normalize.js";
 import { ScanScheduler } from "../core/scheduler/scheduler.js";
 import { MemoSweepScheduler } from "../core/hook/memo-sweep.js";
 import { isAgentLoaded, isBenignBootoutError } from "./launchctl-helpers.js";
+import { planRestart } from "./restart-helpers.js";
 import { adapterFromSource } from "../core/adapters/from-source.js";
 import type { TranscriptAdapter } from "../ports/transcript-adapter.js";
 import { scanUsefulHits } from "../core/recall/useful-scan.js";
@@ -657,6 +658,54 @@ program
       console.error(`nlm: removed ${LAUNCH_AGENT_PLIST}`);
     }
     console.error("nlm: uninstalled. Run `nlm install` to reinstall.");
+  });
+
+program
+  .command("restart")
+  .description("Restart the running daemon so a freshly-installed binary actually takes effect")
+  .action(() => {
+    const plan = planRestart({
+      platform: process.platform,
+      uid: process.getuid?.(),
+      agentLoaded: process.platform === "darwin" && isAgentLoaded(LAUNCH_AGENT_LABEL),
+      plistExists: existsSync(LAUNCH_AGENT_PLIST),
+      systemdAvailable: linuxSystemdUserAvailable(),
+      unitFileExists: existsSync(LINUX_SYSTEMD_UNIT_PATH),
+      label: LAUNCH_AGENT_LABEL,
+      plistPath: LAUNCH_AGENT_PLIST,
+      unitName: LINUX_SYSTEMD_UNIT_NAME,
+    });
+
+    switch (plan.kind) {
+      case "launchctl-kickstart":
+        execFileSync("launchctl", ["kickstart", "-k", `gui/${plan.uid}/${plan.label}`]);
+        console.error(`nlm: kicked ${plan.label} — daemon restarted with new code.`);
+        return;
+      case "launchctl-bootstrap":
+        execFileSync("launchctl", ["bootstrap", `gui/${plan.uid}`, plan.plist]);
+        console.error("nlm: agent was not loaded — bootstrapped and started.");
+        return;
+      case "systemctl-restart":
+        execFileSync("systemctl", ["--user", "restart", plan.unit]);
+        console.error(`nlm: restarted ${plan.unit}.`);
+        return;
+      case "pkill-respawn":
+        try {
+          execFileSync("pkill", ["-f", "nlm.*start"], { stdio: "ignore" });
+        } catch {
+          // No matching process — fine, we'll just start a fresh one.
+        }
+        spawn(process.execPath, [__filename, "start"], {
+          detached: true,
+          stdio: "ignore",
+        }).unref();
+        console.error("nlm: no managed unit found — killed any running daemon and spawned a fresh one.");
+        return;
+      case "unsupported":
+        console.error(`nlm restart: ${plan.reason}`);
+        console.error("  Supported: macOS (LaunchAgent) and Linux (systemd user).");
+        process.exit(1);
+    }
   });
 
 const HOOK_JS = resolve(__dirname, "../hook/prompt-recall-hook.js");

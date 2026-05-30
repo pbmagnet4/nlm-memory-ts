@@ -4,13 +4,17 @@
  * the running daemon is strictly behind the latest npm-published version.
  *
  * Action surface is intentionally narrow: a Copy button that puts the
- * exact install command on the clipboard. No one-click install — npm
- * itself doesn't auto-update, and we don't know whether the user
- * installed via npm/pnpm/volta/fnm/Homebrew. Following npm's pattern of
- * "here's the command, you run it" is the right humble v1.
+ * exact install command on the clipboard. The command includes
+ * `&& nlm restart` because npm swaps the binary on disk but the running
+ * daemon stays on the old code in memory — without restart the user's
+ * apparent "I updated" reads as "nothing happened" on the next check.
+ *
+ * Freshness nudge: after copying, if 5+ min pass and /api/update-status
+ * still reports the same `current` version, the daemon never actually
+ * restarted. Surface a hint to run `nlm restart` directly.
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 interface UpdateStatus {
   current: string;
@@ -21,11 +25,16 @@ interface UpdateStatus {
 }
 
 const POLL_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6h
-const INSTALL_CMD = "npm i -g nlm-memory@latest";
+const POST_COPY_POLL_MS = 30 * 1000; // 30s — used after copy to catch the restart fast
+const NUDGE_AFTER_MS = 5 * 60 * 1000; // 5min without version change → nudge
+const INSTALL_CMD = "npm i -g nlm-memory@latest && nlm restart";
 
 export function UpdateBanner({ collapsed }: { collapsed: boolean }) {
   const [status, setStatus] = useState<UpdateStatus | null>(null);
   const [copied, setCopied] = useState(false);
+  const [copiedAt, setCopiedAt] = useState<number | null>(null);
+  const [showNudge, setShowNudge] = useState(false);
+  const versionAtCopyRef = useRef<string | null>(null);
   const [dismissedFor, setDismissedFor] = useState<string | null>(() => {
     if (typeof window === "undefined") return null;
     return window.localStorage.getItem("nlm.update.dismissed") ?? null;
@@ -45,12 +54,34 @@ export function UpdateBanner({ collapsed }: { collapsed: boolean }) {
       }
     }
     void check();
-    const id = window.setInterval(() => void check(), POLL_INTERVAL_MS);
+    const interval = copiedAt !== null ? POST_COPY_POLL_MS : POLL_INTERVAL_MS;
+    const id = window.setInterval(() => void check(), interval);
     return () => {
       cancelled = true;
       window.clearInterval(id);
     };
-  }, []);
+  }, [copiedAt]);
+
+  useEffect(() => {
+    if (copiedAt === null) {
+      setShowNudge(false);
+      return;
+    }
+    // Daemon already restarted (version changed) → tear down the nudge timer.
+    if (status && versionAtCopyRef.current && status.current !== versionAtCopyRef.current) {
+      setCopiedAt(null);
+      setShowNudge(false);
+      return;
+    }
+    const elapsed = Date.now() - copiedAt;
+    const remaining = NUDGE_AFTER_MS - elapsed;
+    if (remaining <= 0) {
+      setShowNudge(true);
+      return;
+    }
+    const id = window.setTimeout(() => setShowNudge(true), remaining);
+    return () => window.clearTimeout(id);
+  }, [copiedAt, status]);
 
   if (!status || !status.behind || !status.latest) return null;
   if (dismissedFor === status.latest) return null;
@@ -60,6 +91,8 @@ export function UpdateBanner({ collapsed }: { collapsed: boolean }) {
       await navigator.clipboard?.writeText(INSTALL_CMD);
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1800);
+      versionAtCopyRef.current = status?.current ?? null;
+      setCopiedAt(Date.now());
     } catch {
       setCopied(false);
     }
@@ -124,6 +157,12 @@ export function UpdateBanner({ collapsed }: { collapsed: boolean }) {
           release notes
         </a>
       </div>
+      {showNudge ? (
+        <p className="update-banner-nudge small" role="alert">
+          Daemon still on {status.current}. The npm install swaps the binary on
+          disk but the running daemon needs a kick — run <code className="mono">nlm restart</code>.
+        </p>
+      ) : null}
     </div>
   );
 }
