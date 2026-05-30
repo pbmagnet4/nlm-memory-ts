@@ -646,7 +646,9 @@ describe("HTTP UI gate", () => {
     const res = await app.request("/ui/auth");
     expect(res.status).toBe(200);
     const body = await res.text();
-    expect(body).toContain("NLM_MCP_TOKEN");
+    // Instructional page directs users to the CLI bootstrap. No paste form.
+    expect(body).toContain("nlm ui");
+    expect(body).not.toMatch(/<input[^>]*name="t"/);
   });
 
   it("/ui/auth?t=<valid> mints a cookie and redirects", async () => {
@@ -659,10 +661,12 @@ describe("HTTP UI gate", () => {
     expect(setCookie).toContain("SameSite=Strict");
   });
 
-  it("/ui/auth?t=<wrong> returns 401 (no cookie minted)", async () => {
-    const res = await app.request("/ui/auth?t=wrong");
-    expect(res.status).toBe(401);
-    expect(res.headers.get("set-cookie")).toBeNull();
+  it("/ui/auth?t=<wrong> returns the same instructions page as no-token (no oracle)", async () => {
+    const wrongRes = await app.request("/ui/auth?t=wrong");
+    const emptyRes = await app.request("/ui/auth");
+    expect(wrongRes.status).toBe(emptyRes.status);
+    expect(await wrongRes.text()).toBe(await emptyRes.text());
+    expect(wrongRes.headers.get("set-cookie")).toBeNull();
   });
 
   it("/ui/auth?t=<valid>&next=https://evil.com collapses to /ui/ (open-redirect guard)", async () => {

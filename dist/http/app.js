@@ -234,42 +234,31 @@ function registerUiAuthRoutes(app) {
                 c.header("Set-Cookie", buildSessionCookie(deriveSessionValue(token)));
                 return c.redirect(next);
             }
-            return c.html(renderAuthPage({ error: "Invalid token.", next }), 401);
+            // Wrong token → render the same instructions page as the no-token case.
+            // No "Invalid token" message: an attacker should not be able to tell
+            // whether their guess was wrong or they're just missing the bootstrap.
         }
-        return c.html(renderAuthPage({ next }));
+        return c.html(renderAuthPage());
     });
     app.post("/ui/logout", (c) => {
         c.header("Set-Cookie", buildClearCookie());
         return c.redirect("/ui/auth");
     });
 }
-function renderAuthPage(opts) {
-    const error = opts.error
-        ? `<p style="color:#e66;margin:0 0 12px;font-size:13px">${escapeHtml(opts.error)}</p>`
-        : "";
-    const nextSafe = escapeHtml(opts.next);
+function renderAuthPage() {
     return `<!doctype html>
-<html><head><meta charset="utf-8"><title>nlm-memory — sign in</title>
+<html><head><meta charset="utf-8"><title>nlm-memory</title>
 <style>
   body{background:#111;color:#ddd;font:14px/1.5 -apple-system,system-ui,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0}
-  form{background:#1a1a1a;border:1px solid #333;border-radius:8px;padding:24px;width:340px}
-  h1{font-size:16px;margin:0 0 4px}
-  p.hint{color:#888;margin:0 0 16px;font-size:12px}
-  input{width:100%;box-sizing:border-box;background:#0a0a0a;border:1px solid #333;color:#eee;padding:8px;border-radius:4px;font-family:ui-monospace,monospace}
-  button{margin-top:12px;width:100%;background:#4a8;color:#0a0a0a;border:none;padding:8px;border-radius:4px;cursor:pointer;font-weight:600}
-  code{background:#0a0a0a;padding:1px 4px;border-radius:3px}
+  main{background:#1a1a1a;border:1px solid #333;border-radius:8px;padding:24px;max-width:380px}
+  h1{font-size:16px;margin:0 0 8px}
+  p{color:#aaa;margin:0;font-size:13px}
+  code{background:#0a0a0a;color:#eee;padding:2px 6px;border-radius:3px;font-family:ui-monospace,monospace}
 </style></head>
-<body><form method="get" action="/ui/auth">
+<body><main>
   <h1>nlm-memory</h1>
-  <p class="hint">Paste your <code>NLM_MCP_TOKEN</code>, or run <code>nlm ui</code> from a terminal on this machine.</p>
-  ${error}
-  <input type="password" name="t" autofocus required placeholder="NLM_MCP_TOKEN" autocomplete="off">
-  <input type="hidden" name="next" value="${nextSafe}">
-  <button type="submit">Sign in</button>
-</form></body></html>`;
-}
-function escapeHtml(s) {
-    return s.replace(/[&<>"']/g, (c) => c === "&" ? "&amp;" : c === "<" ? "&lt;" : c === ">" ? "&gt;" : c === '"' ? "&quot;" : "&#39;");
+  <p>Run <code>nlm ui</code> from a terminal on this machine to sign in.</p>
+</main></body></html>`;
 }
 function registerHealthRoute(app) {
     app.get("/api/health", (c) => c.json({ status: "ok", service: "nlm-memory", version: pkg.version }));
