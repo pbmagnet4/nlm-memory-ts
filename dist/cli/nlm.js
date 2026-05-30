@@ -26,7 +26,7 @@
 import { fileURLToPath } from "node:url";
 import { dirname, resolve, join } from "node:path";
 import { homedir } from "node:os";
-import { mkdirSync, writeFileSync, existsSync, rmSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync, existsSync, rmSync } from "node:fs";
 import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { Command } from "commander";
 import pkg from "../../package.json" with { type: "json" };
@@ -65,6 +65,7 @@ import { ScanScheduler } from "../core/scheduler/scheduler.js";
 import { MemoSweepScheduler } from "../core/hook/memo-sweep.js";
 import { isAgentLoaded, isBenignBootoutError } from "./launchctl-helpers.js";
 import { DAEMON_PKILL_PATTERN, planRestart } from "./restart-helpers.js";
+import { applyEnvAssignment } from "./config-env.js";
 import { adapterFromSource } from "../core/adapters/from-source.js";
 import { scanUsefulHits } from "../core/recall/useful-scan.js";
 import { runDigest } from "./digest.js";
@@ -679,6 +680,41 @@ program
             console.error("  Supported: macOS (LaunchAgent) and Linux (systemd user).");
             process.exit(1);
     }
+});
+const config = program
+    .command("config")
+    .description("Read and write nlm-memory settings in ~/.nlm/.env");
+config
+    .command("ui-auth [state]")
+    .description("Show or set the WebUI auth mode (on = cookie, off = no auth)")
+    .action((state) => {
+    autoloadEnv();
+    const envPath = join(homedir(), ".nlm", ".env");
+    if (state === undefined) {
+        const current = process.env["NLM_UI_AUTH"] === "cookie" ? "on" : "off";
+        console.error(`nlm config ui-auth: currently ${current}`);
+        console.error("  on  → /ui/* and /api/* require a session cookie minted by `nlm ui`");
+        console.error("  off → loopback bind is the only check (default)");
+        return;
+    }
+    const normalized = state.toLowerCase();
+    let value;
+    if (normalized === "on" || normalized === "cookie") {
+        value = "cookie";
+    }
+    else if (normalized === "off" || normalized === "none") {
+        value = null;
+    }
+    else {
+        console.error(`nlm config ui-auth: unknown state "${state}". Use "on" or "off".`);
+        process.exit(1);
+    }
+    mkdirSync(dirname(envPath), { recursive: true });
+    const before = existsSync(envPath) ? readFileSync(envPath, "utf8") : "";
+    const after = applyEnvAssignment(before, "NLM_UI_AUTH", value);
+    writeFileSync(envPath, after, { mode: 0o600 });
+    console.error(`nlm config ui-auth: set to ${value === null ? "off" : "on"} in ${envPath}`);
+    console.error("  Restart the daemon to pick up the change: nlm restart");
 });
 program
     .command("ui")

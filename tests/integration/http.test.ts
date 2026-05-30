@@ -514,6 +514,7 @@ describe("HTTP local-only gate", () => {
   let savedVitest: string | undefined;
   let savedNodeEnv: string | undefined;
   let savedToken: string | undefined;
+  let savedUiAuth: string | undefined;
 
   beforeEach(() => {
     tmp = mkdtempSync(join(tmpdir(), "nlm-http-gate-"));
@@ -524,9 +525,11 @@ describe("HTTP local-only gate", () => {
     savedVitest = process.env["VITEST"];
     savedNodeEnv = process.env["NODE_ENV"];
     savedToken = process.env["NLM_MCP_TOKEN"];
+    savedUiAuth = process.env["NLM_UI_AUTH"];
     delete process.env["VITEST"];
     delete process.env["NODE_ENV"];
     process.env["NLM_MCP_TOKEN"] = "test-token";
+    process.env["NLM_UI_AUTH"] = "cookie";
     const recall = new RecallService({ store, llm: new FixedEmbedder(unit([1, 0, 0])) });
     app = createApp({ recall, store, liveStore: store });
   });
@@ -540,6 +543,8 @@ describe("HTTP local-only gate", () => {
     else process.env["NODE_ENV"] = savedNodeEnv;
     if (savedToken === undefined) delete process.env["NLM_MCP_TOKEN"];
     else process.env["NLM_MCP_TOKEN"] = savedToken;
+    if (savedUiAuth === undefined) delete process.env["NLM_UI_AUTH"];
+    else process.env["NLM_UI_AUTH"] = savedUiAuth;
   });
 
   it("allows /api/health with no auth headers (liveness probe)", async () => {
@@ -606,6 +611,7 @@ describe("HTTP UI gate", () => {
   let savedVitest: string | undefined;
   let savedNodeEnv: string | undefined;
   let savedToken: string | undefined;
+  let savedUiAuth: string | undefined;
   const uiDist = resolve(__dirname, "../../dist/ui");
 
   beforeEach(() => {
@@ -617,9 +623,11 @@ describe("HTTP UI gate", () => {
     savedVitest = process.env["VITEST"];
     savedNodeEnv = process.env["NODE_ENV"];
     savedToken = process.env["NLM_MCP_TOKEN"];
+    savedUiAuth = process.env["NLM_UI_AUTH"];
     delete process.env["VITEST"];
     delete process.env["NODE_ENV"];
     process.env["NLM_MCP_TOKEN"] = "test-token";
+    process.env["NLM_UI_AUTH"] = "cookie";
     const recall = new RecallService({ store, llm: new FixedEmbedder(unit([1, 0, 0])) });
     app = createApp({ recall, store, liveStore: store, uiDist });
   });
@@ -633,6 +641,8 @@ describe("HTTP UI gate", () => {
     else process.env["NODE_ENV"] = savedNodeEnv;
     if (savedToken === undefined) delete process.env["NLM_MCP_TOKEN"];
     else process.env["NLM_MCP_TOKEN"] = savedToken;
+    if (savedUiAuth === undefined) delete process.env["NLM_UI_AUTH"];
+    else process.env["NLM_UI_AUTH"] = savedUiAuth;
   });
 
   it("redirects /ui/pulse to /ui/auth when no cookie is present", async () => {
@@ -723,5 +733,136 @@ describe("HTTP UI gate", () => {
     const res = await app.request("/ui/logout", { method: "POST" });
     const setCookie = res.headers.get("set-cookie") ?? "";
     expect(setCookie).toContain("Max-Age=0");
+  });
+
+  it("rolls the cookie forward on every authenticated /ui/* hit (no fixed expiry)", async () => {
+    const { deriveSessionValue, SESSION_COOKIE_NAME } = await import("../../src/http/ui-auth.js");
+    const cookieValue = deriveSessionValue("test-token");
+    const res = await app.request("/ui/pulse", {
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${cookieValue}` },
+    });
+    expect(res.status).toBe(200);
+    const setCookie = res.headers.get("set-cookie") ?? "";
+    // Re-issued with fresh Max-Age so an actively-used session never expires.
+    expect(setCookie).toMatch(/^nlm_ui_session=/);
+    expect(setCookie).toMatch(/Max-Age=\d{6,}/);
+  });
+
+  it("rolls the cookie forward on every authenticated /api/* hit too (SPA single-tab use)", async () => {
+    const { deriveSessionValue, SESSION_COOKIE_NAME } = await import("../../src/http/ui-auth.js");
+    const cookieValue = deriveSessionValue("test-token");
+    const res = await app.request("/api/dataset", {
+      headers: {
+        host: "localhost:3940",
+        cookie: `${SESSION_COOKIE_NAME}=${cookieValue}`,
+      },
+    });
+    const setCookie = res.headers.get("set-cookie") ?? "";
+    expect(setCookie).toMatch(/Max-Age=\d{6,}/);
+  });
+});
+
+// Default config: NLM_UI_AUTH unset. /ui/* and /api/* should pass through
+// the loopback Host/Origin check without requiring a cookie or Bearer.
+describe("HTTP gate — default off (NLM_UI_AUTH unset)", () => {
+  let tmp: string;
+  let store: SqliteSessionStore;
+  let app: Hono;
+  let savedVitest: string | undefined;
+  let savedNodeEnv: string | undefined;
+  let savedToken: string | undefined;
+  let savedUiAuth: string | undefined;
+  const uiDist = resolve(__dirname, "../../dist/ui");
+
+  beforeEach(() => {
+    tmp = mkdtempSync(join(tmpdir(), "nlm-default-"));
+    store = new SqliteSessionStore({
+      dbPath: join(tmp, "canonical.sqlite"),
+      migrationsDir: MIGRATIONS_DIR,
+    });
+    savedVitest = process.env["VITEST"];
+    savedNodeEnv = process.env["NODE_ENV"];
+    savedToken = process.env["NLM_MCP_TOKEN"];
+    savedUiAuth = process.env["NLM_UI_AUTH"];
+    delete process.env["VITEST"];
+    delete process.env["NODE_ENV"];
+    // Token set but UI auth NOT enabled — this is the default install state
+    // once the new release lands.
+    process.env["NLM_MCP_TOKEN"] = "test-token";
+    delete process.env["NLM_UI_AUTH"];
+    const recall = new RecallService({ store, llm: new FixedEmbedder(unit([1, 0, 0])) });
+    app = createApp({ recall, store, liveStore: store, uiDist });
+  });
+
+  afterEach(() => {
+    store.close();
+    rmSync(tmp, { recursive: true, force: true });
+    if (savedVitest === undefined) delete process.env["VITEST"];
+    else process.env["VITEST"] = savedVitest;
+    if (savedNodeEnv === undefined) delete process.env["NODE_ENV"];
+    else process.env["NODE_ENV"] = savedNodeEnv;
+    if (savedToken === undefined) delete process.env["NLM_MCP_TOKEN"];
+    else process.env["NLM_MCP_TOKEN"] = savedToken;
+    if (savedUiAuth === undefined) delete process.env["NLM_UI_AUTH"];
+    else process.env["NLM_UI_AUTH"] = savedUiAuth;
+  });
+
+  it("/ui/pulse loads without a cookie", async () => {
+    const res = await app.request("/ui/pulse", { headers: { host: "localhost:3940" } });
+    expect(res.status).toBe(200);
+  });
+
+  it("/api/dataset is reachable without Bearer or cookie", async () => {
+    const res = await app.request("/api/dataset", { headers: { host: "localhost:3940" } });
+    expect(res.status).not.toBe(401);
+    expect(res.status).not.toBe(403);
+  });
+
+  it("non-loopback Host still rejected (loopback bind defense remains)", async () => {
+    const res = await app.request("/api/dataset", { headers: { host: "evil.com" } });
+    expect(res.status).toBe(403);
+  });
+
+  it("does NOT issue a session cookie (nothing to roll)", async () => {
+    const res = await app.request("/ui/pulse", { headers: { host: "localhost:3940" } });
+    expect(res.headers.get("set-cookie")).toBeNull();
+  });
+});
+
+describe("HTTP gate — misconfig (NLM_UI_AUTH=cookie without NLM_MCP_TOKEN)", () => {
+  let tmp: string;
+  let store: SqliteSessionStore;
+  let app: Hono;
+  let saved: Record<string, string | undefined> = {};
+
+  beforeEach(() => {
+    tmp = mkdtempSync(join(tmpdir(), "nlm-misconfig-"));
+    store = new SqliteSessionStore({
+      dbPath: join(tmp, "canonical.sqlite"),
+      migrationsDir: MIGRATIONS_DIR,
+    });
+    for (const k of ["VITEST", "NODE_ENV", "NLM_MCP_TOKEN", "NLM_UI_AUTH"]) {
+      saved[k] = process.env[k];
+    }
+    delete process.env["VITEST"];
+    delete process.env["NODE_ENV"];
+    delete process.env["NLM_MCP_TOKEN"];
+    process.env["NLM_UI_AUTH"] = "cookie";
+    const recall = new RecallService({ store, llm: new FixedEmbedder(unit([1, 0, 0])) });
+    app = createApp({ recall, store, liveStore: store });
+  });
+
+  afterEach(() => {
+    store.close();
+    rmSync(tmp, { recursive: true, force: true });
+    for (const [k, v] of Object.entries(saved)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+  });
+
+  it("/api/* fails closed with a 500 (better than silent pass-through)", async () => {
+    const res = await app.request("/api/dataset", { headers: { host: "localhost:3940" } });
+    expect(res.status).toBe(500);
   });
 });

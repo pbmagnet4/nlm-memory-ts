@@ -239,12 +239,17 @@ function registerNonceRoute(app: Hono, nonceStore: NonceStore): void {
 // What's left:
 //   1. DNS rebinding from a malicious tab — Host check blocks it
 //   2. Browser drive-by from a cross-origin tab — Origin check blocks it
-//   3. Port forwarding (ssh -L, ngrok) reaching another machine — Bearer blocks it
+//   3. Port forwarding (ssh -L, ngrok) reaching another machine — auth blocks it
 //
-// Applied to /api/* and /mcp. Static UI (/ui/*) and /api/health pass through
-// the host check but skip Origin/Bearer so SPAs and liveness probes work.
-// Skip entirely under Vitest — in-process app.request() calls have no real
-// network surface and synthesize requests without a Host header.
+// Auth is opt-in via NLM_UI_AUTH=cookie. Default is off because the median
+// user is alone on their Mac and loopback bind is already the boundary —
+// forcing them to bootstrap a cookie just to load /ui/pulse is hostile UX.
+// Users who actually expose the port (Tailscale, ssh -L) flip the toggle
+// via `nlm config ui-auth on`.
+function uiAuthMode(): "cookie" | "none" {
+  return process.env["NLM_UI_AUTH"] === "cookie" ? "cookie" : "none";
+}
+
 function installLocalOnlyMiddleware(app: Hono, boundPort: number): void {
   const skipLocalGate = !!process.env["VITEST"] || process.env["NODE_ENV"] === "test";
   app.use("/api/*", async (c, next) => {
@@ -260,16 +265,24 @@ function installLocalOnlyMiddleware(app: Hono, boundPort: number): void {
     if (origin !== undefined && !isLoopbackOrigin(origin, boundPort)) {
       return c.json({ error: "origin not allowed" }, 403);
     }
+    if (uiAuthMode() === "none") {
+      // Auth disabled by user. Loopback Host + Origin checks already passed.
+      return next();
+    }
     const token = process.env["NLM_MCP_TOKEN"];
     if (!token) {
-      // No token configured → local-only daemon with loopback Host already verified.
-      // Acceptable for single-user dev installs; production users should set the token.
-      return next();
+      // Misconfig: NLM_UI_AUTH=cookie but no token to key the HMAC. Fail
+      // closed — silently dropping to no-auth would be a worse surprise.
+      return c.json({ error: "NLM_UI_AUTH=cookie requires NLM_MCP_TOKEN to be set" }, 500);
     }
     // UI session cookie (HMAC of the token, set by /ui/auth bootstrap).
     // Carries the browser's API calls and survives token-stable restarts.
     const cookies = parseCookies(c.req.header("cookie"));
     if (verifySessionCookie(cookies[SESSION_COOKIE_NAME], token)) {
+      // Rolling expiry: every authenticated hit re-issues Set-Cookie so an
+      // actively-used session never sees an expiry. Only 30 days of true
+      // inactivity force a re-bootstrap.
+      c.header("Set-Cookie", buildSessionCookie(deriveSessionValue(token)));
       return next();
     }
     // Bearer: programmatic clients (Hermes WebUI, agents, the MCP path).
@@ -301,6 +314,7 @@ function installUiGate(app: Hono): void {
   const skipGate = !!process.env["VITEST"] || process.env["NODE_ENV"] === "test";
   app.use("/ui/*", async (c, next) => {
     if (skipGate) return next();
+    if (uiAuthMode() === "none") return next();
     const token = process.env["NLM_MCP_TOKEN"];
     if (!token) return next();
     // Auth bootstrap and logout must be reachable without a valid cookie —
@@ -308,6 +322,10 @@ function installUiGate(app: Hono): void {
     if (c.req.path === "/ui/auth" || c.req.path === "/ui/logout") return next();
     const cookies = parseCookies(c.req.header("cookie"));
     if (verifySessionCookie(cookies[SESSION_COOKIE_NAME], token)) {
+      // Rolling expiry: any /ui/* page load extends the session another 30
+      // days from today. Means a user who hits the UI weekly never sees a
+      // login page.
+      c.header("Set-Cookie", buildSessionCookie(deriveSessionValue(token)));
       return next();
     }
     const here = c.req.path;
@@ -346,14 +364,17 @@ function renderAuthPage(): string {
 <html><head><meta charset="utf-8"><title>nlm-memory</title>
 <style>
   body{background:#111;color:#ddd;font:14px/1.5 -apple-system,system-ui,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0}
-  main{background:#1a1a1a;border:1px solid #333;border-radius:8px;padding:24px;max-width:380px}
+  main{background:#1a1a1a;border:1px solid #333;border-radius:8px;padding:24px;max-width:420px}
   h1{font-size:16px;margin:0 0 8px}
-  p{color:#aaa;margin:0;font-size:13px}
+  p{color:#aaa;margin:0 0 10px;font-size:13px}
+  p:last-child{margin-bottom:0}
   code{background:#0a0a0a;color:#eee;padding:2px 6px;border-radius:3px;font-family:ui-monospace,monospace}
+  .hint{color:#666;font-size:12px}
 </style></head>
 <body><main>
   <h1>nlm-memory</h1>
   <p>Run <code>nlm ui</code> from a terminal on this machine to sign in.</p>
+  <p class="hint">Sessions roll forward on every visit, so this page only appears after ~30 days of inactivity. To turn auth off entirely, run <code>nlm config ui-auth off</code>.</p>
 </main></body></html>`;
 }
 
