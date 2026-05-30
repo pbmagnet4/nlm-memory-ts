@@ -549,6 +549,94 @@ input[type="file"].file-input:disabled::file-selector-button {
 
 .sidenav-data { font-size: 10px; }
 
+/* ── Update banner (footer-anchored, dismissible per-release) ─────────── */
+.update-banner {
+  padding: 8px 10px;
+  margin-bottom: 8px;
+  background: var(--bg-2);
+  border: 1px solid var(--border-1);
+  border-radius: 6px;
+  font-family: var(--font-sans);
+}
+.update-banner-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.update-banner-version {
+  color: var(--text-1);
+}
+.update-banner-dismiss {
+  background: none;
+  border: none;
+  color: var(--text-3);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 4px;
+}
+.update-banner-dismiss:hover { color: var(--text-1); }
+.update-banner-body {
+  margin: 4px 0 6px;
+  color: var(--text-2, var(--text-1));
+}
+.update-banner-cmd {
+  padding: 4px 6px;
+  background: var(--bg-1);
+  border: 1px solid var(--border-1);
+  border-radius: 4px;
+  color: var(--text-1);
+  overflow-x: auto;
+  white-space: nowrap;
+  margin-bottom: 6px;
+}
+.update-banner-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.update-banner-copy {
+  background: var(--accent, #4a8);
+  border: none;
+  color: var(--bg-1);
+  padding: 4px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+.update-banner-link {
+  color: var(--text-3);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.update-banner-link:hover { color: var(--text-1); }
+
+/* Collapsed sidenav state — just a dot. */
+.update-banner--collapsed {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  background: none;
+  border: none;
+  padding: 6px 0;
+  margin-bottom: 8px;
+  cursor: pointer;
+}
+.update-dot {
+  color: var(--accent, #4a8);
+  font-size: 14px;
+  line-height: 1;
+  animation: nlm-update-pulse 2.6s ease-in-out infinite;
+}
+@keyframes nlm-update-pulse {
+  0%, 100% { opacity: 0.45; }
+  50% { opacity: 1; }
+}
+
 /* ── Live page — three-column board ───────────────────────────────────── */
 .live-page {
   display: flex;

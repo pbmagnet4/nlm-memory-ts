@@ -36,6 +36,7 @@ import { logQuery, recallStats } from "@core/recall/query-log.js";
 import { recentQueryLog } from "@core/recall/recent-log.js";
 import { appendCitation, citationStats } from "@core/recall/citation-log.js";
 import { appendSupersedence } from "@core/storage/supersedence-log.js";
+import { getUpdateStatus } from "@core/update-check/check.js";
 import { clearSurfaced, loadSurfaced, recordSurfaced } from "@core/hook/memo.js";
 import { clearCited } from "@core/hook/cite-memo.js";
 import { classifyPrompt } from "@core/hook/gate.js";
@@ -260,6 +261,14 @@ function registerHealthRoute(app: Hono): void {
   app.get("/api/health", (c) =>
     c.json({ status: "ok", service: "nlm-memory", version: pkg.version }),
   );
+
+  // Passive update poll for the UI. Same daily-cached check the CLI
+  // startup banner uses — see src/core/update-check/check.ts for the
+  // no-telemetry contract this honors.
+  app.get("/api/update-status", async (c) => {
+    const status = await getUpdateStatus({ currentVersion: pkg.version });
+    return c.json(status);
+  });
 }
 
 // ── MCP over HTTP (for container agents — e.g. Hermes WebUI) ─────────

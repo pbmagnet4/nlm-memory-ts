@@ -58,6 +58,7 @@ import { hardenNlmDirPermissions } from "../install/nlm-dir-perms.js";
 import { ensureMcpToken } from "../install/ollama.js";
 import { connectCursor, disconnectCursor } from "../install/cursor.js";
 import { runSupersedeCommand } from "./supersede.js";
+import { getUpdateStatus } from "../core/update-check/check.js";
 import { connectHermes, disconnectHermes, hermesConfigPath } from "../install/hermes.js";
 import { connectHermesAgent, disconnectHermesAgent, hermesAgentPluginDir } from "../install/hermes-agent.js";
 import { connectWindsurf, disconnectWindsurf } from "../install/windsurf.js";
@@ -210,6 +211,17 @@ program
       }
       console.error(`  db:     ${dbPath()}`);
       console.error(`  ollama: ${ollamaUrl()}`);
+      // Passive update notice. Fire-and-forget so a slow npm registry
+      // round-trip can't delay the startup banner; surfaced only when
+      // strictly behind. See src/core/update-check/check.ts for the
+      // local-first / no-telemetry contract this honors.
+      void getUpdateStatus({ currentVersion: pkg.version }).then((status) => {
+        if (status.behind && status.latest) {
+          console.error(
+            `  update: ${status.current} → ${status.latest} available (npm i -g nlm-memory@latest)`,
+          );
+        }
+      });
     });
 
     // Keep the SQLite WAL bounded. WAL mode is on but nothing else

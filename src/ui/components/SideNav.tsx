@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { NavLink } from "react-router-dom";
+import { UpdateBanner } from "./UpdateBanner.js";
 
 const STORAGE_KEY = "nlm.sidenav.collapsed";
 
@@ -58,6 +59,7 @@ export function SideNav() {
       </div>
 
       <div className="sidenav-footer">
+        <UpdateBanner collapsed={collapsed} />
         <NavLink to="/settings/data" className="sidenav-item sidenav-data" data-label="Data">
           <span className="item-icon">{dataIcon()}</span>
           <span className="item-label">Data</span>

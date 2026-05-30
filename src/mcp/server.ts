@@ -32,7 +32,7 @@ import type {
 const CHARACTER_LIMIT = 25_000;
 const DEFAULT_LIMIT = 10;
 const SERVER_NAME = "nlm-memory-mcp-server";
-const SERVER_VERSION = "0.5.8";
+const SERVER_VERSION = "0.5.9";
 
 /** TOON encoding cuts token usage on large recall payloads. Opt in via
  *  NLM_FORMAT=toon in the MCP server's env (see .mcp.json). Defaults to JSON. */

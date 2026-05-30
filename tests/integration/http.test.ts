@@ -137,6 +137,26 @@ describe("HTTP adapter", () => {
     expect(body.results[0]?.matchScore).toBeCloseTo(1, 4);
   });
 
+  it("GET /api/update-status returns a structured status payload", async () => {
+    // Force opt-out so the endpoint doesn't hit the real npm registry from CI.
+    process.env["NLM_DISABLE_UPDATE_CHECK"] = "1";
+    try {
+      const res = await app.request("/api/update-status");
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as {
+        current: string;
+        latest: string | null;
+        behind: boolean;
+        disabled?: string;
+      };
+      expect(typeof body.current).toBe("string");
+      expect(body.behind).toBe(false);
+      expect(body.disabled).toBe("user-opt-out");
+    } finally {
+      delete process.env["NLM_DISABLE_UPDATE_CHECK"];
+    }
+  });
+
   it("GET /api/session/:id returns the full session", async () => {
     const res = await app.request("/api/session/sess_a");
     expect(res.status).toBe(200);
