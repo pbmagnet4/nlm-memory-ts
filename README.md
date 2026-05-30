@@ -124,6 +124,7 @@ Container-hosted agents (Hermes WebUI, Codex CLI, etc.) hit the Streamable-HTTP 
 | `recall_facts` | Search structured facts: decisions, open questions, project state. Filterable by entity and kind. |
 | `get_fact_history` | Full version history of one fact — how a decision evolved over time. |
 | `cite_session` | Mark a session as explicitly referenced. Drives the `useful_hit_rate` metric and the future learned reranker. |
+| `mark_superseded` | Retroactively retire a stale session and point it at the newer one that replaces it. The editable-timeline write path — see [docs/supersedence.md](docs/supersedence.md). |
 
 ---
 

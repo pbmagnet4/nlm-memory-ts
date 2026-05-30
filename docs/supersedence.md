@@ -75,8 +75,9 @@ Three calls available via MCP:
 - `recall_sessions` — returns hits across all statuses including superseded
 - `get_session(id)` — returns full body + enriched supersedence links
 - `cite_session(id, reason)` — explicitly mark a session as referenced by the current conversation (for `useful_hit_rate` telemetry)
+- `mark_superseded(predecessor_id, successor_id, reason?)` — retroactively mark a prior session as superseded by a newer one. Flips the predecessor's `sessions.status` to `superseded` and inserts a `session_edges` row with `kind='supersedes'`. Idempotent; errors if either id is unknown. The optional `reason` is appended to `~/.nlm/supersedence-log.jsonl` for audit provenance (overridable via `NLM_SUPERSEDENCE_LOG`). Use this when an operator signals the prior session is now stale ("that's outdated," "the new plan replaces it").
 
-There's intentionally no `mark_superseded` MCP tool today. Supersedence is recorded at session **ingest time** by the runtime adapter — the new session declares what it supersedes. Operator-driven supersedence (post-hoc patching from the UI) is on the roadmap; the underlying storage already supports it, the affordance is just missing.
+Atomic-on-ingest supersedence remains the primary path — when a runtime adapter ingests a new session that names its predecessor, the edge is written and the status flipped in the same transaction. `mark_superseded` is the operator-driven path for the cases ingest can't catch (the new session doesn't know it replaces an old one; the operator only realizes the old one is wrong later).
 
 ## Related code
 

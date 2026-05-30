@@ -1023,7 +1023,7 @@ function parseActionInput(raw) {
     };
 }
 const VALID_SOURCE_KINDS = [
-    "claude-code", "hermes", "pi", "jsonl-generic", "webhook",
+    "claude-code", "codex", "hermes", "pi", "jsonl-generic", "webhook",
 ];
 function parseSourceInsert(raw) {
     if (!raw || typeof raw !== "object")

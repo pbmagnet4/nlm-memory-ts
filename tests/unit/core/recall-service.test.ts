@@ -39,6 +39,7 @@ class InMemoryStore implements SessionStore {
     return this.keywordHits;
   }
   async updateStatus(): Promise<void> {}
+  async markSuperseded(): Promise<void> {}
 }
 
 class StubEmbedder implements LLMClient {

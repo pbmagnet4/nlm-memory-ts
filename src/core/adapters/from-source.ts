@@ -11,6 +11,7 @@ import type { TranscriptAdapter } from "@ports/transcript-adapter.js";
 import type { SourceRow } from "../sources/source-registry.js";
 import { AiderAdapter } from "./aider.js";
 import { ClaudeCodeAdapter } from "./claude-code.js";
+import { CodexAdapter } from "./codex.js";
 import { CursorAdapter } from "./cursor.js";
 import { HermesAdapter } from "./hermes.js";
 import { HermesAgentAdapter } from "./hermes-agent.js";
@@ -29,6 +30,10 @@ export function adapterFromSource(source: SourceRow): TranscriptAdapter | null {
       return source.pathOrUrl
         ? new ClaudeCodeAdapter({ projectsPath: source.pathOrUrl })
         : new ClaudeCodeAdapter();
+    case "codex":
+      return source.pathOrUrl
+        ? new CodexAdapter({ sessionsPath: source.pathOrUrl })
+        : new CodexAdapter();
     case "cursor":
       return source.pathOrUrl
         ? new CursorAdapter({ dbPath: source.pathOrUrl })

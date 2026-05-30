@@ -7,7 +7,7 @@
  * on insert/regenerate.
  */
 
-export type SourceKind = "claude-code" | "hermes" | "pi" | "jsonl-generic" | "webhook";
+export type SourceKind = "claude-code" | "codex" | "hermes" | "pi" | "jsonl-generic" | "webhook";
 
 export interface SourceRow {
   id: number;
@@ -45,7 +45,7 @@ export interface ProviderRow {
 }
 
 export const SOURCE_KINDS: ReadonlyArray<SourceKind> = [
-  "claude-code", "hermes", "pi", "jsonl-generic", "webhook",
+  "claude-code", "codex", "hermes", "pi", "jsonl-generic", "webhook",
 ];
 
 export const PROVIDER_KINDS: ReadonlyArray<ProviderKind> = [
@@ -63,6 +63,7 @@ export const PROVIDER_KIND_LABEL: Record<ProviderKind, string> = {
 
 export const SOURCE_KIND_LABEL: Record<SourceKind, string> = {
   "claude-code": "Claude Code",
+  codex: "Codex",
   hermes: "Hermes",
   pi: "pi.dev",
   "jsonl-generic": "Custom JSONL",
@@ -78,6 +79,12 @@ export const SOURCE_PRESETS: Record<
     name: "Claude Code",
     runtimeLabel: "claude-code",
     pathOrUrl: "~/.claude/projects",
+    parseConfig: {},
+  },
+  codex: {
+    name: "Codex",
+    runtimeLabel: "codex",
+    pathOrUrl: "~/.codex/sessions",
     parseConfig: {},
   },
   hermes: {

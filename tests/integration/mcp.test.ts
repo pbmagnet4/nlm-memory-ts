@@ -16,6 +16,7 @@ import {
   createMcpServer,
   getFactHistoryHandler,
   getSessionHandler,
+  markSupersededHandler,
   recallFactsHandler,
   recallSessionsHandler,
 } from "../../src/mcp/server.js";
@@ -177,6 +178,80 @@ describe("MCP adapter", () => {
   it("createMcpServer registers both tools without throwing", () => {
     const server = createMcpServer({ recall, store });
     expect(server).toBeDefined();
+  });
+
+  describe("mark_superseded", () => {
+    beforeEach(() => {
+      // isolate the supersedence log to a temp path so the host log isn't touched
+      process.env["NLM_SUPERSEDENCE_LOG"] = join(tmp, "supersedence-log.jsonl");
+    });
+    afterEach(() => {
+      delete process.env["NLM_SUPERSEDENCE_LOG"];
+    });
+
+    it("flips predecessor status and inserts a supersedes edge", async () => {
+      const result = await markSupersededHandler(
+        { recall, store },
+        { predecessor_id: "sess_a", successor_id: "sess_b", reason: "newer plan replaces it" },
+      );
+      expect(result.isError).toBeUndefined();
+      const body = parsePayload(result) as { marked: boolean; predecessor_id: string };
+      expect(body.marked).toBe(true);
+      expect(body.predecessor_id).toBe("sess_a");
+
+      // get_session on the predecessor now shows supersededBy linked to sess_b
+      const older = await getSessionHandler({ recall, store }, { id: "sess_a" });
+      const olderBody = parsePayload(older) as {
+        status: string;
+        supersededBy: { id: string } | null;
+      };
+      expect(olderBody.status).toBe("superseded");
+      expect(olderBody.supersededBy?.id).toBe("sess_b");
+    });
+
+    it("is idempotent — re-marking the same pair stays clean", async () => {
+      await markSupersededHandler(
+        { recall, store },
+        { predecessor_id: "sess_a", successor_id: "sess_b" },
+      );
+      const second = await markSupersededHandler(
+        { recall, store },
+        { predecessor_id: "sess_a", successor_id: "sess_b" },
+      );
+      expect(second.isError).toBeUndefined();
+
+      // sess_b now reports exactly one supersedes link, not two
+      const newer = await getSessionHandler({ recall, store }, { id: "sess_b" });
+      const newerBody = parsePayload(newer) as { supersedes: { id: string }[] };
+      expect(newerBody.supersedes).toHaveLength(1);
+    });
+
+    it("errors when predecessor id is unknown", async () => {
+      const result = await markSupersededHandler(
+        { recall, store },
+        { predecessor_id: "ghost", successor_id: "sess_b" },
+      );
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain("predecessor");
+    });
+
+    it("errors when successor id is unknown", async () => {
+      const result = await markSupersededHandler(
+        { recall, store },
+        { predecessor_id: "sess_a", successor_id: "ghost" },
+      );
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain("successor");
+    });
+
+    it("errors when predecessor equals successor", async () => {
+      const result = await markSupersededHandler(
+        { recall, store },
+        { predecessor_id: "sess_a", successor_id: "sess_a" },
+      );
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain("itself");
+    });
   });
 
   describe("fact tools (B.3)", () => {

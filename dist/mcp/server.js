@@ -15,10 +15,11 @@ import { z } from "zod";
 import { logQuery } from "../core/recall/query-log.js";
 import { logFactQuery } from "../core/recall-facts/fact-query-log.js";
 import { appendCitation } from "../core/recall/citation-log.js";
+import { appendSupersedence } from "../core/storage/supersedence-log.js";
 const CHARACTER_LIMIT = 25_000;
 const DEFAULT_LIMIT = 10;
 const SERVER_NAME = "nlm-memory-mcp-server";
-const SERVER_VERSION = "0.4.0";
+const SERVER_VERSION = "0.5.7";
 /** TOON encoding cuts token usage on large recall payloads. Opt in via
  *  NLM_FORMAT=toon in the MCP server's env (see .mcp.json). Defaults to JSON. */
 const USE_TOON = process.env.NLM_FORMAT === "toon";
@@ -285,6 +286,46 @@ Args:
                omitted, returns one chain per predicate for this subject.`;
 // Minimum length for a session ID to be treated as valid.
 const MIN_CITE_ID_LEN = 6;
+const MARK_SUPERSEDED_DESCRIPTION = `Retroactively mark a prior session as superseded by a newer one. Use this when
+the user signals that an earlier decision, plan, or finding has been replaced —
+"that's outdated now," "we changed our mind," "the new plan replaces the old one,"
+"that session is wrong, the one from <date> is the current answer."
+
+NLM preserves superseded sessions (they still surface in recall with the
+'superseded' status) so the reasoning trail survives. This tool only flips the
+status and records the supersedence edge — it never deletes content.
+
+Args:
+  - predecessor_id: session being retired (the now-stale one).
+  - successor_id:   session that replaces it (the current truth).
+  - reason:         optional human-readable rationale. Logged to the
+                    supersedence audit log for provenance.
+
+Idempotent. Re-marking the same pair is a no-op. Returns the linked pair on
+success; errors if either id is unknown or the two ids are equal.`;
+export async function markSupersededHandler(deps, input) {
+    if (!input.predecessor_id || !input.successor_id) {
+        return err(new Error("predecessor_id and successor_id are required"));
+    }
+    try {
+        await deps.store.markSuperseded(input.predecessor_id, input.successor_id);
+        void appendSupersedence({
+            predecessorId: input.predecessor_id,
+            successorId: input.successor_id,
+            source: "mcp",
+            ...(input.reason !== undefined ? { reason: input.reason } : {}),
+        });
+        return ok({
+            marked: true,
+            predecessor_id: input.predecessor_id,
+            successor_id: input.successor_id,
+            ...(input.reason !== undefined ? { reason: input.reason } : {}),
+        });
+    }
+    catch (e) {
+        return err(e);
+    }
+}
 export async function citeSessionHandler(input) {
     if (!input.id || input.id.length < MIN_CITE_ID_LEN) {
         return err(new Error(`id must be at least ${MIN_CITE_ID_LEN} characters`));
@@ -444,6 +485,30 @@ export function createMcpServer(deps) {
             openWorldHint: false,
         },
     }, async (args) => citeSessionHandler(args));
+    server.registerTool("mark_superseded", {
+        title: "Mark NLM Session Superseded",
+        description: MARK_SUPERSEDED_DESCRIPTION,
+        inputSchema: {
+            predecessor_id: z
+                .string()
+                .min(MIN_CITE_ID_LEN)
+                .describe("Session ID of the prior session being retired."),
+            successor_id: z
+                .string()
+                .min(MIN_CITE_ID_LEN)
+                .describe("Session ID of the newer session that replaces it."),
+            reason: z
+                .string()
+                .optional()
+                .describe("Why this supersedence is being recorded. Optional but encouraged for audit trail."),
+        },
+        annotations: {
+            readOnlyHint: false,
+            destructiveHint: false,
+            idempotentHint: true,
+            openWorldHint: false,
+        },
+    }, async (args) => markSupersededHandler(deps, args));
     return server;
 }
 //# sourceMappingURL=server.js.map

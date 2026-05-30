@@ -31,12 +31,12 @@ describe("SourceRegistry", () => {
     rmSync(tmp, { recursive: true, force: true });
   });
 
-  it("starts empty and seeds eight presets", () => {
+  it("starts empty and seeds nine presets", () => {
     expect(registry.list()).toEqual([]);
     registry.seedDefaults();
     const rows = registry.list();
     expect(rows.map((r) => r.kind)).toEqual([
-      "claude-code", "hermes", "hermes-agent", "aider", "cursor", "windsurf", "opencode", "pi",
+      "claude-code", "codex", "hermes", "hermes-agent", "aider", "cursor", "windsurf", "opencode", "pi",
     ]);
     expect(rows.every((r) => r.runtimeLabel.endsWith("/1.0"))).toBe(true);
   });
@@ -44,7 +44,7 @@ describe("SourceRegistry", () => {
   it("seedDefaults is idempotent", () => {
     registry.seedDefaults();
     registry.seedDefaults();
-    expect(registry.list().length).toBe(8);
+    expect(registry.list().length).toBe(9);
   });
 
   it("inserts a custom JSONL source and round-trips parse config", () => {

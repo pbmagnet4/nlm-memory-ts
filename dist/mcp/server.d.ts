@@ -60,5 +60,11 @@ export interface CiteSessionInput {
     readonly conversation_id?: string | undefined;
     readonly reason?: string | undefined;
 }
+export interface MarkSupersededInput {
+    readonly predecessor_id: string;
+    readonly successor_id: string;
+    readonly reason?: string | undefined;
+}
+export declare function markSupersededHandler(deps: McpDeps, input: MarkSupersededInput): Promise<ToolResult>;
 export declare function citeSessionHandler(input: CiteSessionInput): Promise<ToolResult>;
 export declare function createMcpServer(deps: McpDeps): McpServer;

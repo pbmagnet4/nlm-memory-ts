@@ -152,6 +152,8 @@ export class SourceRegistry {
             return;
         const claudePath = process.env["NLM_CLAUDE_PROJECTS_PATH"]
             ?? join(homedir(), ".claude", "projects");
+        const codexPath = process.env["NLM_CODEX_SESSIONS_PATH"]
+            ?? join(homedir(), ".codex", "sessions");
         const hermesPath = process.env["NLM_HERMES_SESSIONS_PATH"]
             ?? join(homedir(), ".hermes", "sessions");
         const piPath = process.env["PI_SESSIONS_PATH"]
@@ -168,6 +170,13 @@ export class SourceRegistry {
                 pathOrUrl: claudePath,
                 runtimeLabel: "claude-code/1.0",
                 enabled: existsSync(claudePath),
+            },
+            {
+                kind: "codex",
+                name: "Codex",
+                pathOrUrl: codexPath,
+                runtimeLabel: "codex/1.0",
+                enabled: existsSync(codexPath),
             },
             {
                 kind: "hermes",

@@ -24,7 +24,7 @@ import { defaultDbPath as defaultHermesAgentDbPath } from "../adapters/hermes-ag
 import { defaultDbPath as defaultOpenCodeDbPath } from "../adapters/opencode.js";
 import { defaultUserDir as defaultWindsurfUserDir } from "../adapters/windsurf.js";
 
-export type SourceKind = "claude-code" | "hermes" | "hermes-agent" | "aider" | "cursor" | "windsurf" | "opencode" | "pi" | "jsonl-generic" | "webhook";
+export type SourceKind = "claude-code" | "codex" | "hermes" | "hermes-agent" | "aider" | "cursor" | "windsurf" | "opencode" | "pi" | "jsonl-generic" | "webhook";
 
 export interface SourceRow {
   readonly id: number;
@@ -204,6 +204,8 @@ export class SourceRegistry {
 
     const claudePath = process.env["NLM_CLAUDE_PROJECTS_PATH"]
       ?? join(homedir(), ".claude", "projects");
+    const codexPath = process.env["NLM_CODEX_SESSIONS_PATH"]
+      ?? join(homedir(), ".codex", "sessions");
     const hermesPath = process.env["NLM_HERMES_SESSIONS_PATH"]
       ?? join(homedir(), ".hermes", "sessions");
     const piPath = process.env["PI_SESSIONS_PATH"]
@@ -222,6 +224,13 @@ export class SourceRegistry {
         pathOrUrl: claudePath,
         runtimeLabel: "claude-code/1.0",
         enabled: existsSync(claudePath),
+      },
+      {
+        kind: "codex",
+        name: "Codex",
+        pathOrUrl: codexPath,
+        runtimeLabel: "codex/1.0",
+        enabled: existsSync(codexPath),
       },
       {
         kind: "hermes",

@@ -1,0 +1,7 @@
+{"timestamp":"2026-05-27T13:41:02.090Z","type":"session_meta","payload":{"id":"019e69aa-c9f7-7363-89bd-245cb8d62905","timestamp":"2026-05-27T13:41:01.108Z","cwd":"/Users/test/project","originator":"codex_exec","cli_version":"0.134.0"}}
+{"timestamp":"2026-05-27T13:41:02.098Z","type":"event_msg","payload":{"type":"task_started","turn_id":"t1","started_at":1779889262}}
+{"timestamp":"2026-05-27T13:41:04.836Z","type":"response_item","payload":{"type":"message","role":"developer","content":[{"type":"input_text","text":"<permissions>system prompt that should be skipped</permissions>"}]}}
+{"timestamp":"2026-05-27T13:41:04.852Z","type":"event_msg","payload":{"type":"user_message","message":"Help me refactor the auth module","images":[]}}
+{"timestamp":"2026-05-27T13:41:06.508Z","type":"event_msg","payload":{"type":"agent_message","message":"Sure, I'll start by reading the current implementation.","phase":"final_answer"}}
+{"timestamp":"2026-05-27T13:41:06.555Z","type":"event_msg","payload":{"type":"token_count","info":{}}}
+{"timestamp":"2026-05-27T13:41:07.000Z","type":"event_msg","payload":{"type":"task_complete","turn_id":"t1"}}

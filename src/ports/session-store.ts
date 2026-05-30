@@ -42,4 +42,15 @@ export interface SessionStore {
   ): Promise<ReadonlyArray<KeywordNeighbor>>;
 
   updateStatus(sessionId: string, status: SessionStatus): Promise<void>;
+
+  /**
+   * Mark `predecessorId` as superseded by `successorId`. Atomic:
+   *   1. inserts a `session_edges (successorId, predecessorId, 'supersedes')` row
+   *   2. flips predecessor's `sessions.status` to `'superseded'`
+   *
+   * Idempotent — re-marking is a no-op. Throws if either session id is
+   * unknown. Used by the `mark_superseded` MCP tool and any future UI
+   * action that lets an operator retroactively retire a stale session.
+   */
+  markSuperseded(predecessorId: string, successorId: string): Promise<void>;
 }

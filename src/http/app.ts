@@ -1140,7 +1140,7 @@ function parseActionInput(raw: unknown): {
 }
 
 const VALID_SOURCE_KINDS: ReadonlyArray<SourceKind> = [
-  "claude-code", "hermes", "pi", "jsonl-generic", "webhook",
+  "claude-code", "codex", "hermes", "pi", "jsonl-generic", "webhook",
 ];
 
 function parseSourceInsert(raw: unknown): SourceInsert | null {

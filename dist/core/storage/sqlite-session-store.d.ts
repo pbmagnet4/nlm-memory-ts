@@ -143,6 +143,7 @@ export declare class SqliteSessionStore implements SessionStore {
      */
     keywordSearch(query: string, limit: number): Promise<ReadonlyArray<KeywordNeighbor>>;
     updateStatus(sessionId: string, status: SessionStatus): Promise<void>;
+    markSuperseded(predecessorId: string, successorId: string): Promise<void>;
     insertSessionForTest(session: Session): void;
     insertEdgeForTest(fromSession: string, toSession: string, kind?: "supersedes" | "continues"): void;
     insertEmbeddingForTest(sessionId: string, vector: Float32Array): void;

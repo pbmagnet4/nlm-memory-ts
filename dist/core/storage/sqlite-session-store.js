@@ -443,6 +443,30 @@ export class SqliteSessionStore {
             .prepare("UPDATE sessions SET status = ?, updated_at = datetime('now') WHERE id = ?")
             .run(status, sessionId);
     }
+    async markSuperseded(predecessorId, successorId) {
+        if (predecessorId === successorId) {
+            throw new Error("A session cannot supersede itself");
+        }
+        const existsStmt = this.db.prepare("SELECT COUNT(*) AS c FROM sessions WHERE id = ?");
+        const txn = this.db.transaction(() => {
+            const predExists = (existsStmt.get(predecessorId)?.c ?? 0) > 0;
+            if (!predExists) {
+                throw new Error(`predecessor session ${predecessorId} not found`);
+            }
+            const succExists = (existsStmt.get(successorId)?.c ?? 0) > 0;
+            if (!succExists) {
+                throw new Error(`successor session ${successorId} not found`);
+            }
+            this.db
+                .prepare(`INSERT OR IGNORE INTO session_edges (from_session, to_session, kind)
+           VALUES (?, ?, 'supersedes')`)
+                .run(successorId, predecessorId);
+            this.db
+                .prepare("UPDATE sessions SET status = 'superseded', updated_at = datetime('now') WHERE id = ?")
+                .run(predecessorId);
+        });
+        txn();
+    }
     // ── insert helpers used by tests / future ingest path ─────────────────
     insertSessionForTest(session) {
         const stmt = this.db.prepare(`
