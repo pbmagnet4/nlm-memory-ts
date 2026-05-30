@@ -31,6 +31,7 @@ import { recentQueryLog } from "../core/recall/recent-log.js";
 import { appendCitation, citationStats } from "../core/recall/citation-log.js";
 import { appendSupersedence } from "../core/storage/supersedence-log.js";
 import { getUpdateStatus } from "../core/update-check/check.js";
+import { buildClearCookie, buildSessionCookie, deriveSessionValue, parseCookies, sanitizeNextPath, SESSION_COOKIE_NAME, verifySessionCookie, } from "./ui-auth.js";
 import { clearSurfaced, loadSurfaced, recordSurfaced } from "../core/hook/memo.js";
 import { clearCited } from "../core/hook/cite-memo.js";
 import { classifyPrompt } from "../core/hook/gate.js";
@@ -125,6 +126,8 @@ export function createApp(deps) {
     registerProviderRoutes(app, deps);
     registerSessionRoute(app, deps);
     if (deps.uiDist) {
+        installUiGate(app);
+        registerUiAuthRoutes(app);
         mountSpa(app, deps.uiDist);
     }
     return app;
@@ -154,40 +157,119 @@ function installLocalOnlyMiddleware(app, boundPort) {
             return next();
         }
         const origin = c.req.header("origin");
-        if (origin !== undefined) {
-            if (!isLoopbackOrigin(origin, boundPort)) {
-                return c.json({ error: "origin not allowed" }, 403);
-            }
-            // Loopback origin → same-origin UI request. Allow.
-            return next();
+        if (origin !== undefined && !isLoopbackOrigin(origin, boundPort)) {
+            return c.json({ error: "origin not allowed" }, 403);
         }
-        // Fetch Metadata: browsers send `Sec-Fetch-Site: same-origin` on every
-        // fetch issued by same-origin scripts, and the spec forbids JS or
-        // cross-origin attackers from setting Sec-Fetch-* headers. Modern
-        // browsers also omit `Origin` on same-origin GETs, which would otherwise
-        // trap UI fetches in the Bearer-required branch below. Trust this
-        // header as equivalent to a loopback Origin.
-        const fetchSite = c.req.header("sec-fetch-site");
-        if (fetchSite === "same-origin") {
-            return next();
-        }
-        // No Origin and no same-origin fetch metadata → not a browser fetch.
-        // Require Bearer if a token is configured.
         const token = process.env["NLM_MCP_TOKEN"];
         if (!token) {
             // No token configured → local-only daemon with loopback Host already verified.
             // Acceptable for single-user dev installs; production users should set the token.
             return next();
         }
+        // UI session cookie (HMAC of the token, set by /ui/auth bootstrap).
+        // Carries the browser's API calls and survives token-stable restarts.
+        const cookies = parseCookies(c.req.header("cookie"));
+        if (verifySessionCookie(cookies[SESSION_COOKIE_NAME], token)) {
+            return next();
+        }
+        // Bearer: programmatic clients (Hermes WebUI, agents, the MCP path).
+        // Same secret as the cookie HMAC derives from, but transmitted directly.
         const auth = c.req.header("authorization") ?? "";
         const match = /^Bearer\s+(\S+)$/i.exec(auth);
         const given = Buffer.from(match?.[1] ?? "", "utf8");
         const want = Buffer.from(token, "utf8");
-        if (!match || given.length !== want.length || !timingSafeEqual(given, want)) {
-            return c.json({ error: "unauthorized" }, 401);
+        if (match && given.length === want.length && timingSafeEqual(given, want)) {
+            return next();
         }
-        return next();
+        return c.json({ error: "unauthorized" }, 401);
     });
+}
+// ── UI session-cookie gate ───────────────────────────────────────────
+//
+// Closes the port-forward bypass: any client reaching localhost:3940
+// could previously set Host + Origin headers and bypass the Bearer check
+// to fetch /api/*. Putting the static UI behind cookie auth too means
+// an attacker can no longer fetch /ui/* to discover anything useful,
+// AND the SPA's /api/* fetches now carry a cookie that requires the
+// shared secret to mint (see ui-auth.ts for the HMAC contract).
+//
+// `nlm ui` is the bootstrap path — it opens /ui/auth?t=<token>, which
+// validates and sets the cookie. After that the cookie carries every
+// subsequent /ui/* and /api/* call.
+function installUiGate(app) {
+    const skipGate = !!process.env["VITEST"] || process.env["NODE_ENV"] === "test";
+    app.use("/ui/*", async (c, next) => {
+        if (skipGate)
+            return next();
+        const token = process.env["NLM_MCP_TOKEN"];
+        if (!token)
+            return next();
+        // Auth bootstrap and logout must be reachable without a valid cookie —
+        // otherwise users with a stale/forged cookie couldn't sign in or out.
+        if (c.req.path === "/ui/auth" || c.req.path === "/ui/logout")
+            return next();
+        const cookies = parseCookies(c.req.header("cookie"));
+        if (verifySessionCookie(cookies[SESSION_COOKIE_NAME], token)) {
+            return next();
+        }
+        const here = c.req.path;
+        return c.redirect(`/ui/auth?next=${encodeURIComponent(here)}`);
+    });
+}
+function registerUiAuthRoutes(app) {
+    app.get("/ui/auth", (c) => {
+        const token = process.env["NLM_MCP_TOKEN"];
+        const next = sanitizeNextPath(c.req.query("next"));
+        if (!token) {
+            // No token configured → nothing to authenticate against. Send the
+            // user straight in; the /api/* gate is also pass-through in this mode.
+            return c.redirect(next);
+        }
+        const provided = c.req.query("t");
+        if (provided) {
+            const given = Buffer.from(provided, "utf8");
+            const want = Buffer.from(token, "utf8");
+            const ok = given.length === want.length && timingSafeEqual(given, want);
+            if (ok) {
+                c.header("Set-Cookie", buildSessionCookie(deriveSessionValue(token)));
+                return c.redirect(next);
+            }
+            return c.html(renderAuthPage({ error: "Invalid token.", next }), 401);
+        }
+        return c.html(renderAuthPage({ next }));
+    });
+    app.post("/ui/logout", (c) => {
+        c.header("Set-Cookie", buildClearCookie());
+        return c.redirect("/ui/auth");
+    });
+}
+function renderAuthPage(opts) {
+    const error = opts.error
+        ? `<p style="color:#e66;margin:0 0 12px;font-size:13px">${escapeHtml(opts.error)}</p>`
+        : "";
+    const nextSafe = escapeHtml(opts.next);
+    return `<!doctype html>
+<html><head><meta charset="utf-8"><title>nlm-memory — sign in</title>
+<style>
+  body{background:#111;color:#ddd;font:14px/1.5 -apple-system,system-ui,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0}
+  form{background:#1a1a1a;border:1px solid #333;border-radius:8px;padding:24px;width:340px}
+  h1{font-size:16px;margin:0 0 4px}
+  p.hint{color:#888;margin:0 0 16px;font-size:12px}
+  input{width:100%;box-sizing:border-box;background:#0a0a0a;border:1px solid #333;color:#eee;padding:8px;border-radius:4px;font-family:ui-monospace,monospace}
+  button{margin-top:12px;width:100%;background:#4a8;color:#0a0a0a;border:none;padding:8px;border-radius:4px;cursor:pointer;font-weight:600}
+  code{background:#0a0a0a;padding:1px 4px;border-radius:3px}
+</style></head>
+<body><form method="get" action="/ui/auth">
+  <h1>nlm-memory</h1>
+  <p class="hint">Paste your <code>NLM_MCP_TOKEN</code>, or run <code>nlm ui</code> from a terminal on this machine.</p>
+  ${error}
+  <input type="password" name="t" autofocus required placeholder="NLM_MCP_TOKEN" autocomplete="off">
+  <input type="hidden" name="next" value="${nextSafe}">
+  <button type="submit">Sign in</button>
+</form></body></html>`;
+}
+function escapeHtml(s) {
+    return s.replace(/[&<>"']/g, (c) => c === "&" ? "&amp;" : c === "<" ? "&lt;" : c === ">" ? "&gt;" : c === '"' ? "&quot;" : "&#39;");
 }
 function registerHealthRoute(app) {
     app.get("/api/health", (c) => c.json({ status: "ok", service: "nlm-memory", version: pkg.version }));

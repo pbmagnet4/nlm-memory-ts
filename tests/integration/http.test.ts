@@ -552,30 +552,146 @@ describe("HTTP local-only gate", () => {
     expect(res.status).toBe(401);
   });
 
-  it("allows /api/dataset when Sec-Fetch-Site: same-origin is present", async () => {
-    // Same-origin GET from a browser SPA — Origin is often omitted by spec,
-    // but Sec-Fetch-Site is always sent and can't be forged cross-origin.
+  it("rejects /api/dataset when a Sec-Fetch-Site header alone is set (no cookie, no Bearer)", async () => {
+    // Sec-Fetch-Site is spoofable by any HTTP client reaching the port.
+    // The gate must NOT treat it as auth — that would re-open the
+    // port-forward bypass we just closed.
     const res = await app.request("/api/dataset", {
       headers: { host: "localhost:3940", "sec-fetch-site": "same-origin" },
-    });
-    // 200 (data) or 503 (factRecall not wired) — anything except 401/403 proves
-    // the gate let it through.
-    expect(res.status).not.toBe(401);
-    expect(res.status).not.toBe(403);
-  });
-
-  it("still rejects Sec-Fetch-Site: cross-site (attacker can't bypass)", async () => {
-    const res = await app.request("/api/dataset", {
-      headers: { host: "localhost:3940", "sec-fetch-site": "cross-site" },
     });
     expect(res.status).toBe(401);
   });
 
-  it("allows /api/dataset when a loopback Origin is present", async () => {
+  it("allows /api/dataset with a valid session cookie (UI path)", async () => {
+    const { deriveSessionValue, SESSION_COOKIE_NAME } = await import("../../src/http/ui-auth.js");
+    const cookieValue = deriveSessionValue("test-token");
     const res = await app.request("/api/dataset", {
-      headers: { host: "localhost:3940", origin: "http://localhost:3940" },
+      headers: {
+        host: "localhost:3940",
+        cookie: `${SESSION_COOKIE_NAME}=${cookieValue}`,
+      },
     });
     expect(res.status).not.toBe(401);
     expect(res.status).not.toBe(403);
+  });
+
+  it("allows /api/dataset with a valid Bearer (programmatic path)", async () => {
+    const res = await app.request("/api/dataset", {
+      headers: { host: "localhost:3940", authorization: "Bearer test-token" },
+    });
+    expect(res.status).not.toBe(401);
+    expect(res.status).not.toBe(403);
+  });
+
+  it("rejects /api/dataset with a forged cookie (different token)", async () => {
+    const { deriveSessionValue, SESSION_COOKIE_NAME } = await import("../../src/http/ui-auth.js");
+    const cookieValue = deriveSessionValue("attacker-guess");
+    const res = await app.request("/api/dataset", {
+      headers: {
+        host: "localhost:3940",
+        cookie: `${SESSION_COOKIE_NAME}=${cookieValue}`,
+      },
+    });
+    expect(res.status).toBe(401);
+  });
+});
+
+// UI gate. The static SPA used to be served without auth — any port-forward
+// attacker could fetch /ui/index.html and the JS bundle. The gate now
+// requires a session cookie minted from NLM_MCP_TOKEN via /ui/auth.
+describe("HTTP UI gate", () => {
+  let tmp: string;
+  let store: SqliteSessionStore;
+  let app: Hono;
+  let savedVitest: string | undefined;
+  let savedNodeEnv: string | undefined;
+  let savedToken: string | undefined;
+  const uiDist = resolve(__dirname, "../../dist/ui");
+
+  beforeEach(() => {
+    tmp = mkdtempSync(join(tmpdir(), "nlm-ui-gate-"));
+    store = new SqliteSessionStore({
+      dbPath: join(tmp, "canonical.sqlite"),
+      migrationsDir: MIGRATIONS_DIR,
+    });
+    savedVitest = process.env["VITEST"];
+    savedNodeEnv = process.env["NODE_ENV"];
+    savedToken = process.env["NLM_MCP_TOKEN"];
+    delete process.env["VITEST"];
+    delete process.env["NODE_ENV"];
+    process.env["NLM_MCP_TOKEN"] = "test-token";
+    const recall = new RecallService({ store, llm: new FixedEmbedder(unit([1, 0, 0])) });
+    app = createApp({ recall, store, liveStore: store, uiDist });
+  });
+
+  afterEach(() => {
+    store.close();
+    rmSync(tmp, { recursive: true, force: true });
+    if (savedVitest === undefined) delete process.env["VITEST"];
+    else process.env["VITEST"] = savedVitest;
+    if (savedNodeEnv === undefined) delete process.env["NODE_ENV"];
+    else process.env["NODE_ENV"] = savedNodeEnv;
+    if (savedToken === undefined) delete process.env["NLM_MCP_TOKEN"];
+    else process.env["NLM_MCP_TOKEN"] = savedToken;
+  });
+
+  it("redirects /ui/pulse to /ui/auth when no cookie is present", async () => {
+    const res = await app.request("/ui/pulse");
+    expect([301, 302, 303, 307, 308]).toContain(res.status);
+    expect(res.headers.get("location")).toContain("/ui/auth");
+    expect(res.headers.get("location")).toContain("next=");
+  });
+
+  it("serves /ui/auth without a cookie (bootstrap entrypoint must be reachable)", async () => {
+    const res = await app.request("/ui/auth");
+    expect(res.status).toBe(200);
+    const body = await res.text();
+    expect(body).toContain("NLM_MCP_TOKEN");
+  });
+
+  it("/ui/auth?t=<valid> mints a cookie and redirects", async () => {
+    const res = await app.request("/ui/auth?t=test-token&next=/ui/pulse");
+    expect([301, 302, 303, 307, 308]).toContain(res.status);
+    expect(res.headers.get("location")).toBe("/ui/pulse");
+    const setCookie = res.headers.get("set-cookie") ?? "";
+    expect(setCookie).toMatch(/^nlm_ui_session=/);
+    expect(setCookie).toContain("HttpOnly");
+    expect(setCookie).toContain("SameSite=Strict");
+  });
+
+  it("/ui/auth?t=<wrong> returns 401 (no cookie minted)", async () => {
+    const res = await app.request("/ui/auth?t=wrong");
+    expect(res.status).toBe(401);
+    expect(res.headers.get("set-cookie")).toBeNull();
+  });
+
+  it("/ui/auth?t=<valid>&next=https://evil.com collapses to /ui/ (open-redirect guard)", async () => {
+    const res = await app.request("/ui/auth?t=test-token&next=https://evil.com");
+    expect(res.headers.get("location")).toBe("/ui/");
+  });
+
+  it("allows /ui/pulse with a valid session cookie", async () => {
+    const { deriveSessionValue, SESSION_COOKIE_NAME } = await import("../../src/http/ui-auth.js");
+    const cookieValue = deriveSessionValue("test-token");
+    const res = await app.request("/ui/pulse", {
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${cookieValue}` },
+    });
+    expect(res.status).toBe(200);
+  });
+
+  it("rejects /ui/pulse with a cookie forged under a different token", async () => {
+    const { deriveSessionValue, SESSION_COOKIE_NAME } = await import("../../src/http/ui-auth.js");
+    const cookieValue = deriveSessionValue("attacker-guess");
+    const res = await app.request("/ui/pulse", {
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${cookieValue}` },
+    });
+    expect([301, 302, 303, 307, 308]).toContain(res.status);
+    expect(res.headers.get("location")).toContain("/ui/auth");
+  });
+
+  it("/ui/logout clears the cookie", async () => {
+    const res = await app.request("/ui/logout", { method: "POST" });
+    const setCookie = res.headers.get("set-cookie") ?? "";
+    expect(setCookie).toContain("Max-Age=0");
   });
 });

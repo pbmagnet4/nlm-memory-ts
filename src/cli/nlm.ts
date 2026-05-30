@@ -711,6 +711,33 @@ program
     }
   });
 
+program
+  .command("ui")
+  .description("Open the WebUI, bootstrapping a session cookie from NLM_MCP_TOKEN")
+  .action(() => {
+    const p = port();
+    const token = process.env["NLM_MCP_TOKEN"];
+    const target = token
+      ? `http://localhost:${p}/ui/auth?t=${encodeURIComponent(token)}`
+      : `http://localhost:${p}/ui/`;
+    const opener = process.platform === "darwin"
+      ? "open"
+      : process.platform === "linux"
+      ? "xdg-open"
+      : null;
+    if (opener) {
+      try {
+        execFileSync(opener, [target], { stdio: "ignore" });
+        console.error(`nlm: opened the WebUI${token ? " (bootstrapping session cookie)" : ""}.`);
+        return;
+      } catch {
+        // Fall through to print-only.
+      }
+    }
+    console.error("nlm: could not auto-open a browser. Visit:");
+    console.error(`  ${target}`);
+  });
+
 const HOOK_JS = resolve(__dirname, "../hook/prompt-recall-hook.js");
 const SESSION_START_HOOK_JS = resolve(__dirname, "../hook/session-start-hook.js");
 const SESSION_END_HOOK_JS = resolve(__dirname, "../hook/session-end-hook.js");
