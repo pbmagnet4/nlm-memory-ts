@@ -30,7 +30,6 @@ export function isProbe(query: string | null | undefined): boolean {
 export interface RecallStats {
   readonly total: number;
   readonly hit_rate: number;
-  readonly useful_hit_rate: number | null;
   readonly top_queries: ReadonlyArray<{ readonly query: string; readonly count: number }>;
 }
 
@@ -86,10 +85,6 @@ export function composeDigest(input: ComposeInput): string {
   const total7d = input.stats.total;
   const real7d = Math.max(total7d - probes7d, 0);
 
-  const usefulLine = input.stats.useful_hit_rate === null
-    ? "useful_hit_rate: pending (run `nlm useful-scan`)"
-    : `useful_hit_rate (7d): ${pct(input.stats.useful_hit_rate)}`;
-
   const topLines = topQ.length === 0
     ? "  (none)"
     : topQ.map(([q, _], i) => `  ${i + 1}. ${truncate(q, 60)}`).join("\n");
@@ -103,7 +98,6 @@ export function composeDigest(input: ComposeInput): string {
     alertBlock +
     `Last 24h (real traffic): ${real24h.length} queries · ${sourceStr}\n` +
     `Last 7d: ${real7d} real / ${total7d} total · hit_rate ${pct(input.stats.hit_rate)}\n` +
-    `${usefulLine}\n` +
     `\n` +
     `Top real queries (24h):\n` +
     `${topLines}\n` +

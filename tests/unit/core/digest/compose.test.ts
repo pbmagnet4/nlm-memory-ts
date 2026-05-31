@@ -18,7 +18,6 @@ describe("composeDigest", () => {
   const baseStats = {
     total: 100,
     hit_rate: 0.85,
-    useful_hit_rate: 0.4,
     top_queries: [
       { query: "deployment plan", count: 12 },
       { query: "smoke run", count: 3 }, // probe
@@ -45,20 +44,8 @@ describe("composeDigest", () => {
     expect(text).toContain("hermes=1");
     expect(text).toContain("Last 7d: 97 real / 100 total"); // 100 - 3 probes
     expect(text).toContain("hit_rate 85%");
-    expect(text).toContain("useful_hit_rate (7d): 40%");
     expect(text).toContain("1. deployment plan");
     expect(text).toContain("UI: http://localhost:3940/ui/");
-  });
-
-  it("renders pending useful_hit_rate when null", () => {
-    const text = composeDigest({
-      stats: { ...baseStats, useful_hit_rate: null },
-      recent: [],
-      port: 3940,
-      hookAlert: null,
-      now: FIXED_NOW,
-    });
-    expect(text).toContain("useful_hit_rate: pending");
   });
 
   it("renders (none) when no real 24h traffic", () => {

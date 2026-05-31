@@ -73,7 +73,6 @@ import { DAEMON_PKILL_PATTERN, planRestart } from "./restart-helpers.js";
 import { applyEnvAssignment } from "./config-env.js";
 import { adapterFromSource } from "../core/adapters/from-source.js";
 import type { TranscriptAdapter } from "../ports/transcript-adapter.js";
-import { scanUsefulHits } from "../core/recall/useful-scan.js";
 import { runDigest } from "./digest.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -1231,22 +1230,6 @@ program
       removeHook,
       buildHookCommand,
     });
-  });
-
-program
-  .command("useful-scan")
-  .description("Scan hook log for useful recall hits; writes to ~/.nlm/useful-hit-log.jsonl")
-  .option("-d, --days <n>", "rolling window in days", (v) => Number.parseInt(v, 10), 1)
-  .option("--dry-run", "compute without writing to disk")
-  .action(async (opts) => {
-    const result = await scanUsefulHits({ days: opts.days as number, ...(opts.dryRun ? { dryRun: true } : {}) });
-    const rate = result.measurable === 0
-      ? "no measurable entries"
-      : `${result.useful}/${result.measurable} useful (${Math.round((result.useful / result.measurable) * 100)}%)`;
-    console.error(
-      `nlm useful-scan: scanned ${result.total} recalls in the last ${opts.days as number}d — ${rate}` +
-      (opts.dryRun ? " (dry-run)" : `, ${result.appended} appended`),
-    );
   });
 
 program

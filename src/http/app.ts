@@ -493,8 +493,7 @@ function registerRecallRoutes(app: Hono, deps: HttpDeps): void {
   });
 
   // Citation events from the Stop hook. One POST per surfaced ID the
-  // assistant cited in its response. Drives useful_hit_rate and is the
-  // training-data substrate for the future learned reranker.
+  // assistant cited in its response. Training-data substrate for the future learned reranker.
   app.post("/api/recall/cite-event", async (c) => {
     let body: Record<string, unknown>;
     try {

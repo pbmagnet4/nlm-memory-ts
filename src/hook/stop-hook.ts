@@ -6,9 +6,7 @@
  * surfaced this conversation (via the dedup memo). Each match becomes a
  * citation event posted to the daemon at POST /api/recall/cite-event.
  *
- * Double duty:
- *  - Per-recall useful_hit_rate metric (was the returned ID actually used?)
- *  - Training-data substrate for a learned reranker (was_cited per query)
+ * Each citation event is the training-data substrate for a future learned reranker (was_cited per query).
  *
  * Fail-open by design: any error yields a clean exit with no output. The
  * Stop hook can never block Claude Code's response.
