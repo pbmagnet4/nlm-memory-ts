@@ -15,3 +15,4 @@ reports/longmemeval/
 # Local development logs (session CHANGELOG, daily-digest cron output, etc.) —
 # kept on disk for personal history but never tracked in git.
 logs/
+.worktrees/
