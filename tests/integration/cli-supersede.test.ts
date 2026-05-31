@@ -12,7 +12,8 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { RecallService } from "../../src/core/recall/recall-service.js";
-import { SqliteSessionStore } from "../../src/core/storage/sqlite-session-store.js";
+import type { SqliteSessionStore } from "../../src/core/storage/sqlite-session-store.js";
+import { SqliteStorage } from "../../src/core/storage/sqlite-storage.js";
 import {
   executeSupersede,
   type SessionCandidate,
@@ -104,16 +105,19 @@ function makeIO(overrides: Partial<CapturedIO> = {}): CapturedIO {
 
 describe("executeSupersede", () => {
   let tmp: string;
+  let storage: SqliteStorage;
   let store: SqliteSessionStore;
   let recall: RecallService;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     tmp = mkdtempSync(join(tmpdir(), "nlm-supersede-cli-"));
     process.env["NLM_SUPERSEDENCE_LOG"] = join(tmp, "supersedence-log.jsonl");
-    store = new SqliteSessionStore({
+    storage = SqliteStorage.create({
       dbPath: join(tmp, "canonical.sqlite"),
       migrationsDir: MIGRATIONS_DIR,
     });
+    await storage.init();
+    store = storage.sessions;
     const olderSess = makeSession({
       id: "sess_old",
       label: "pgvector setup notes",
@@ -133,8 +137,8 @@ describe("executeSupersede", () => {
     recall = new RecallService({ store, llm: new FixedEmbedder(unit([0, 1, 0])) });
   });
 
-  afterEach(() => {
-    store.close();
+  afterEach(async () => {
+    await storage.close();
     delete process.env["NLM_SUPERSEDENCE_LOG"];
     rmSync(tmp, { recursive: true, force: true });
   });

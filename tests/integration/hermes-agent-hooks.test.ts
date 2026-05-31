@@ -13,7 +13,7 @@ import { join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { Hono } from "hono";
 import { RecallService } from "../../src/core/recall/recall-service.js";
-import { SqliteSessionStore } from "../../src/core/storage/sqlite-session-store.js";
+import { SqliteStorage } from "../../src/core/storage/sqlite-storage.js";
 import { createApp } from "../../src/http/app.js";
 import type { EmbedResult, LLMClient } from "../../src/ports/llm-client.js";
 import { makeSession } from "../fixtures/sessions.js";
@@ -31,20 +31,22 @@ class NoopEmbedder implements LLMClient {
 
 describe("hermes-agent hook endpoints", () => {
   let tmp: string;
-  let store: SqliteSessionStore;
+  let storage: SqliteStorage;
   let app: Hono;
   let citationLogPath: string;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     tmp = mkdtempSync(join(tmpdir(), "nlm-hermes-agent-"));
     process.env["NLM_HOOK_STATE_DIR"] = join(tmp, "hook-state");
     process.env["NLM_HOOK_LOG"] = join(tmp, "hook-log.jsonl");
     citationLogPath = join(tmp, "citation-log.jsonl");
 
-    store = new SqliteSessionStore({
+    storage = SqliteStorage.create({
       dbPath: join(tmp, "canonical.sqlite"),
       migrationsDir: MIGRATIONS_DIR,
     });
+    await storage.init();
+    const store = storage.sessions;
     store.insertSessionForTest(
       makeSession({ id: "sess_a", label: "recall hook design", body: "recall hook design work" }),
     );
@@ -56,9 +58,10 @@ describe("hermes-agent hook endpoints", () => {
     app = createApp({ recall, store, citationLogPath });
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     delete process.env["NLM_HOOK_STATE_DIR"];
     delete process.env["NLM_HOOK_LOG"];
+    await storage.close();
     rmSync(tmp, { recursive: true, force: true });
   });
 

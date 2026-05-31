@@ -7,21 +7,24 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { SqliteSessionStore } from "../../src/core/storage/sqlite-session-store.js";
+import { SqliteStorage } from "../../src/core/storage/sqlite-storage.js";
 import { makeSession } from "../fixtures/sessions.js";
 
 const MIGRATIONS_DIR = resolve(__dirname, "../../migrations");
 
 describe("SqliteSessionStore.getByIds", () => {
   let tmp: string;
-  let store: SqliteSessionStore;
+  let storage: SqliteStorage;
+  let store: SqliteStorage["sessions"];
 
-  beforeEach(() => {
+  beforeEach(async () => {
     tmp = mkdtempSync(join(tmpdir(), "nlm-getbyids-"));
-    store = new SqliteSessionStore({
+    storage = SqliteStorage.create({
       dbPath: join(tmp, "canonical.sqlite"),
       migrationsDir: MIGRATIONS_DIR,
     });
+    await storage.init();
+    store = storage.sessions;
     store.insertSessionForTest(
       makeSession({ id: "s1", label: "alpha", body: "BODY ONE", entities: ["NLM"], decisions: ["d1"] }),
     );
@@ -31,8 +34,8 @@ describe("SqliteSessionStore.getByIds", () => {
     store.insertSessionForTest(makeSession({ id: "s3", label: "gamma" }));
   });
 
-  afterEach(() => {
-    store.close();
+  afterEach(async () => {
+    await storage.close();
     rmSync(tmp, { recursive: true, force: true });
   });
 
@@ -61,21 +64,24 @@ describe("SqliteSessionStore.getByIds", () => {
 
 describe("SqliteSessionStore.getById — supersedence edges", () => {
   let tmp: string;
-  let store: SqliteSessionStore;
+  let storage: SqliteStorage;
+  let store: SqliteStorage["sessions"];
 
-  beforeEach(() => {
+  beforeEach(async () => {
     tmp = mkdtempSync(join(tmpdir(), "nlm-getbyid-edges-"));
-    store = new SqliteSessionStore({
+    storage = SqliteStorage.create({
       dbPath: join(tmp, "canonical.sqlite"),
       migrationsDir: MIGRATIONS_DIR,
     });
+    await storage.init();
+    store = storage.sessions;
     store.insertSessionForTest(makeSession({ id: "old", label: "old session" }));
     store.insertSessionForTest(makeSession({ id: "new", label: "new session" }));
     store.insertEdgeForTest("new", "old", "supersedes");
   });
 
-  afterEach(() => {
-    store.close();
+  afterEach(async () => {
+    await storage.close();
     rmSync(tmp, { recursive: true, force: true });
   });
 

@@ -10,8 +10,9 @@ import { join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { FactRecallService } from "../../src/core/recall-facts/fact-recall-service.js";
 import { RecallService } from "../../src/core/recall/recall-service.js";
-import { SqliteFactStore } from "../../src/core/storage/sqlite-fact-store.js";
-import { SqliteSessionStore } from "../../src/core/storage/sqlite-session-store.js";
+import type { SqliteFactStore } from "../../src/core/storage/sqlite-fact-store.js";
+import type { SqliteSessionStore } from "../../src/core/storage/sqlite-session-store.js";
+import { SqliteStorage } from "../../src/core/storage/sqlite-storage.js";
 import {
   createMcpServer,
   getFactHistoryHandler,
@@ -83,15 +84,18 @@ function parsePayload(result: ParsedTool): unknown {
 
 describe("MCP adapter", () => {
   let tmp: string;
+  let storage: SqliteStorage;
   let store: SqliteSessionStore;
   let recall: RecallService;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     tmp = mkdtempSync(join(tmpdir(), "nlm-mcp-"));
-    store = new SqliteSessionStore({
+    storage = SqliteStorage.create({
       dbPath: join(tmp, "canonical.sqlite"),
       migrationsDir: MIGRATIONS_DIR,
     });
+    await storage.init();
+    store = storage.sessions;
     for (const { session, embedding } of seed) {
       store.insertSessionForTest(session);
       store.insertEmbeddingForTest(session.id, embedding);
@@ -102,8 +106,8 @@ describe("MCP adapter", () => {
     });
   });
 
-  afterEach(() => {
-    store.close();
+  afterEach(async () => {
+    await storage.close();
     rmSync(tmp, { recursive: true, force: true });
   });
 
@@ -296,7 +300,7 @@ describe("MCP adapter", () => {
     let factRecall: FactRecallService;
 
     beforeEach(async () => {
-      factStore = new SqliteFactStore(store.rawDb());
+      factStore = storage.facts;
       factRecall = new FactRecallService({
         factStore,
         llm: new FixedEmbedder(unit([1, 0, 0])),

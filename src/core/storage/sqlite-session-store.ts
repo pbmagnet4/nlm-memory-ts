@@ -101,6 +101,11 @@ export interface RecentMarker {
 export class SqliteSessionStore implements SessionStore {
   private readonly db: Database.Database;
 
+  /**
+   * @internal. Construct via SqliteStorage.create(...) instead. Direct
+   * construction is preserved for the SqliteStorage adapter only; all
+   * other callers should reach SessionStore via storage.sessions.
+   */
   constructor(opts: SqliteSessionStoreOptions) {
     const dbPath = resolve(opts.dbPath);
     const parent = dirname(dbPath);
@@ -265,7 +270,7 @@ export class SqliteSessionStore implements SessionStore {
       // carries new provenance (new source_session_id) and is informative
       // history. See Section 2 of factstore-design.md.
       //
-      // Ordering note: insertManyInTxn FIRST so the new fact id exists in
+      // Ordering note: inserts FIRST so the new fact id exists in
       // facts(id) before any UPDATE sets superseded_by = newId (the FK
       // would reject otherwise). The DELETE above plus the CASCADE-SET-NULL
       // on superseded_by means re-ingest naturally repairs chains: if an
@@ -273,7 +278,32 @@ export class SqliteSessionStore implements SessionStore {
       // session, deleting our prior fact unlinks the chain; the loop below
       // re-establishes it with the freshly-inserted row.
       if (factSink !== null) {
-        this.applyFactsInTxn(record.id, factSink.factStore, factSink.facts);
+        // Inlined ingest. See SqliteFactStore.ingestSessionFacts for the
+        // backend-agnostic version. SqliteSessionStore runs this synchronously
+        // inside the better-sqlite3 txn callback (which must be sync). The
+        // logic mirrors the port method exactly; if you change one, change
+        // the other. Tracked as a known duplication for the SQLite adapter.
+        const db = this.db;
+        db.prepare("DELETE FROM facts WHERE source_session_id = ?").run(record.id);
+        if (factSink.facts.length > 0) {
+          const factStoreImpl = factSink.factStore;
+          for (const f of factSink.facts) factStoreImpl.insertRowInTxn(f);
+
+          const findCollisionStmt = db.prepare<[string, string, string], { id: string }>(`
+            SELECT id FROM facts
+            WHERE subject = ? AND predicate = ? AND superseded_by IS NULL AND id != ?
+            ORDER BY created_at DESC LIMIT 1
+          `);
+          const markSupersededStmt = db.prepare(
+            "UPDATE facts SET superseded_by = ? WHERE id = ?",
+          );
+          for (const f of factSink.facts) {
+            const collision = findCollisionStmt.get(f.subject, f.predicate, f.id);
+            if (collision && collision.id !== f.id) {
+              markSupersededStmt.run(f.id, collision.id);
+            }
+          }
+        }
       }
     });
     txn();
@@ -369,58 +399,31 @@ export class SqliteSessionStore implements SessionStore {
   ): Promise<void> {
     const db = this.db;
     const txn = db.transaction(() => {
-      this.applyFactsInTxn(sessionId, factStore, facts);
+      // Inlined ingest. Same logic as SqliteFactStore.ingestSessionFacts.
+      // Sync because better-sqlite3 txn callbacks must be sync.
+      db.prepare("DELETE FROM facts WHERE source_session_id = ?").run(sessionId);
+      if (facts.length > 0) {
+        for (const f of facts) factStore.insertRowInTxn(f);
+
+        const findCollisionStmt = db.prepare<[string, string, string], { id: string }>(`
+          SELECT id FROM facts
+          WHERE subject = ? AND predicate = ? AND superseded_by IS NULL AND id != ?
+          ORDER BY created_at DESC LIMIT 1
+        `);
+        const markSupersededStmt = db.prepare(
+          "UPDATE facts SET superseded_by = ? WHERE id = ?",
+        );
+        for (const f of facts) {
+          const collision = findCollisionStmt.get(f.subject, f.predicate, f.id);
+          if (collision && collision.id !== f.id) {
+            markSupersededStmt.run(f.id, collision.id);
+          }
+        }
+      }
     });
     txn();
     if (embedder) {
       await this.embedFacts(factStore, facts, embedder);
-    }
-  }
-
-  /**
-   * Sync core of the fact-ingest block. Runs inside an EXISTING transaction
-   * — opens no txn of its own. Used by both `insertSession` (Phase B.2
-   * atomic ingest) and `insertFactsForSession` (Phase B.5 backfill).
-   *
-   * Behavior (mirrored across both callers):
-   *   1. DELETE prior facts attributed to this session (idempotent on
-   *      backfill, drops stale rows on re-ingest).
-   *   2. Insert all new facts atomically.
-   *   3. For each, mark the prior current (subject, predicate) fact as
-   *      superseded — Phase B.4 deterministic supersedence policy.
-   *
-   * Ordering: inserts before updates so the supersedence FK target exists.
-   * CASCADE-SET-NULL on `superseded_by` handles chain repair on re-ingest.
-   */
-  private applyFactsInTxn(
-    sessionId: string,
-    factStore: SqliteFactStore,
-    facts: ReadonlyArray<Fact>,
-  ): void {
-    const db = this.db;
-    db.prepare("DELETE FROM facts WHERE source_session_id = ?").run(sessionId);
-    factStore.insertManyInTxn(facts);
-    if (facts.length === 0) return;
-
-    const findCollisionStmt = db.prepare<
-      [string, string, string],
-      { id: string }
-    >(`
-      SELECT id
-      FROM facts
-      WHERE subject = ?
-        AND predicate = ?
-        AND superseded_by IS NULL
-        AND id != ?
-      ORDER BY created_at DESC
-      LIMIT 1
-    `);
-    const markSupersededStmt = db.prepare(
-      "UPDATE facts SET superseded_by = ? WHERE id = ?",
-    );
-    for (const fact of facts) {
-      const prior = findCollisionStmt.get(fact.subject, fact.predicate, fact.id);
-      if (prior) markSupersededStmt.run(fact.id, prior.id);
     }
   }
 
@@ -439,7 +442,7 @@ export class SqliteSessionStore implements SessionStore {
       if (!factText) continue;
       try {
         const { vector } = await embedder.embed(factText, "document");
-        factStore.upsertEmbedding(fact.id, vector);
+        await factStore.upsertEmbedding(fact.id, vector);
       } catch {
         // Per-fact embedding failure must not abort embedding of subsequent
         // facts. The fact row stays current; semantic recall just misses it
@@ -656,6 +659,7 @@ export class SqliteSessionStore implements SessionStore {
   }
 
   // ── insert helpers used by tests / future ingest path ─────────────────
+  /** @internal test-only helper; production callers use insertSession(). */
   insertSessionForTest(session: Session): void {
     const stmt = this.db.prepare(`
       INSERT INTO sessions (

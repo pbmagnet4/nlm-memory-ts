@@ -10,8 +10,9 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { Hono } from "hono";
 import { RecallService } from "../../src/core/recall/recall-service.js";
 import { FactRecallService } from "../../src/core/recall-facts/fact-recall-service.js";
-import { SqliteFactStore } from "../../src/core/storage/sqlite-fact-store.js";
-import { SqliteSessionStore } from "../../src/core/storage/sqlite-session-store.js";
+import type { SqliteFactStore } from "../../src/core/storage/sqlite-fact-store.js";
+import type { SqliteSessionStore } from "../../src/core/storage/sqlite-session-store.js";
+import { SqliteStorage } from "../../src/core/storage/sqlite-storage.js";
 import { createApp } from "../../src/http/app.js";
 import type { EmbedResult, LLMClient } from "../../src/ports/llm-client.js";
 import type { Session } from "../../src/shared/types.js";
@@ -66,16 +67,19 @@ const seed: ReadonlyArray<{ session: Session; embedding: Float32Array }> = [
 
 describe("HTTP adapter", () => {
   let tmp: string;
+  let storage: SqliteStorage;
   let store: SqliteSessionStore;
   let app: Hono;
   let queryLogPath: string;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     tmp = mkdtempSync(join(tmpdir(), "nlm-http-"));
-    store = new SqliteSessionStore({
+    storage = SqliteStorage.create({
       dbPath: join(tmp, "canonical.sqlite"),
       migrationsDir: MIGRATIONS_DIR,
     });
+    await storage.init();
+    store = storage.sessions;
     for (const { session, embedding } of seed) {
       store.insertSessionForTest(session);
       store.insertEmbeddingForTest(session.id, embedding);
@@ -88,8 +92,8 @@ describe("HTTP adapter", () => {
     app = createApp({ recall, store, liveStore: store, queryLogPath });
   });
 
-  afterEach(() => {
-    store.close();
+  afterEach(async () => {
+    await storage.close();
     rmSync(tmp, { recursive: true, force: true });
   });
 
@@ -327,13 +331,16 @@ describe("HTTP adapter", () => {
 describe("HTTP adapter — data management", () => {
   let tmp: string;
   let dbPath: string;
+  let storage: SqliteStorage;
   let store: SqliteSessionStore;
   let app: Hono;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     tmp = mkdtempSync(join(tmpdir(), "nlm-http-data-"));
     dbPath = join(tmp, "canonical.sqlite");
-    store = new SqliteSessionStore({ dbPath, migrationsDir: MIGRATIONS_DIR });
+    storage = SqliteStorage.create({ dbPath, migrationsDir: MIGRATIONS_DIR });
+    await storage.init();
+    store = storage.sessions;
     for (const { session, embedding } of seed) {
       store.insertSessionForTest(session);
       store.insertEmbeddingForTest(session.id, embedding);
@@ -342,8 +349,8 @@ describe("HTTP adapter — data management", () => {
     app = createApp({ recall, store, liveStore: store, dbPath });
   });
 
-  afterEach(() => {
-    store.close();
+  afterEach(async () => {
+    await storage.close();
     rmSync(tmp, { recursive: true, force: true });
   });
 
@@ -410,6 +417,7 @@ describe("HTTP adapter — data management", () => {
 
 describe("HTTP adapter — fact recall", () => {
   let tmp: string;
+  let storage: SqliteStorage;
   let store: SqliteSessionStore;
   let factStore: SqliteFactStore;
   let app: Hono;
@@ -417,12 +425,14 @@ describe("HTTP adapter — fact recall", () => {
 
   beforeEach(async () => {
     tmp = mkdtempSync(join(tmpdir(), "nlm-http-facts-"));
-    store = new SqliteSessionStore({
+    storage = SqliteStorage.create({
       dbPath: join(tmp, "canonical.sqlite"),
       migrationsDir: MIGRATIONS_DIR,
     });
+    await storage.init();
+    store = storage.sessions;
     store.insertSessionForTest(makeSession({ id: "sess_p" }));
-    factStore = new SqliteFactStore(store.rawDb());
+    factStore = storage.facts;
     await factStore.insertMany([
       makeFact({
         id: "f_hono", subject: "nlm-memory-ts", predicate: "framework",
@@ -443,8 +453,8 @@ describe("HTTP adapter — fact recall", () => {
     app = createApp({ recall, store, factRecall, factStore, factQueryLogPath });
   });
 
-  afterEach(() => {
-    store.close();
+  afterEach(async () => {
+    await storage.close();
     rmSync(tmp, { recursive: true, force: true });
   });
 
@@ -509,19 +519,21 @@ describe("HTTP adapter — fact recall", () => {
 // the browser-fetch heuristics (Origin / Sec-Fetch-Site) actually run.
 describe("HTTP local-only gate", () => {
   let tmp: string;
-  let store: SqliteSessionStore;
+  let storage: SqliteStorage;
   let app: Hono;
   let savedVitest: string | undefined;
   let savedNodeEnv: string | undefined;
   let savedToken: string | undefined;
   let savedUiAuth: string | undefined;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     tmp = mkdtempSync(join(tmpdir(), "nlm-http-gate-"));
-    store = new SqliteSessionStore({
+    storage = SqliteStorage.create({
       dbPath: join(tmp, "canonical.sqlite"),
       migrationsDir: MIGRATIONS_DIR,
     });
+    await storage.init();
+    const store = storage.sessions;
     savedVitest = process.env["VITEST"];
     savedNodeEnv = process.env["NODE_ENV"];
     savedToken = process.env["NLM_MCP_TOKEN"];
@@ -534,8 +546,8 @@ describe("HTTP local-only gate", () => {
     app = createApp({ recall, store, liveStore: store });
   });
 
-  afterEach(() => {
-    store.close();
+  afterEach(async () => {
+    await storage.close();
     rmSync(tmp, { recursive: true, force: true });
     if (savedVitest === undefined) delete process.env["VITEST"];
     else process.env["VITEST"] = savedVitest;
@@ -606,7 +618,7 @@ describe("HTTP local-only gate", () => {
 // requires a session cookie minted from NLM_MCP_TOKEN via /ui/auth.
 describe("HTTP UI gate", () => {
   let tmp: string;
-  let store: SqliteSessionStore;
+  let storage: SqliteStorage;
   let app: Hono;
   let savedVitest: string | undefined;
   let savedNodeEnv: string | undefined;
@@ -614,12 +626,14 @@ describe("HTTP UI gate", () => {
   let savedUiAuth: string | undefined;
   const uiDist = resolve(__dirname, "../../dist/ui");
 
-  beforeEach(() => {
+  beforeEach(async () => {
     tmp = mkdtempSync(join(tmpdir(), "nlm-ui-gate-"));
-    store = new SqliteSessionStore({
+    storage = SqliteStorage.create({
       dbPath: join(tmp, "canonical.sqlite"),
       migrationsDir: MIGRATIONS_DIR,
     });
+    await storage.init();
+    const store = storage.sessions;
     savedVitest = process.env["VITEST"];
     savedNodeEnv = process.env["NODE_ENV"];
     savedToken = process.env["NLM_MCP_TOKEN"];
@@ -632,8 +646,8 @@ describe("HTTP UI gate", () => {
     app = createApp({ recall, store, liveStore: store, uiDist });
   });
 
-  afterEach(() => {
-    store.close();
+  afterEach(async () => {
+    await storage.close();
     rmSync(tmp, { recursive: true, force: true });
     if (savedVitest === undefined) delete process.env["VITEST"];
     else process.env["VITEST"] = savedVitest;
@@ -766,7 +780,7 @@ describe("HTTP UI gate", () => {
 // the loopback Host/Origin check without requiring a cookie or Bearer.
 describe("HTTP gate — default off (NLM_UI_AUTH unset)", () => {
   let tmp: string;
-  let store: SqliteSessionStore;
+  let storage: SqliteStorage;
   let app: Hono;
   let savedVitest: string | undefined;
   let savedNodeEnv: string | undefined;
@@ -774,12 +788,14 @@ describe("HTTP gate — default off (NLM_UI_AUTH unset)", () => {
   let savedUiAuth: string | undefined;
   const uiDist = resolve(__dirname, "../../dist/ui");
 
-  beforeEach(() => {
+  beforeEach(async () => {
     tmp = mkdtempSync(join(tmpdir(), "nlm-default-"));
-    store = new SqliteSessionStore({
+    storage = SqliteStorage.create({
       dbPath: join(tmp, "canonical.sqlite"),
       migrationsDir: MIGRATIONS_DIR,
     });
+    await storage.init();
+    const store = storage.sessions;
     savedVitest = process.env["VITEST"];
     savedNodeEnv = process.env["NODE_ENV"];
     savedToken = process.env["NLM_MCP_TOKEN"];
@@ -794,8 +810,8 @@ describe("HTTP gate — default off (NLM_UI_AUTH unset)", () => {
     app = createApp({ recall, store, liveStore: store, uiDist });
   });
 
-  afterEach(() => {
-    store.close();
+  afterEach(async () => {
+    await storage.close();
     rmSync(tmp, { recursive: true, force: true });
     if (savedVitest === undefined) delete process.env["VITEST"];
     else process.env["VITEST"] = savedVitest;
@@ -831,16 +847,18 @@ describe("HTTP gate — default off (NLM_UI_AUTH unset)", () => {
 
 describe("HTTP gate — misconfig (NLM_UI_AUTH=cookie without NLM_MCP_TOKEN)", () => {
   let tmp: string;
-  let store: SqliteSessionStore;
+  let storage: SqliteStorage;
   let app: Hono;
   let saved: Record<string, string | undefined> = {};
 
-  beforeEach(() => {
+  beforeEach(async () => {
     tmp = mkdtempSync(join(tmpdir(), "nlm-misconfig-"));
-    store = new SqliteSessionStore({
+    storage = SqliteStorage.create({
       dbPath: join(tmp, "canonical.sqlite"),
       migrationsDir: MIGRATIONS_DIR,
     });
+    await storage.init();
+    const store = storage.sessions;
     for (const k of ["VITEST", "NODE_ENV", "NLM_MCP_TOKEN", "NLM_UI_AUTH"]) {
       saved[k] = process.env[k];
     }
@@ -852,8 +870,8 @@ describe("HTTP gate — misconfig (NLM_UI_AUTH=cookie without NLM_MCP_TOKEN)", (
     app = createApp({ recall, store, liveStore: store });
   });
 
-  afterEach(() => {
-    store.close();
+  afterEach(async () => {
+    await storage.close();
     rmSync(tmp, { recursive: true, force: true });
     for (const [k, v] of Object.entries(saved)) {
       if (v === undefined) delete process.env[k];

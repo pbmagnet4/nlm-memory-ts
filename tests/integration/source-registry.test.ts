@@ -7,27 +7,28 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { SqliteSessionStore } from "../../src/core/storage/sqlite-session-store.js";
+import { SqliteStorage } from "../../src/core/storage/sqlite-storage.js";
 import { SourceRegistry } from "../../src/core/sources/source-registry.js";
 
 const MIGRATIONS_DIR = resolve(__dirname, "../../migrations");
 
 describe("SourceRegistry", () => {
   let tmp: string;
-  let store: SqliteSessionStore;
+  let storage: SqliteStorage;
   let registry: SourceRegistry;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     tmp = mkdtempSync(join(tmpdir(), "nlm-sources-"));
-    store = new SqliteSessionStore({
+    storage = SqliteStorage.create({
       dbPath: join(tmp, "canonical.sqlite"),
       migrationsDir: MIGRATIONS_DIR,
     });
-    registry = new SourceRegistry(store.rawDb());
+    await storage.init();
+    registry = new SourceRegistry(storage.rawDb());
   });
 
-  afterEach(() => {
-    store.close();
+  afterEach(async () => {
+    await storage.close();
     rmSync(tmp, { recursive: true, force: true });
   });
 

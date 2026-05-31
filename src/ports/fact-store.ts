@@ -72,6 +72,37 @@ export interface FactStore {
   markSuperseded(oldId: string, newId: string | null): Promise<void>;
 
   /**
+   * Insert or replace the embedding vector for a fact. Vector dimension is
+   * fixed by the embedding model (nomic-embed-text → 768) and validated by
+   * the adapter. Best-effort at the call site: ingest traps errors so an
+   * unreachable embedder doesn't roll back the surrounding transaction.
+   */
+  upsertEmbedding(factId: string, vector: Float32Array): Promise<void>;
+
+  /**
+   * Atomic session-scoped fact write: delete prior facts for this session,
+   * insert the new set, then apply deterministic supersedence on any
+   * (subject, predicate) collision against existing non-superseded facts
+   * from other sessions. Must run inside a transaction (the caller wraps
+   * with Storage.withTransaction). See Section 2 of factstore-design.md
+   * for the ordering rationale: inserts must complete before supersedence
+   * UPDATEs run, since superseded_by is an FK to facts(id).
+   *
+   * The SQLite adapter additionally inlines this logic inside its own
+   * session-store ingest path (because better-sqlite3 txn callbacks must
+   * be sync); other backends call this method via Storage.withTransaction.
+   *
+   * Batch-internal duplicates (two facts in the same call with the same
+   * (subject, predicate)) produce implementation-defined behavior: which
+   * sibling ends up current is not part of the contract. Callers must
+   * dedupe within a batch if they need deterministic results.
+   */
+  ingestSessionFacts(
+    sessionId: string,
+    facts: ReadonlyArray<Fact>,
+  ): Promise<void>;
+
+  /**
    * Pre-filtered fact list used by FactRecallService. Applies subject /
    * predicate / kind / confidence / superseded filters at the SQL layer
    * before keyword scoring runs in core. No ordering guarantee beyond

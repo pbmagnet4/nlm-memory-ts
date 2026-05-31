@@ -56,6 +56,8 @@ class InMemoryFactStore implements FactStore {
   async getHistory(): Promise<ReadonlyArray<FactHistoryChain>> {
     return [];
   }
+  async upsertEmbedding(): Promise<void> {}
+  async ingestSessionFacts(): Promise<void> {}
 }
 
 class StubEmbedder implements LLMClient {

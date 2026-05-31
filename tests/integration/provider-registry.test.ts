@@ -7,31 +7,32 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { SqliteSessionStore } from "../../src/core/storage/sqlite-session-store.js";
+import { SqliteStorage } from "../../src/core/storage/sqlite-storage.js";
 import { ProviderRegistry } from "../../src/core/providers/provider-registry.js";
 
 const MIGRATIONS_DIR = resolve(__dirname, "../../migrations");
 
 describe("ProviderRegistry", () => {
   let tmp: string;
-  let store: SqliteSessionStore;
+  let storage: SqliteStorage;
   let registry: ProviderRegistry;
   let savedKey: string | undefined;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     tmp = mkdtempSync(join(tmpdir(), "nlm-providers-"));
-    store = new SqliteSessionStore({
+    storage = SqliteStorage.create({
       dbPath: join(tmp, "canonical.sqlite"),
       migrationsDir: MIGRATIONS_DIR,
     });
-    registry = new ProviderRegistry(store.rawDb());
+    await storage.init();
+    registry = new ProviderRegistry(storage.rawDb());
     savedKey = process.env["DEEPSEEK_API_KEY"];
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     if (savedKey === undefined) delete process.env["DEEPSEEK_API_KEY"];
     else process.env["DEEPSEEK_API_KEY"] = savedKey;
-    store.close();
+    await storage.close();
     rmSync(tmp, { recursive: true, force: true });
   });
 

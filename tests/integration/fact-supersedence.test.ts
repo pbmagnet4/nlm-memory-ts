@@ -11,11 +11,12 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { SqliteFactStore } from "../../src/core/storage/sqlite-fact-store.js";
-import {
-  type IngestRecord,
+import type { SqliteFactStore } from "../../src/core/storage/sqlite-fact-store.js";
+import type {
+  IngestRecord,
   SqliteSessionStore,
 } from "../../src/core/storage/sqlite-session-store.js";
+import { SqliteStorage } from "../../src/core/storage/sqlite-storage.js";
 import type { Fact } from "../../src/shared/types.js";
 import { makeFact } from "../fixtures/facts.js";
 
@@ -54,20 +55,23 @@ function fact(overrides: Partial<Fact>): Fact {
 
 describe("Phase B.4 — supersedence-on-ingest", () => {
   let tmp: string;
+  let storage: SqliteStorage;
   let store: SqliteSessionStore;
   let factStore: SqliteFactStore;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     tmp = mkdtempSync(join(tmpdir(), "nlm-b4-"));
-    store = new SqliteSessionStore({
+    storage = SqliteStorage.create({
       dbPath: join(tmp, "canonical.sqlite"),
       migrationsDir: MIGRATIONS_DIR,
     });
-    factStore = new SqliteFactStore(store.rawDb());
+    await storage.init();
+    store = storage.sessions;
+    factStore = storage.facts;
   });
 
-  afterEach(() => {
-    store.close();
+  afterEach(async () => {
+    await storage.close();
     rmSync(tmp, { recursive: true, force: true });
   });
 
