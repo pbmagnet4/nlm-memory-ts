@@ -93,7 +93,7 @@ export interface FactStore {
    */
   ingestSessionFacts(
     sessionId: string,
-    facts: ReadonlyArray<import("@shared/types.js").Fact>,
+    facts: ReadonlyArray<Fact>,
   ): Promise<void>;
 
   /**
