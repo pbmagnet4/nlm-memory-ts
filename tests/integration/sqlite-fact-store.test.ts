@@ -36,6 +36,7 @@ runFactStoreContract({
     if (tmp) rmSync(tmp, { recursive: true, force: true });
   },
   async seedSession(storage, session) {
+    // Cast is safe: setup() returns a SqliteStorage, so the harness owner knows the concrete type.
     (storage as SqliteStorage).sessions.insertSessionForTest(session);
   },
 });

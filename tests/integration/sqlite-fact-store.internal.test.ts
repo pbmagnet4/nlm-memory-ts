@@ -1,7 +1,7 @@
 /**
  * SQLite-specific assertions that poke rawDb() to inspect internal state.
  *
- * These are NOT part of the FactStore contract — they verify SQLite-only
+ * These are NOT part of the FactStore contract. They verify SQLite-only
  * invariants (row counts in fact_embeddings) that a Postgres adapter would
  * verify against pg_class / its own embedding table, not against this code.
  */

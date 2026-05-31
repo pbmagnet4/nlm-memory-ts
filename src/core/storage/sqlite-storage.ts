@@ -67,12 +67,13 @@ export class SqliteStorage implements Storage {
         const maybe = fn(ctx);
         if (maybe instanceof Promise) {
           throw new Error(
-            "withTransaction callback returned a Promise — keep txn bodies synchronous",
+            "withTransaction callback returned a Promise. Keep txn bodies synchronous.",
           );
         }
         captured = maybe;
       });
       txn();
+      // Cast is safe: a sync throw inside fn propagates out of txn() before we reach here, so the success path always assigned captured.
       return captured as T;
     } finally {
       this.inTxn = false;

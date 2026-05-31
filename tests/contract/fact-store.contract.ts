@@ -3,7 +3,7 @@
  *
  * Each adapter integration test imports runFactStoreContract and supplies a
  * harness that builds a fresh, migrated, empty Storage instance per test.
- * Identical assertions run against every backend — that is the only proof
+ * Identical assertions run against every backend. That is the only proof
  * that a new adapter (e.g. Postgres) is behaviorally equivalent to SQLite.
  *
  * Do NOT put module-level describe() blocks here. The function shape lets
@@ -26,12 +26,12 @@ export interface FactStoreContractHarness {
   readonly name: string;
   setup(): Promise<Storage>;
   teardown(storage: Storage): Promise<void>;
-  /** Test-only session seed — bypasses ingest extraction. */
+  /** Test-only session seed; bypasses ingest extraction. */
   seedSession(storage: Storage, session: Session): Promise<void>;
 }
 
 export function runFactStoreContract(h: FactStoreContractHarness): void {
-  describe(`FactStore contract — ${h.name}`, () => {
+  describe(`FactStore contract: ${h.name}`, () => {
     let storage: Storage;
 
     beforeEach(async () => {
@@ -196,7 +196,7 @@ export function runFactStoreContract(h: FactStoreContractHarness): void {
     it("CHECK constraints reject invalid kind", async () => {
       await expect(
         storage.facts.insert(
-          // @ts-expect-error — exercising the CHECK constraint at runtime
+          // @ts-expect-error: exercising the CHECK constraint at runtime
           makeFact({ id: "bad", kind: "garbage", sourceSessionId: "sess_parent" }),
         ),
       ).rejects.toThrow();
