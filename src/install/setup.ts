@@ -309,9 +309,10 @@ export async function runSetup(opts: SetupOptions): Promise<void> {
   const ms = spinner();
   ms.start("Running database migrations");
   try {
-    const { SqliteSessionStore } = await import("../core/storage/sqlite-session-store.js");
-    const store = new SqliteSessionStore({ dbPath: opts.dbPath, migrationsDir: opts.migrationsDir });
-    store.close();
+    const { SqliteStorage } = await import("../core/storage/sqlite-storage.js");
+    const storage = SqliteStorage.create({ dbPath: opts.dbPath, migrationsDir: opts.migrationsDir });
+    await storage.init();
+    await storage.close();
     ms.stop("Database ready");
   } catch (e) {
     ms.stop("Migration failed");

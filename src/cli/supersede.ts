@@ -16,7 +16,8 @@
 
 import { fileURLToPath } from "node:url";
 import { cancel, confirm, isCancel, log, outro, select, text } from "@clack/prompts";
-import { SqliteSessionStore } from "../core/storage/sqlite-session-store.js";
+import type { SqliteSessionStore } from "../core/storage/sqlite-session-store.js";
+import { SqliteStorage } from "../core/storage/sqlite-storage.js";
 import { RecallService } from "../core/recall/recall-service.js";
 import { OllamaClient } from "../llm/ollama-client.js";
 import { appendSupersedence } from "../core/storage/supersedence-log.js";
@@ -357,8 +358,11 @@ function buildDefaultDeps(): SupersedeDeps {
 function openDefaultStore(): SqliteSessionStore {
   // Resolved lazily so test paths that pass their own factory don't touch the
   // host ~/.nlm directory. Mirrors what the main CLI's buildStack() does.
+  // Constructed via SqliteStorage so lifecycle goes through the canonical
+  // adapter; closeStoreIfPossible(store) closes the shared connection.
   const { dbPath, migrationsDir } = resolveDefaultPaths();
-  return new SqliteSessionStore({ dbPath, migrationsDir });
+  const storage = SqliteStorage.create({ dbPath, migrationsDir });
+  return storage.sessions;
 }
 
 function resolveDefaultPaths(): { dbPath: string; migrationsDir: string } {

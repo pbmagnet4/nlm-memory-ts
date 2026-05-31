@@ -35,10 +35,9 @@ import { serve } from "@hono/node-server";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { FactRecallService } from "../core/recall-facts/fact-recall-service.js";
 import { RecallService } from "../core/recall/recall-service.js";
-import { SqliteFactStore } from "../core/storage/sqlite-fact-store.js";
 import { ProviderRegistry } from "../core/providers/provider-registry.js";
 import { SourceRegistry } from "../core/sources/source-registry.js";
-import { SqliteSessionStore } from "../core/storage/sqlite-session-store.js";
+import { SqliteStorage } from "../core/storage/sqlite-storage.js";
 import { applyPendingRestore } from "../core/storage/db-restore.js";
 import { createApp } from "../http/app.js";
 import { createMcpServer } from "../mcp/server.js";
@@ -131,7 +130,7 @@ function buildAdapters(sources: SourceRegistry): TranscriptAdapter[] {
   return out;
 }
 
-function buildStack() {
+async function buildStack() {
   // Load .env before any registry seeds so secrets carried in env vars
   // (DEEPSEEK_API_KEY today; OPENAI_API_KEY etc. tomorrow) bridge into
   // the providers table on first boot under launchd.
@@ -143,16 +142,20 @@ function buildStack() {
     console.error(`nlm-memory: restored database from staged backup`);
     if (restored.archivedTo) console.error(`  previous db archived at ${restored.archivedTo}`);
   }
-  const store = new SqliteSessionStore({
+  const storage = SqliteStorage.create({
     dbPath: dbPath(),
     migrationsDir: MIGRATIONS_DIR,
   });
+  await storage.init();
+  const store = storage.sessions;
   // FactStore shares the SessionStore's connection so session+facts ingest
   // can commit in one transaction. Phase B.1 wires it in; no callers yet.
-  const facts = new SqliteFactStore(store.rawDb());
-  const sources = new SourceRegistry(store.rawDb());
+  const facts = storage.facts;
+  // TODO(#215a): replace storage.rawDb() with port methods
+  const sources = new SourceRegistry(storage.rawDb());
   sources.seedDefaults();
-  const providers = new ProviderRegistry(store.rawDb());
+  // TODO(#215a): replace storage.rawDb() with port methods
+  const providers = new ProviderRegistry(storage.rawDb());
   providers.seedDefaults();
   // Recall only uses embed(). Embeddings live on Ollama; DeepSeek doesn't
   // expose them. Classifier is wired separately for Phase D ingest.
@@ -160,7 +163,7 @@ function buildStack() {
   const classifier = buildClassifier();
   const recall = new RecallService({ store, llm: embedder });
   const factRecall = new FactRecallService({ factStore: facts, llm: embedder });
-  return { store, facts, sources, providers, recall, factRecall, embedder, classifier };
+  return { storage, store, facts, sources, providers, recall, factRecall, embedder, classifier };
 }
 
 const program = new Command();
@@ -182,7 +185,7 @@ program
     // non-browser callers. Idempotent: re-reads persisted token first.
     autoloadEnv();
     ensureMcpToken();
-    const { store, facts, sources, providers, recall, factRecall, embedder, classifier } = buildStack();
+    const { storage, store, facts, sources, providers, recall, factRecall, embedder, classifier } = await buildStack();
     const { existsSync } = await import("node:fs");
     const hasMcpToken = Boolean(process.env["NLM_MCP_TOKEN"]);
     const app = createApp({
@@ -270,11 +273,11 @@ program
         console.error(
           `  scheduler: ${adapters.map((a) => a.name).join(", ")} every ${opts.intervalMin}m`,
         );
-        const shutdown = () => {
+        const shutdown = async () => {
           clearInterval(checkpointTimer);
           scheduler.stop();
           memoSweep.stop();
-          store.close();
+          await storage.close();
           process.exit(0);
         };
         process.on("SIGINT", shutdown);
@@ -286,14 +289,15 @@ program
 program
   .command("migrate")
   .description("Run pending migrations against the canonical SQLite")
-  .action(() => {
+  .action(async () => {
     // SqliteSessionStore's constructor loads sqlite-vec and runs migrations.
     // Opening + closing is the whole operation.
-    const store = new SqliteSessionStore({
+    const storage = SqliteStorage.create({
       dbPath: dbPath(),
       migrationsDir: MIGRATIONS_DIR,
     });
-    store.close();
+    await storage.init();
+    await storage.close();
     console.error(`nlm-memory: migrations applied at ${dbPath()}`);
   });
 
@@ -306,7 +310,7 @@ program
   .option("-m, --mode <mode>", "keyword|semantic|hybrid", "keyword")
   .option("-l, --limit <n>", "max results", (v) => Number.parseInt(v, 10), 10)
   .action(async (query, opts) => {
-    const { store, recall } = buildStack();
+    const { storage, recall } = await buildStack();
     try {
       const result = await recall.search({
         query,
@@ -317,7 +321,7 @@ program
       });
       process.stdout.write(JSON.stringify(result, null, 2) + "\n");
     } finally {
-      store.close();
+      await storage.close();
     }
   });
 
@@ -393,7 +397,7 @@ program
   .option("--no-embed", "skip per-fact embedding (faster but disables semantic recall)")
   .option("-v, --verbose", "per-session progress on stderr")
   .action(async (opts) => {
-    const { store, facts, embedder, classifier } = buildStack();
+    const { storage, store, facts, embedder, classifier } = await buildStack();
     try {
       const report = await backfillFacts({
         store,
@@ -416,7 +420,7 @@ program
       });
       process.stdout.write(JSON.stringify(report, null, 2) + "\n");
     } finally {
-      store.close();
+      await storage.close();
     }
   });
 
@@ -440,7 +444,7 @@ program
   .command("mcp")
   .description("Run as an MCP stdio server (for ~/.mcp.json)")
   .action(async () => {
-    const { recall, store, facts, factRecall } = buildStack();
+    const { recall, store, facts, factRecall } = await buildStack();
     const server = createMcpServer({ recall, store, factStore: facts, factRecall });
     const transport = new StdioServerTransport();
     await server.connect(transport);
@@ -1016,10 +1020,12 @@ connect
   .description("Register Cursor as an nlm source (reads state.vscdb directly — no files installed)")
   .option("--db-path <path>", "override path to globalStorage/state.vscdb")
   .option("--dry-run", "print what would happen without changing files")
-  .action((opts) => {
-    const store = new SqliteSessionStore({ dbPath: dbPath(), migrationsDir: MIGRATIONS_DIR });
+  .action(async (opts) => {
+    const storage = SqliteStorage.create({ dbPath: dbPath(), migrationsDir: MIGRATIONS_DIR });
+    await storage.init();
     try {
-      const registry = new SourceRegistry(store.rawDb());
+      // TODO(#215a): replace storage.rawDb() with port methods
+      const registry = new SourceRegistry(storage.rawDb());
       const report = connectCursor(registry, {
         ...(opts.dbPath ? { dbPath: opts.dbPath as string } : {}),
         dryRun: Boolean(opts.dryRun),
@@ -1031,7 +1037,7 @@ connect
       const suffix = report.adapterExists ? "" : " (DB not found — will activate when Cursor is installed)";
       console.error(`nlm: Cursor source ${report.action} → ${report.adapterDbPath}${suffix}`);
     } finally {
-      store.close();
+      await storage.close();
     }
   });
 
@@ -1040,10 +1046,12 @@ connect
   .description("Register Windsurf as an nlm source (reads state.vscdb files directly — no files installed)")
   .option("--user-dir <path>", "override path to Windsurf User directory")
   .option("--dry-run", "print what would happen without changing files")
-  .action((opts) => {
-    const store = new SqliteSessionStore({ dbPath: dbPath(), migrationsDir: MIGRATIONS_DIR });
+  .action(async (opts) => {
+    const storage = SqliteStorage.create({ dbPath: dbPath(), migrationsDir: MIGRATIONS_DIR });
+    await storage.init();
     try {
-      const registry = new SourceRegistry(store.rawDb());
+      // TODO(#215a): replace storage.rawDb() with port methods
+      const registry = new SourceRegistry(storage.rawDb());
       const report = connectWindsurf(registry, {
         ...(opts.userDir ? { userDir: opts.userDir as string } : {}),
         dryRun: Boolean(opts.dryRun),
@@ -1055,7 +1063,7 @@ connect
       const suffix = report.dirExists ? "" : " (User dir not found — will activate when Windsurf is installed)";
       console.error(`nlm: Windsurf source ${report.action} → ${report.userDir}${suffix}`);
     } finally {
-      store.close();
+      await storage.close();
     }
   });
 
@@ -1158,10 +1166,12 @@ disconnect
   .command("cursor")
   .description("Disable the Cursor source in the nlm registry (leaves Cursor untouched)")
   .option("--dry-run", "print what would happen without changing files")
-  .action((opts) => {
-    const store = new SqliteSessionStore({ dbPath: dbPath(), migrationsDir: MIGRATIONS_DIR });
+  .action(async (opts) => {
+    const storage = SqliteStorage.create({ dbPath: dbPath(), migrationsDir: MIGRATIONS_DIR });
+    await storage.init();
     try {
-      const registry = new SourceRegistry(store.rawDb());
+      // TODO(#215a): replace storage.rawDb() with port methods
+      const registry = new SourceRegistry(storage.rawDb());
       const report = disconnectCursor(registry, { dryRun: Boolean(opts.dryRun) });
       if (opts.dryRun) {
         console.error("nlm disconnect cursor (dry run): disable Cursor source in registry");
@@ -1171,7 +1181,7 @@ disconnect
         ? "nlm: Cursor source disabled"
         : "nlm: no Cursor source found in registry");
     } finally {
-      store.close();
+      await storage.close();
     }
   });
 
@@ -1179,10 +1189,12 @@ disconnect
   .command("windsurf")
   .description("Disable the Windsurf source in the nlm registry (leaves Windsurf untouched)")
   .option("--dry-run", "print what would happen without changing files")
-  .action((opts) => {
-    const store = new SqliteSessionStore({ dbPath: dbPath(), migrationsDir: MIGRATIONS_DIR });
+  .action(async (opts) => {
+    const storage = SqliteStorage.create({ dbPath: dbPath(), migrationsDir: MIGRATIONS_DIR });
+    await storage.init();
     try {
-      const registry = new SourceRegistry(store.rawDb());
+      // TODO(#215a): replace storage.rawDb() with port methods
+      const registry = new SourceRegistry(storage.rawDb());
       const report = disconnectWindsurf(registry, { dryRun: Boolean(opts.dryRun) });
       if (opts.dryRun) {
         console.error("nlm disconnect windsurf (dry run): disable Windsurf source in registry");
@@ -1192,7 +1204,7 @@ disconnect
         ? "nlm: Windsurf source disabled"
         : "nlm: no Windsurf source found in registry");
     } finally {
-      store.close();
+      await storage.close();
     }
   });
 
