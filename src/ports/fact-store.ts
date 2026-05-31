@@ -85,11 +85,12 @@ export interface FactStore {
    * (subject, predicate) collision against existing non-superseded facts
    * from other sessions. Must run inside a transaction (the caller wraps
    * with Storage.withTransaction). See Section 2 of factstore-design.md
-   * and the original applyFactsInTxn comment in sqlite-session-store.ts
-   * for the ordering rationale (insert before supersedence-UPDATE).
+   * for the ordering rationale: inserts must complete before supersedence
+   * UPDATEs run, since superseded_by is an FK to facts(id).
    *
-   * Replaces the SqliteSessionStore.applyFactsInTxn private helper as a
-   * port-level operation so any FactStore backend can implement it.
+   * The SQLite adapter additionally inlines this logic inside its own
+   * session-store ingest path (because better-sqlite3 txn callbacks must
+   * be sync); other backends call this method via Storage.withTransaction.
    */
   ingestSessionFacts(
     sessionId: string,

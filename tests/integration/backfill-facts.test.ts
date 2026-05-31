@@ -354,7 +354,7 @@ describe("backfillFacts", () => {
     });
     expect(report.processed).toBe(1);
 
-    // The DELETE+insertManyInTxn pattern in applyFactsInTxn wipes the old
+    // The DELETE+insert pattern in ingestSessionFacts wipes the old
     // fact (same source_session_id) and writes the new one.
     const all = await factStore.listBySession("sess_repro");
     expect(all.map((f) => f.value)).toEqual(["new"]);

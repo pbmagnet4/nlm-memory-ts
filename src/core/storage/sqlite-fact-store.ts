@@ -10,7 +10,7 @@
  *
  * Surface evolution:
  *   B.1 — insert, getById, findCurrent, list, listBySession, markSuperseded
- *   B.2 — insertManyInTxn (atomic session+facts ingest), embedding write helper
+ *   B.2 — ingestSessionFacts (atomic session+facts ingest), embedding write helper
  *   B.3 — listForRecall (pre-filter for FactRecallService), semanticSearch,
  *         getHistory (supersedence chain inspection)
  *   B.4 — auto-supersedence on (subject, predicate) collision (deferred)
@@ -57,15 +57,13 @@ export class SqliteFactStore implements FactStore {
   }
 
   /**
-   * Insert facts inside an already-open transaction (no own txn opened).
-   * Callable only from code that has already begun a transaction on the same
-   * connection — currently SqliteSessionStore.insertSession. Phase B.2: this
-   * is how session+facts ingest commits atomically (Section 5 of the plan).
+   * @internal — sync row insert for use inside an already-open better-sqlite3
+   * transaction. Used only by SqliteSessionStore's inlined ingest blocks
+   * (which require sync execution inside the txn callback). External callers
+   * use insertMany() or ingestSessionFacts() via Storage.withTransaction.
    */
-  insertManyInTxn(facts: ReadonlyArray<Fact>): void {
-    if (facts.length === 0) return;
-    const stmt = this.insertStmt();
-    for (const f of facts) stmt.run(this.toRow(f));
+  insertRowInTxn(fact: Fact): void {
+    this.insertStmt().run(this.toRow(fact));
   }
 
   async getById(id: string): Promise<Fact | null> {
@@ -264,14 +262,34 @@ export class SqliteFactStore implements FactStore {
     sessionId: string,
     facts: ReadonlyArray<Fact>,
   ): Promise<void> {
-    // Stubbed in Task 2 to satisfy the FactStore interface. The real
-    // transactional implementation lands in Task 4 once SqliteStorage
-    // exists and SqliteSessionStore.applyFactsInTxn is removed.
-    void sessionId;
-    void facts;
-    throw new Error(
-      "ingestSessionFacts not yet wired — Task 4 implements the real DELETE+insert+supersedence flow",
+    this.db.prepare("DELETE FROM facts WHERE source_session_id = ?").run(sessionId);
+    if (facts.length === 0) return;
+
+    const insertStmt = this.insertStmt();
+    for (const f of facts) insertStmt.run(this.toRow(f));
+
+    const findCollisionStmt = this.db.prepare<
+      [string, string, string],
+      { id: string }
+    >(`
+      SELECT id
+      FROM facts
+      WHERE subject = ?
+        AND predicate = ?
+        AND superseded_by IS NULL
+        AND id != ?
+      ORDER BY created_at DESC
+      LIMIT 1
+    `);
+    const markSupersededStmt = this.db.prepare(
+      "UPDATE facts SET superseded_by = ? WHERE id = ?",
     );
+    for (const f of facts) {
+      const collision = findCollisionStmt.get(f.subject, f.predicate, f.id);
+      if (collision && collision.id !== f.id) {
+        markSupersededStmt.run(f.id, collision.id);
+      }
+    }
   }
 
   private insertStmt() {

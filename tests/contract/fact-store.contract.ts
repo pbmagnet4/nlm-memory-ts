@@ -337,5 +337,92 @@ export function runFactStoreContract(h: FactStoreContractHarness): void {
         expect(neighbors[0]!.distance).toBeLessThan(neighbors[1]!.distance);
       });
     });
+
+    describe("ingestSessionFacts", () => {
+      it("inserts new facts attributed to the session", async () => {
+        const f1 = makeFact({
+          id: "f1",
+          subject: "alpha",
+          predicate: "color",
+          value: "red",
+          sourceSessionId: "sess_parent",
+        });
+        await storage.withTransaction((ctx) => {
+          ctx.facts.ingestSessionFacts("sess_parent", [f1]);
+        });
+        const stored = await storage.facts.getById("f1");
+        expect(stored?.value).toBe("red");
+      });
+
+      it("deletes prior facts for the same session before re-ingesting", async () => {
+        const original = makeFact({
+          id: "orig",
+          subject: "alpha",
+          predicate: "color",
+          value: "red",
+          sourceSessionId: "sess_parent",
+        });
+        await storage.withTransaction((ctx) => {
+          ctx.facts.ingestSessionFacts("sess_parent", [original]);
+        });
+        const replacement = makeFact({
+          id: "new",
+          subject: "alpha",
+          predicate: "color",
+          value: "blue",
+          sourceSessionId: "sess_parent",
+        });
+        await storage.withTransaction((ctx) => {
+          ctx.facts.ingestSessionFacts("sess_parent", [replacement]);
+        });
+        expect(await storage.facts.getById("orig")).toBeNull();
+        expect((await storage.facts.getById("new"))?.value).toBe("blue");
+      });
+
+      it("supersedes a current fact from another session on (subject,predicate) collision", async () => {
+        await h.seedSession(storage, makeSession({ id: "sess_other", label: "Other" }));
+        const older = makeFact({
+          id: "older",
+          subject: "alpha",
+          predicate: "color",
+          value: "red",
+          sourceSessionId: "sess_other",
+        });
+        const newer = makeFact({
+          id: "newer",
+          subject: "alpha",
+          predicate: "color",
+          value: "blue",
+          sourceSessionId: "sess_parent",
+        });
+        await storage.withTransaction((ctx) => {
+          ctx.facts.ingestSessionFacts("sess_other", [older]);
+        });
+        await storage.withTransaction((ctx) => {
+          ctx.facts.ingestSessionFacts("sess_parent", [newer]);
+        });
+        const olderFetched = await storage.facts.getById("older");
+        expect(olderFetched?.supersededBy).toBe("newer");
+        const current = await storage.facts.findCurrent("alpha", "color");
+        expect(current?.id).toBe("newer");
+      });
+
+      it("is a no-op for empty fact array but still deletes prior session facts", async () => {
+        const f = makeFact({
+          id: "to-delete",
+          subject: "alpha",
+          predicate: "color",
+          value: "red",
+          sourceSessionId: "sess_parent",
+        });
+        await storage.withTransaction((ctx) => {
+          ctx.facts.ingestSessionFacts("sess_parent", [f]);
+        });
+        await storage.withTransaction((ctx) => {
+          ctx.facts.ingestSessionFacts("sess_parent", []);
+        });
+        expect(await storage.facts.getById("to-delete")).toBeNull();
+      });
+    });
   });
 }
