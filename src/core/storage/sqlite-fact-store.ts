@@ -10,7 +10,7 @@
  *
  * Surface evolution:
  *   B.1 — insert, getById, findCurrent, list, listBySession, markSuperseded
- *   B.2 — ingestSessionFacts (atomic session+facts ingest), embedding write helper
+ *   B.2: ingestSessionFacts (atomic session+facts ingest), embedding write helper
  *   B.3 — listForRecall (pre-filter for FactRecallService), semanticSearch,
  *         getHistory (supersedence chain inspection)
  *   B.4 — auto-supersedence on (subject, predicate) collision (deferred)
@@ -57,7 +57,7 @@ export class SqliteFactStore implements FactStore {
   }
 
   /**
-   * @internal — sync row insert for use inside an already-open better-sqlite3
+   * @internal. Sync row insert for use inside an already-open better-sqlite3
    * transaction. Used only by SqliteSessionStore's inlined ingest blocks
    * (which require sync execution inside the txn callback). External callers
    * use insertMany() or ingestSessionFacts() via Storage.withTransaction.

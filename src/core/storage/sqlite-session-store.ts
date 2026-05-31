@@ -273,7 +273,7 @@ export class SqliteSessionStore implements SessionStore {
       // session, deleting our prior fact unlinks the chain; the loop below
       // re-establishes it with the freshly-inserted row.
       if (factSink !== null) {
-        // Inlined ingest — see SqliteFactStore.ingestSessionFacts for the
+        // Inlined ingest. See SqliteFactStore.ingestSessionFacts for the
         // backend-agnostic version. SqliteSessionStore runs this synchronously
         // inside the better-sqlite3 txn callback (which must be sync). The
         // logic mirrors the port method exactly; if you change one, change
@@ -394,7 +394,7 @@ export class SqliteSessionStore implements SessionStore {
   ): Promise<void> {
     const db = this.db;
     const txn = db.transaction(() => {
-      // Inlined ingest — same logic as SqliteFactStore.ingestSessionFacts.
+      // Inlined ingest. Same logic as SqliteFactStore.ingestSessionFacts.
       // Sync because better-sqlite3 txn callbacks must be sync.
       db.prepare("DELETE FROM facts WHERE source_session_id = ?").run(sessionId);
       if (facts.length > 0) {
