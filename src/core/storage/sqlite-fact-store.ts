@@ -41,6 +41,11 @@ type FactRow = {
 };
 
 export class SqliteFactStore implements FactStore {
+  /**
+   * @internal. Construct via SqliteStorage.create(...) instead. Direct
+   * construction is preserved for the SqliteStorage adapter only; all
+   * other callers should reach FactStore via storage.facts.
+   */
   constructor(private readonly db: Database.Database) {}
 
   async insert(fact: Fact): Promise<void> {

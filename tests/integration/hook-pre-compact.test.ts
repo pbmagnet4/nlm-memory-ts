@@ -9,7 +9,7 @@ import { join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { Hono } from "hono";
 import { RecallService } from "../../src/core/recall/recall-service.js";
-import { SqliteSessionStore } from "../../src/core/storage/sqlite-session-store.js";
+import { SqliteStorage } from "../../src/core/storage/sqlite-storage.js";
 import { createApp } from "../../src/http/app.js";
 import type { EmbedResult, LLMClient } from "../../src/ports/llm-client.js";
 
@@ -26,17 +26,19 @@ class FixedEmbedder implements LLMClient {
 
 describe("POST /api/hook/pre-compact", () => {
   let tmp: string;
-  let store: SqliteSessionStore;
+  let storage: SqliteStorage;
   let app: Hono;
   let hookLogPath: string;
   let hookStateDir: string;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     tmp = mkdtempSync(join(tmpdir(), "nlm-pre-compact-"));
-    store = new SqliteSessionStore({
+    storage = SqliteStorage.create({
       dbPath: join(tmp, "canonical.sqlite"),
       migrationsDir: MIGRATIONS_DIR,
     });
+    await storage.init();
+    const store = storage.sessions;
     const recall = new RecallService({ store, llm: new FixedEmbedder() });
     hookLogPath = join(tmp, "hook-log.jsonl");
     hookStateDir = join(tmp, "hook-state");
@@ -45,8 +47,8 @@ describe("POST /api/hook/pre-compact", () => {
     app = createApp({ recall, store, liveStore: store });
   });
 
-  afterEach(() => {
-    store.close();
+  afterEach(async () => {
+    await storage.close();
     delete process.env["NLM_HOOK_LOG"];
     delete process.env["NLM_HOOK_STATE_DIR"];
     rmSync(tmp, { recursive: true, force: true });

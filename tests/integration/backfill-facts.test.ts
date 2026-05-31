@@ -10,8 +10,9 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { backfillFacts } from "../../src/core/facts/backfill-facts.js";
-import { SqliteFactStore } from "../../src/core/storage/sqlite-fact-store.js";
-import { SqliteSessionStore } from "../../src/core/storage/sqlite-session-store.js";
+import type { SqliteFactStore } from "../../src/core/storage/sqlite-fact-store.js";
+import type { SqliteSessionStore } from "../../src/core/storage/sqlite-session-store.js";
+import { SqliteStorage } from "../../src/core/storage/sqlite-storage.js";
 import type {
   ClassifyResult,
   EmbedResult,
@@ -60,22 +61,25 @@ function classifyResult(
 
 describe("backfillFacts", () => {
   let tmp: string;
+  let storage: SqliteStorage;
   let store: SqliteSessionStore;
   let factStore: SqliteFactStore;
   let statePath: string;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     tmp = mkdtempSync(join(tmpdir(), "nlm-b5-"));
-    store = new SqliteSessionStore({
+    storage = SqliteStorage.create({
       dbPath: join(tmp, "canonical.sqlite"),
       migrationsDir: MIGRATIONS_DIR,
     });
-    factStore = new SqliteFactStore(store.rawDb());
+    await storage.init();
+    store = storage.sessions;
+    factStore = storage.facts;
     statePath = join(tmp, "backfill_facts.state");
   });
 
-  afterEach(() => {
-    store.close();
+  afterEach(async () => {
+    await storage.close();
     rmSync(tmp, { recursive: true, force: true });
   });
 

@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { RecallService } from "../../src/core/recall/recall-service.js";
-import { SqliteSessionStore } from "../../src/core/storage/sqlite-session-store.js";
+import { SqliteStorage } from "../../src/core/storage/sqlite-storage.js";
 import type { EmbedResult, LLMClient } from "../../src/ports/llm-client.js";
 import type { Session } from "../../src/shared/types.js";
 import { makeSession } from "../fixtures/sessions.js";
@@ -76,22 +76,25 @@ const seed: ReadonlyArray<{ session: Session; embedding: Float32Array }> = [
 
 describe("RecallService against SqliteSessionStore (integration)", () => {
   let tmp: string;
-  let store: SqliteSessionStore;
+  let storage: SqliteStorage;
+  let store: SqliteStorage["sessions"];
 
-  beforeEach(() => {
+  beforeEach(async () => {
     tmp = mkdtempSync(join(tmpdir(), "nlm-mem-"));
-    store = new SqliteSessionStore({
+    storage = SqliteStorage.create({
       dbPath: join(tmp, "canonical.sqlite"),
       migrationsDir: MIGRATIONS_DIR,
     });
+    await storage.init();
+    store = storage.sessions;
     for (const { session, embedding } of seed) {
       store.insertSessionForTest(session);
       store.insertEmbeddingForTest(session.id, embedding);
     }
   });
 
-  afterEach(() => {
-    store.close();
+  afterEach(async () => {
+    await storage.close();
     rmSync(tmp, { recursive: true, force: true });
   });
 
@@ -156,14 +159,15 @@ describe("RecallService against SqliteSessionStore (integration)", () => {
   });
 
   it("migration runner is idempotent on a second open", async () => {
-    store.close();
+    await storage.close();
     // Reopening with the same dbPath should not throw — migrations already applied
-    const reopened = new SqliteSessionStore({
+    const reopened = SqliteStorage.create({
       dbPath: join(tmp, "canonical.sqlite"),
       migrationsDir: MIGRATIONS_DIR,
     });
-    const all = await reopened.list();
+    await reopened.init();
+    const all = await reopened.sessions.list();
     expect(all).toHaveLength(3);
-    reopened.close();
+    await reopened.close();
   });
 });

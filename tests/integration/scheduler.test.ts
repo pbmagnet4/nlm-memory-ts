@@ -10,8 +10,8 @@ import { join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import Database from "better-sqlite3";
 import * as sqliteVec from "sqlite-vec";
-import { SqliteFactStore } from "../../src/core/storage/sqlite-fact-store.js";
-import { SqliteSessionStore } from "../../src/core/storage/sqlite-session-store.js";
+import type { SqliteSessionStore } from "../../src/core/storage/sqlite-session-store.js";
+import { SqliteStorage } from "../../src/core/storage/sqlite-storage.js";
 import { ClaudeCodeAdapter } from "../../src/core/adapters/claude-code.js";
 import { ScanScheduler } from "../../src/core/scheduler/scheduler.js";
 import { MAX_CLASSIFY_FAILURES } from "../../src/core/scheduler/scan-once.js";
@@ -75,9 +75,10 @@ describe("ScanScheduler.tick", () => {
   let tmp: string;
   let dbPath: string;
   let projects: string;
+  let storage: SqliteStorage;
   let store: SqliteSessionStore;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     tmp = mkdtempSync(join(tmpdir(), "nlm-sched-"));
     dbPath = join(tmp, "canonical.sqlite");
     projects = join(tmp, "projects");
@@ -88,11 +89,13 @@ describe("ScanScheduler.tick", () => {
     );
     // make it look idle so scanOnce picks it up
     ageFiles(projects, 60 * 60 * 1000);
-    store = new SqliteSessionStore({ dbPath, migrationsDir: MIGRATIONS_DIR });
+    storage = SqliteStorage.create({ dbPath, migrationsDir: MIGRATIONS_DIR });
+    await storage.init();
+    store = storage.sessions;
   });
 
-  afterEach(() => {
-    store.close();
+  afterEach(async () => {
+    await storage.close();
     rmSync(tmp, { recursive: true, force: true });
   });
 
@@ -264,7 +267,7 @@ describe("ScanScheduler.tick", () => {
         },
       ],
     });
-    const factStore = new SqliteFactStore(store.rawDb());
+    const factStore = storage.facts;
     const scheduler = new ScanScheduler({
       store, adapters: [adapter], classifier, embedder: null, factStore, logger: () => {},
     });
@@ -313,7 +316,7 @@ describe("ScanScheduler.tick", () => {
       ],
     });
     const embedder = new StubEmbedder();
-    const factStore = new SqliteFactStore(store.rawDb());
+    const factStore = storage.facts;
     const scheduler = new ScanScheduler({
       store, adapters: [adapter], classifier, embedder, factStore, logger: () => {},
     });
@@ -376,7 +379,7 @@ describe("ScanScheduler.tick", () => {
       label: "L", summary: "S", entities: [], decisions: [], open: [], confidence: 0.9,
       facts: [{ kind: "decision", subject: "nlm-memory-ts", predicate: "framework", value: "Hono" }],
     });
-    const factStore = new SqliteFactStore(store.rawDb());
+    const factStore = storage.facts;
     const scheduler = new ScanScheduler({
       store, adapters: [adapter], classifier, embedder: null, factStore, logger: () => {},
     });

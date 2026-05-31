@@ -9,7 +9,7 @@ import { join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { Hono } from "hono";
 import { RecallService } from "../../src/core/recall/recall-service.js";
-import { SqliteSessionStore } from "../../src/core/storage/sqlite-session-store.js";
+import { SqliteStorage } from "../../src/core/storage/sqlite-storage.js";
 import { createApp } from "../../src/http/app.js";
 import type { EmbedResult, LLMClient } from "../../src/ports/llm-client.js";
 
@@ -26,23 +26,25 @@ class FixedEmbedder implements LLMClient {
 
 describe("POST /api/recall/cite-event", () => {
   let tmp: string;
-  let store: SqliteSessionStore;
+  let storage: SqliteStorage;
   let app: Hono;
   let citationLogPath: string;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     tmp = mkdtempSync(join(tmpdir(), "nlm-cite-"));
-    store = new SqliteSessionStore({
+    storage = SqliteStorage.create({
       dbPath: join(tmp, "canonical.sqlite"),
       migrationsDir: MIGRATIONS_DIR,
     });
+    await storage.init();
+    const store = storage.sessions;
     const recall = new RecallService({ store, llm: new FixedEmbedder() });
     citationLogPath = join(tmp, "citation-log.jsonl");
     app = createApp({ recall, store, liveStore: store, citationLogPath });
   });
 
-  afterEach(() => {
-    store.close();
+  afterEach(async () => {
+    await storage.close();
     rmSync(tmp, { recursive: true, force: true });
   });
 

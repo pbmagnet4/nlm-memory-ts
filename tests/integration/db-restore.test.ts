@@ -8,7 +8,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type Database from "better-sqlite3";
-import { SqliteSessionStore } from "../../src/core/storage/sqlite-session-store.js";
+import { SqliteStorage } from "../../src/core/storage/sqlite-storage.js";
 import {
   PENDING_SUFFIX,
   applyPendingRestore,
@@ -40,15 +40,17 @@ describe("db-restore", () => {
     rmSync(tmp, { recursive: true, force: true });
   });
 
-  function freshStore(path: string): SqliteSessionStore {
-    return new SqliteSessionStore({ dbPath: path, migrationsDir: MIGRATIONS_DIR });
+  async function freshStore(path: string): Promise<SqliteStorage> {
+    const s = SqliteStorage.create({ dbPath: path, migrationsDir: MIGRATIONS_DIR });
+    await s.init();
+    return s;
   }
 
-  it("vacuumSnapshot writes a valid standalone copy", () => {
-    const store = freshStore(dbPath);
+  it("vacuumSnapshot writes a valid standalone copy", async () => {
+    const store = await freshStore(dbPath);
     const snap = snapshotScratchPath(dbPath);
     const bytes = vacuumSnapshot(store.rawDb(), snap);
-    store.close();
+    await store.close();
 
     expect(bytes).toBeGreaterThan(0);
     expect(statSync(snap).size).toBe(bytes);
@@ -64,21 +66,21 @@ describe("db-restore", () => {
     expect(result.error).toBeTruthy();
   });
 
-  it("validateRestoreCandidate rejects a SQLite file lacking nlm tables", () => {
+  it("validateRestoreCandidate rejects a SQLite file lacking nlm tables", async () => {
     const bare = join(tmp, "bare.sqlite");
-    const store = freshStore(bare);
+    const store = await freshStore(bare);
     store.rawDb().prepare("DROP TABLE sessions").run();
-    store.close();
+    await store.close();
     const result = validateRestoreCandidate(bare);
     expect(result.ok).toBe(false);
     expect(result.error).toMatch(/sessions/);
   });
 
-  it("validateRestoreCandidate reports session count and schema version", () => {
-    const store = freshStore(dbPath);
+  it("validateRestoreCandidate reports session count and schema version", async () => {
+    const store = await freshStore(dbPath);
     const snap = snapshotScratchPath(dbPath);
     vacuumSnapshot(store.rawDb(), snap);
-    store.close();
+    await store.close();
 
     const result = validateRestoreCandidate(snap);
     expect(result.ok).toBe(true);
@@ -87,11 +89,11 @@ describe("db-restore", () => {
     rmSync(snap, { force: true });
   });
 
-  it("stageRestore parks a valid candidate at the pending path", () => {
-    const store = freshStore(dbPath);
+  it("stageRestore parks a valid candidate at the pending path", async () => {
+    const store = await freshStore(dbPath);
     const snap = snapshotScratchPath(dbPath);
     vacuumSnapshot(store.rawDb(), snap);
-    store.close();
+    await store.close();
 
     const result = stageRestore(dbPath, snap);
     expect(result.ok).toBe(true);
@@ -108,25 +110,25 @@ describe("db-restore", () => {
     expect(existsSync(dbPath + PENDING_SUFFIX)).toBe(false);
   });
 
-  it("applyPendingRestore is a no-op when nothing is staged", () => {
-    freshStore(dbPath).close();
+  it("applyPendingRestore is a no-op when nothing is staged", async () => {
+    await (await freshStore(dbPath)).close();
     const result = applyPendingRestore(dbPath);
     expect(result.applied).toBe(false);
   });
 
-  it("applyPendingRestore promotes the staged DB and archives the current one", () => {
+  it("applyPendingRestore promotes the staged DB and archives the current one", async () => {
     // Current DB: one source seeded so we can tell the two stores apart.
-    const current = freshStore(dbPath);
+    const current = await freshStore(dbPath);
     insertMarkerSource(current.rawDb(), "marker-current", "current");
-    current.close();
+    await current.close();
 
     // Staged DB: built elsewhere, carries a different marker source.
     const stagedSrc = join(tmp, "staged-src.sqlite");
-    const staged = freshStore(stagedSrc);
+    const staged = await freshStore(stagedSrc);
     insertMarkerSource(staged.rawDb(), "marker-staged", "staged");
     const snap = snapshotScratchPath(dbPath);
     vacuumSnapshot(staged.rawDb(), snap);
-    staged.close();
+    await staged.close();
     expect(stageRestore(dbPath, snap).ok).toBe(true);
 
     const result = applyPendingRestore(dbPath);
@@ -136,13 +138,13 @@ describe("db-restore", () => {
     expect(existsSync(dbPath + PENDING_SUFFIX)).toBe(false);
 
     // The promoted DB is the staged one.
-    const reopened = freshStore(dbPath);
+    const reopened = await freshStore(dbPath);
     const names = reopened
       .rawDb()
       .prepare<[], { name: string }>("SELECT name FROM sources")
       .all()
       .map((r) => r.name);
-    reopened.close();
+    await reopened.close();
     expect(names).toContain("marker-staged");
     expect(names).not.toContain("marker-current");
 

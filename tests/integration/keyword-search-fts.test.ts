@@ -7,21 +7,24 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { SqliteSessionStore } from "../../src/core/storage/sqlite-session-store.js";
+import { SqliteStorage } from "../../src/core/storage/sqlite-storage.js";
 import { makeSession } from "../fixtures/sessions.js";
 
 const MIGRATIONS_DIR = resolve(__dirname, "../../migrations");
 
 describe("SqliteSessionStore.keywordSearch", () => {
   let tmp: string;
-  let store: SqliteSessionStore;
+  let storage: SqliteStorage;
+  let store: SqliteStorage["sessions"];
 
-  beforeEach(() => {
+  beforeEach(async () => {
     tmp = mkdtempSync(join(tmpdir(), "nlm-kw-"));
-    store = new SqliteSessionStore({
+    storage = SqliteStorage.create({
       dbPath: join(tmp, "canonical.sqlite"),
       migrationsDir: MIGRATIONS_DIR,
     });
+    await storage.init();
+    store = storage.sessions;
     store.insertSessionForTest(
       makeSession({ id: "s_pg", label: "pgvector migration plan", body: "postgres mirror" }),
     );
@@ -33,8 +36,8 @@ describe("SqliteSessionStore.keywordSearch", () => {
     );
   });
 
-  afterEach(() => {
-    store.close();
+  afterEach(async () => {
+    await storage.close();
     rmSync(tmp, { recursive: true, force: true });
   });
 

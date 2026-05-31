@@ -10,7 +10,7 @@ import { join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import Database from "better-sqlite3";
 import * as sqliteVec from "sqlite-vec";
-import { SqliteSessionStore } from "../../src/core/storage/sqlite-session-store.js";
+import { SqliteStorage } from "../../src/core/storage/sqlite-storage.js";
 import { reembedCorpus } from "../../src/core/embedding/embed-backfill.js";
 import { normalizeEmbeddings } from "../../src/core/embedding/embed-normalize.js";
 import type { EmbedResult, LLMClient } from "../../src/ports/llm-client.js";
@@ -53,17 +53,18 @@ describe("reembedCorpus", () => {
   let dbPath: string;
   let statePath: string;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     tmp = mkdtempSync(join(tmpdir(), "nlm-emb-"));
     dbPath = join(tmp, "canonical.sqlite");
     statePath = join(tmp, "state.json");
-    const store = new SqliteSessionStore({ dbPath, migrationsDir: MIGRATIONS_DIR });
+    const storage = SqliteStorage.create({ dbPath, migrationsDir: MIGRATIONS_DIR });
+    await storage.init();
     for (const s of seed) {
-      store.insertSessionForTest(s);
+      storage.sessions.insertSessionForTest(s);
       // seed each with a non-normalized vector so backfill has something to replace
-      store.insertEmbeddingForTest(s.id, new Float32Array(768).fill(0.5));
+      storage.sessions.insertEmbeddingForTest(s.id, new Float32Array(768).fill(0.5));
     }
-    store.close();
+    await storage.close();
   });
 
   afterEach(() => rmSync(tmp, { recursive: true, force: true }));
@@ -102,14 +103,15 @@ describe("normalizeEmbeddings", () => {
   let tmp: string;
   let dbPath: string;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     tmp = mkdtempSync(join(tmpdir(), "nlm-norm-"));
     dbPath = join(tmp, "canonical.sqlite");
-    const store = new SqliteSessionStore({ dbPath, migrationsDir: MIGRATIONS_DIR });
-    store.insertSessionForTest(makeSession({ id: "raw" }));
-    store.insertSessionForTest(makeSession({ id: "already" }));
-    store.insertSessionForTest(makeSession({ id: "zero" }));
-    store.close();
+    const storage = SqliteStorage.create({ dbPath, migrationsDir: MIGRATIONS_DIR });
+    await storage.init();
+    storage.sessions.insertSessionForTest(makeSession({ id: "raw" }));
+    storage.sessions.insertSessionForTest(makeSession({ id: "already" }));
+    storage.sessions.insertSessionForTest(makeSession({ id: "zero" }));
+    await storage.close();
     // embed-normalize operates on the legacy session_embeddings table that
     // migration 003 still creates (left in place for rollback safety after
     // the chunk + max-pool migration). Seed it directly via raw SQL — the

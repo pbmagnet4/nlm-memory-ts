@@ -101,6 +101,11 @@ export interface RecentMarker {
 export class SqliteSessionStore implements SessionStore {
   private readonly db: Database.Database;
 
+  /**
+   * @internal. Construct via SqliteStorage.create(...) instead. Direct
+   * construction is preserved for the SqliteStorage adapter only; all
+   * other callers should reach SessionStore via storage.sessions.
+   */
   constructor(opts: SqliteSessionStoreOptions) {
     const dbPath = resolve(opts.dbPath);
     const parent = dirname(dbPath);
