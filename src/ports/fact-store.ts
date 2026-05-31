@@ -91,6 +91,11 @@ export interface FactStore {
    * The SQLite adapter additionally inlines this logic inside its own
    * session-store ingest path (because better-sqlite3 txn callbacks must
    * be sync); other backends call this method via Storage.withTransaction.
+   *
+   * Batch-internal duplicates (two facts in the same call with the same
+   * (subject, predicate)) produce implementation-defined behavior: which
+   * sibling ends up current is not part of the contract. Callers must
+   * dedupe within a batch if they need deterministic results.
    */
   ingestSessionFacts(
     sessionId: string,
