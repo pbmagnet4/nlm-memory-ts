@@ -1,6 +1,6 @@
 # nlm upgrade command Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Add an `nlm upgrade` CLI subcommand that installs the latest npm version and restarts the daemon, then update the UI banner to show `nlm upgrade` instead of the raw npm command.
 
@@ -28,7 +28,7 @@
 
 The two helpers are pure functions with no side effects — easy to unit test.
 
-- [ ] **Step 1: Create the file**
+- [x] **Step 1: Create the file**
 
 ```typescript
 import { join } from "node:path";
@@ -58,7 +58,7 @@ export function updateCheckCachePath(): string {
 }
 ```
 
-- [ ] **Step 2: Verify TypeScript compiles**
+- [x] **Step 2: Verify TypeScript compiles**
 
 Run: `npm run typecheck`
 Expected: no errors
@@ -70,7 +70,7 @@ Expected: no errors
 **Files:**
 - Create: `tests/unit/cli/upgrade-helpers.test.ts`
 
-- [ ] **Step 1: Write the tests**
+- [x] **Step 1: Write the tests**
 
 ```typescript
 import { describe, expect, it } from "vitest";
@@ -119,12 +119,12 @@ describe("updateCheckCachePath", () => {
 });
 ```
 
-- [ ] **Step 2: Run the tests and verify they pass**
+- [x] **Step 2: Run the tests and verify they pass**
 
 Run: `npm run test:unit -- tests/unit/cli/upgrade-helpers.test.ts`
 Expected: all tests pass
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add src/cli/upgrade-helpers.ts tests/unit/cli/upgrade-helpers.test.ts
@@ -140,7 +140,7 @@ git commit -m "feat(upgrade): add isDevBuild + updateCheckCachePath helpers"
 
 The command goes immediately after the `restart` command block (around line 750). It reuses all the existing imports: `execFileSync`, `existsSync`, `rmSync`, `planRestart`, `LAUNCH_AGENT_LABEL`, `LAUNCH_AGENT_PLIST`, `LINUX_SYSTEMD_UNIT_NAME`, `LINUX_SYSTEMD_UNIT_PATH`, `isAgentLoaded`, `linuxSystemdUserAvailable`, `spawn`, `process`.
 
-- [ ] **Step 1: Add the import for the new helpers**
+- [x] **Step 1: Add the import for the new helpers**
 
 At the top of `src/cli/nlm.ts`, add after the existing CLI helper imports (near the `restart-helpers` import):
 
@@ -148,7 +148,7 @@ At the top of `src/cli/nlm.ts`, add after the existing CLI helper imports (near 
 import { isDevBuild, updateCheckCachePath } from "./upgrade-helpers.js";
 ```
 
-- [ ] **Step 2: Add the `upgrade` command after the `restart` command block**
+- [x] **Step 2: Add the `upgrade` command after the `restart` command block**
 
 Find the line `const config = program` (the start of the config subcommand, around line 755) and insert before it:
 
@@ -218,12 +218,12 @@ program
 
 ```
 
-- [ ] **Step 3: Verify TypeScript compiles**
+- [x] **Step 3: Verify TypeScript compiles**
 
 Run: `npm run typecheck`
 Expected: no errors
 
-- [ ] **Step 4: Smoke-test the dev-build path manually**
+- [x] **Step 4: Smoke-test the dev-build path manually**
 
 Since you're running a dev build, running `nlm upgrade` (or `node dist/cli/nlm.js upgrade` after a build) should print the dev-build warning and exit cleanly:
 
@@ -233,7 +233,7 @@ Expected output:
 nlm upgrade: you're running a dev build — run `npm run build` to pick up changes.
 ```
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/cli/nlm.ts src/cli/upgrade-helpers.ts
@@ -247,7 +247,7 @@ git commit -m "feat(cli): add nlm upgrade command"
 **Files:**
 - Modify: `src/ui/components/UpdateBanner.tsx`
 
-- [ ] **Step 1: Change the constant**
+- [x] **Step 1: Change the constant**
 
 Find line:
 ```typescript
@@ -259,12 +259,12 @@ Replace with:
 const INSTALL_CMD = "nlm upgrade";
 ```
 
-- [ ] **Step 2: Build and verify**
+- [x] **Step 2: Build and verify**
 
 Run: `npm run build`
 Expected: build succeeds, no TypeScript errors
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add src/ui/components/UpdateBanner.tsx
@@ -275,17 +275,17 @@ git commit -m "feat(ui): update banner install command to nlm upgrade"
 
 ## Task 5: Full test suite + final build
 
-- [ ] **Step 1: Run the full unit test suite**
+- [x] **Step 1: Run the full unit test suite**
 
 Run: `npm run test:unit`
 Expected: all tests pass (no regressions)
 
-- [ ] **Step 2: Run typecheck**
+- [x] **Step 2: Run typecheck**
 
 Run: `npm run typecheck`
 Expected: no errors
 
-- [ ] **Step 3: Full build**
+- [x] **Step 3: Full build**
 
 Run: `npm run build`
 Expected: server, UI, and codex plugin all build cleanly
