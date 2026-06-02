@@ -1,6 +1,6 @@
 {
   "name": "nlm-memory",
-  "version": "0.5.19",
+  "version": "0.5.20",
   "description": "Local-first non-linear memory operating system for AI operators.",
   "type": "module",
   "license": "Apache-2.0",
@@ -29,7 +29,7 @@
   "files": [
     "dist",
     "plugin",
-    "plugin-pi",
+    "nlm",
     "assets",
     "LICENSE",
     "README.md"

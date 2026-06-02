@@ -4,11 +4,14 @@
  *
  * Pi has no plugin install directory analogous to Hermes' ~/.hermes/plugins/.
  * Instead, pi reads `packages: [...]` from ~/.pi/agent/settings.json and
- * resolves each entry on startup — a path to a directory containing a
- * `package.json` with a `pi.extensions` field loads the declared modules.
+ * resolves each entry on startup — a path to a directory containing an
+ * `index.js` (or `index.ts`) auto-loads as the extension entry.
  *
- * The plugin-pi/ directory inside this npm package ships exactly that shape:
- * `package.json` declares `pi.extensions: ["scripts/nlm-extension.mjs"]`.
+ * The nlm/ directory inside this npm package ships exactly that shape:
+ * `index.js` is the bundled extension; `package.json` declares `type: module`.
+ * Pi's interactive UI strips `index.{ts,js}` from the display path, so the
+ * extension surfaces as `nlm` in the [Extensions] list — matching the
+ * naming convention used by pi-mcp-adapter, whtnxt-tasks, etc.
  *
  * `connect` appends the absolute path to that directory into `packages` if
  * not already present. `disconnect` strips any matching entry.

@@ -4,11 +4,14 @@
  *
  * Pi has no plugin install directory analogous to Hermes' ~/.hermes/plugins/.
  * Instead, pi reads `packages: [...]` from ~/.pi/agent/settings.json and
- * resolves each entry on startup — a path to a directory containing a
- * `package.json` with a `pi.extensions` field loads the declared modules.
+ * resolves each entry on startup — a path to a directory containing an
+ * `index.js` (or `index.ts`) auto-loads as the extension entry.
  *
- * The plugin-pi/ directory inside this npm package ships exactly that shape:
- * `package.json` declares `pi.extensions: ["scripts/nlm-extension.mjs"]`.
+ * The nlm/ directory inside this npm package ships exactly that shape:
+ * `index.js` is the bundled extension; `package.json` declares `type: module`.
+ * Pi's interactive UI strips `index.{ts,js}` from the display path, so the
+ * extension surfaces as `nlm` in the [Extensions] list — matching the
+ * naming convention used by pi-mcp-adapter, whtnxt-tasks, etc.
  *
  * `connect` appends the absolute path to that directory into `packages` if
  * not already present. `disconnect` strips any matching entry.
@@ -46,20 +49,36 @@ export function connectPi(opts) {
     const settingsPath = piSettingsPath();
     const pluginDir = resolve(opts.pluginDir);
     const settings = readSettings(settingsPath);
-    const packages = Array.isArray(settings.packages) ? [...settings.packages] : [];
+    const rawPackages = Array.isArray(settings.packages) ? settings.packages : [];
+    // Drop any legacy `plugin-pi` entries from nlm-memory <= 0.5.19 so the
+    // user doesn't end up with both the old basename and the new `nlm` one.
+    // The old path no longer resolves on disk after upgrade, so pi would
+    // silently fail to load it — cleaner to strip it here.
+    const packages = rawPackages.filter((p) => basename(resolve(p)) !== "plugin-pi");
+    const migrated = packages.length !== rawPackages.length;
     const alreadyPresent = packages.some((p) => resolve(p) === pluginDir);
-    if (alreadyPresent || opts.dryRun) {
+    if (alreadyPresent && !migrated) {
+        return {
+            settingsPath,
+            pluginDir,
+            alreadyPresent: true,
+            written: false,
+            dryRun: Boolean(opts.dryRun),
+        };
+    }
+    if (opts.dryRun) {
         return {
             settingsPath,
             pluginDir,
             alreadyPresent,
             written: false,
-            dryRun: Boolean(opts.dryRun),
+            dryRun: true,
         };
     }
-    packages.push(pluginDir);
+    if (!alreadyPresent)
+        packages.push(pluginDir);
     writeSettings(settingsPath, { ...settings, packages });
-    return { settingsPath, pluginDir, alreadyPresent: false, written: true, dryRun: false };
+    return { settingsPath, pluginDir, alreadyPresent, written: true, dryRun: false };
 }
 export function disconnectPi(opts) {
     const settingsPath = piSettingsPath();
@@ -68,10 +87,14 @@ export function disconnectPi(opts) {
     }
     const settings = readSettings(settingsPath);
     const packages = Array.isArray(settings.packages) ? settings.packages : [];
-    // Match on basename so we strip any plugin-pi entry regardless of where the
-    // user's npm prefix put the nlm-memory install. The directory name is owned
-    // by this package, so collisions are not a realistic concern.
-    const filtered = packages.filter((p) => basename(resolve(p)) !== "plugin-pi");
+    // Match on basename so we strip any nlm entry regardless of where the
+    // user's npm prefix put the nlm-memory install. Also strips the legacy
+    // basename "plugin-pi" left behind by nlm-memory <= 0.5.19 so users who
+    // ran the older connect still get a clean disconnect.
+    const filtered = packages.filter((p) => {
+        const base = basename(resolve(p));
+        return base !== "nlm" && base !== "plugin-pi";
+    });
     if (filtered.length === packages.length) {
         return { settingsPath, removed: false, dryRun: opts?.dryRun ?? false };
     }

@@ -30,7 +30,7 @@ const REPO_ROOT = resolve(__dirname, "..");
 const TARGETS = [
   { entry: "src/hook/prompt-recall-hook.ts", outDir: "plugin/scripts", outName: "prompt-recall-hook.mjs", banner: true },
   { entry: "src/hook/stop-hook.ts", outDir: "plugin/scripts", outName: "stop-hook.mjs", banner: true },
-  { entry: "src/hook/pi-extension.ts", outDir: "plugin-pi/scripts", outName: "nlm-extension.mjs", banner: false },
+  { entry: "src/hook/pi-extension.ts", outDir: "nlm", outName: "index.js", banner: false },
 ];
 
 const results = await Promise.all(

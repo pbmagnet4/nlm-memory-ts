@@ -467,7 +467,7 @@ export async function runSetup(opts: SetupOptions): Promise<void> {
         const ps = spinner();
         ps.start("Configuring pi.dev — prompt-recall extension");
         try {
-          const pluginDir = join(opts.repoRoot, "plugin-pi");
+          const pluginDir = join(opts.repoRoot, "nlm");
           const report = connectPi({ pluginDir });
           ps.stop(
             report.alreadyPresent

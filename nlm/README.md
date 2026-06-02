@@ -1,9 +1,13 @@
 # nlm-memory pi.dev extension
 
-This directory is the pi.dev distribution surface for nlm-memory. Pi exposes
-hooks as a TypeScript extension API (`pi -e <path>`), not config-file hooks
-like Claude Code or Codex, so the install surface is a single bundled
-extension module.
+This directory is the pi.dev distribution surface for nlm-memory. Pi loads
+TypeScript extensions declared in `~/.pi/agent/settings.json`'s `packages`
+array; pointing pi at this directory auto-discovers `index.js` and registers
+the prompt-recall hook.
+
+Pi's interactive UI strips `index.{ts,js}` from the load path, so this
+extension surfaces in pi's `[Extensions]` list as `nlm` — matching the
+naming convention used by `pi-mcp-adapter`, `whtnxt-tasks`, etc.
 
 ## Install
 
@@ -15,17 +19,17 @@ nlm connect pi
 ```
 
 That appends this directory's absolute path to `packages` in
-`~/.pi/agent/settings.json`. Pi auto-loads it on next start via the
-`pi.extensions` field declared in this package's `package.json` (which
-points at `scripts/nlm-extension.mjs`). No `-e` flag required at the
-prompt.
+`~/.pi/agent/settings.json`. Pi auto-loads `index.js` on next start. No
+`-e` flag required at the prompt.
 
-Reverse with `nlm disconnect pi`.
+Reverse with `nlm disconnect pi`. The disconnect filter also strips the
+legacy `plugin-pi` basename used by nlm-memory <= 0.5.19, so users
+upgrading from that release get a clean migration.
 
 Manual fallback if you'd rather not edit settings.json:
 
 ```bash
-pi -e "$(npm root -g)/nlm-memory/plugin-pi/scripts/nlm-extension.mjs"
+pi -e "$(npm root -g)/nlm-memory/nlm/index.js"
 ```
 
 ## What ships
@@ -45,8 +49,6 @@ pi -e "$(npm root -g)/nlm-memory/plugin-pi/scripts/nlm-extension.mjs"
   (`src/core/adapters/pi.ts`) already polls `~/.pi/agent/sessions/**/*.jsonl`
   and ingests completed sessions on its own schedule — what Claude's
   stop-hook does inline.
-- **No `nlm connect pi` wrapper yet.** Install is the manual `pi -e` line
-  above.
 
 ## Modes
 
@@ -67,5 +69,5 @@ Same env vars as the Claude Code hook:
 npm run build:codex-plugin
 ```
 
-Bundles `src/hook/pi-extension.ts` to `plugin-pi/scripts/nlm-extension.mjs`
-via the same esbuild pipeline that builds the Claude Code hook scripts.
+Bundles `src/hook/pi-extension.ts` to `nlm/index.js` via the same esbuild
+pipeline that builds the Claude Code hook scripts.

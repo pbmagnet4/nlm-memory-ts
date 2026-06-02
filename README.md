@@ -97,7 +97,7 @@ Two delivery paths. They share the same index.
 
 ### 1. Hooks — automatic context injection
 
-Hooks fire on user input and prepend a pointer block of likely-relevant prior sessions to the model's context. Three runtimes ship them today: Claude Code (full five-hook lifecycle), Hermes Agent (parallel set), and pi.dev (one `input` hook via [plugin-pi/](plugin-pi/README.md), wired by `nlm setup` or `nlm connect pi`). Full lifecycle, modes, logging surface, and the load-bearing daily liveness canary documented in [docs/hooks.md](docs/hooks.md).
+Hooks fire on user input and prepend a pointer block of likely-relevant prior sessions to the model's context. Three runtimes ship them today: Claude Code (full five-hook lifecycle), Hermes Agent (parallel set), and pi.dev (one `input` hook via [nlm/](nlm/README.md), wired by `nlm setup` or `nlm connect pi`). Full lifecycle, modes, logging surface, and the load-bearing daily liveness canary documented in [docs/hooks.md](docs/hooks.md).
 
 The Claude Code surface (the most complete) installs five hooks into `~/.claude/settings.json`:
 

@@ -1056,7 +1056,7 @@ connect
     .description("Register the nlm-memory prompt-recall extension in ~/.pi/agent/settings.json")
     .option("--dry-run", "print what would happen without changing files")
     .action((opts) => {
-    const pluginDir = join(REPO_ROOT, "plugin-pi");
+    const pluginDir = join(REPO_ROOT, "nlm");
     const report = connectPi({ pluginDir, dryRun: Boolean(opts.dryRun) });
     if (opts.dryRun) {
         const verb = report.alreadyPresent ? "already present in" : "append to";
@@ -1215,7 +1215,7 @@ disconnect
     .action((opts) => {
     const report = disconnectPi({ dryRun: Boolean(opts.dryRun) });
     if (opts.dryRun) {
-        console.error(`nlm disconnect pi (dry run): strip plugin-pi from packages[] in ${piSettingsPath()}`);
+        console.error(`nlm disconnect pi (dry run): strip nlm (and legacy plugin-pi) from packages[] in ${piSettingsPath()}`);
         return;
     }
     console.error(report.removed

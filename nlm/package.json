@@ -4,9 +4,5 @@
   "private": true,
   "description": "pi.dev extension entry for nlm-memory prompt-recall hook.",
   "type": "module",
-  "pi": {
-    "extensions": [
-      "scripts/nlm-extension.mjs"
-    ]
-  }
+  "main": "index.js"
 }
