@@ -2,11 +2,23 @@
 
 > What every NLM hook does, when it fires, what it logs, and how it stays out of the way when something goes wrong.
 
-NLM ships five hooks into `~/.claude/settings.json` (Claude Code) and an equivalent set into `~/.hermes/config.yaml` (Hermes Agent). They run as short-lived node processes triggered by the runtime, read from stdin, and either return a pointer block on stdout (live mode) or exit silently (shadow mode).
+NLM ships hooks into three runtimes today: Claude Code, Hermes Agent, and pi.dev. Each runtime has a different host shape — Claude Code reads `~/.claude/settings.json`, Hermes Agent reads `~/.hermes/config.yaml`, and pi.dev loads a TypeScript extension declared in `~/.pi/agent/settings.json`'s `packages` array — but the orchestration is identical: classify the prompt, query the local daemon, format a pointer block, return it (live mode) or log only (shadow mode).
 
 The hook surface is **fail-open by design**: any error yields a clean exit with no output. A broken hook never blocks the model's response. This matters because the alternative is silently breaking the user's primary tool for the sake of a memory layer's telemetry.
 
-## The five hooks
+## Coverage by runtime
+
+| Runtime | Surface | Events | Install |
+|---|---|---|---|
+| **Claude Code** | `~/.claude/settings.json` hook command, stdin → stdout | UserPromptSubmit, SessionStart, Stop, PreCompact, SubagentStart | `nlm connect claude-code` or `nlm setup` |
+| **Hermes Agent** | Plugin in `~/.hermes/plugins/nlm-memory/` | Parallel set (pre-turn, post-turn, lifecycle) | `nlm connect hermes-agent` or `nlm setup` |
+| **pi.dev** | Extension module loaded by pi's `packages[]` array, `pi.on("input", ...)` API | `input` only — pi has no Stop/PreCompact analogues; the passive pi adapter (`~/.pi/agent/sessions/**/*.jsonl`) covers transcript ingestion | `nlm connect pi` or `nlm setup` |
+
+The pi.dev surface is the slimmest because the runtime exposes fewer extension points. It still runs the same `runHook` orchestration (`src/hook/prompt-recall-hook.ts`) and writes to the same `~/.nlm/hook-state/<sessionId>.json` per-conversation memo and `~/.nlm/hook-log.jsonl` log file, so cross-runtime invariants (de-dup across fires, surfaced-IDs cap, gate classification) hold regardless of where you're typing.
+
+## The five hooks (Claude Code reference)
+
+Claude Code is the most complete surface. Other runtimes implement a subset:
 
 | Hook | When it fires | What NLM does | Output |
 |---|---|---|---|
