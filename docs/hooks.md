@@ -10,13 +10,13 @@ The hook surface is **fail-open by design**: any error yields a clean exit with 
 
 | Runtime | Surface | Events | Install |
 |---|---|---|---|
-| **Claude Code** | `~/.claude/settings.json` hook command, stdin → stdout | UserPromptSubmit, SessionStart, Stop, PreCompact, SubagentStart | `nlm connect claude-code` or `nlm setup` |
+| **Claude Code** | `~/.claude/settings.json` hook command, stdin → stdout | UserPromptSubmit, SessionStart, SessionEnd, Stop, PreCompact, SubagentStart | `nlm connect claude-code` or `nlm setup` |
 | **Hermes Agent** | Plugin in `~/.hermes/plugins/nlm-memory/` | Parallel set (pre-turn, post-turn, lifecycle) | `nlm connect hermes-agent` or `nlm setup` |
 | **pi.dev** | Extension module loaded by pi's `packages[]` array, `pi.on("input", ...)` API | `input` only — pi has no Stop/PreCompact analogues; the passive pi adapter (`~/.pi/agent/sessions/**/*.jsonl`) covers transcript ingestion | `nlm connect pi` or `nlm setup` |
 
 The pi.dev surface is the slimmest because the runtime exposes fewer extension points. It still runs the same `runHook` orchestration (`src/hook/prompt-recall-hook.ts`) and writes to the same `~/.nlm/hook-state/<sessionId>.json` per-conversation memo and `~/.nlm/hook-log.jsonl` log file, so cross-runtime invariants (de-dup across fires, surfaced-IDs cap, gate classification) hold regardless of where you're typing.
 
-## The five hooks (Claude Code reference)
+## The six hooks (Claude Code reference)
 
 Claude Code is the most complete surface. Other runtimes implement a subset:
 
@@ -24,6 +24,7 @@ Claude Code is the most complete surface. Other runtimes implement a subset:
 |---|---|---|---|
 | **UserPromptSubmit** | Before each user prompt is sent to the model | Score the prompt against the corpus; select top-N most-relevant prior sessions; format a pointer block | Pointer block prepended to model context (live mode) |
 | **SessionStart** | When a new conversation begins (including cron-fired and background agents that never trigger UserPromptSubmit) | Same logic as UserPromptSubmit, but query derived from `working_directory + project_name` since no prompt exists yet | Pointer block (live mode) |
+| **SessionEnd** | When a Claude Code session closes | Delete the per-conversation surfaced-IDs memo so memo files don't accumulate under `~/.nlm/hook-state/`; log a `session-end` entry so the daily liveness canary can correlate closes against fires | No stdout output; cleans up state |
 | **Stop** | After the model's response completes | Scan the response for citations of surfaced session IDs; POST each fresh citation to `/api/recall/cite-event` | No stdout output; updates `useful_hit_rate` and citation log |
 | **PreCompact** | Before Claude Code compacts the conversation | Flush the per-conversation surfaced-IDs memo and stamp a compaction record so post-compaction recalls aren't gated by stale "already surfaced" state | No stdout output; clears state |
 | **SubagentStart** | When the runtime dispatches a subagent | Record the parent→subagent link so future corpus-linking logic can correlate subagent sessions back to the dispatching conversation | No stdout output; logs the parent/child IDs |
@@ -107,14 +108,17 @@ Beyond Claude Code, NLM ships hook adapters for:
 
 - **Hermes Agent** — pre-turn, post-turn, and lifecycle hooks via `nlm connect hermes-agent`. Endpoints: `/api/hook/hermes-agent/pre-turn`, `/post-turn`, `/session-lifecycle`.
 - **Codex CLI** — installed as a marketplace plugin via `nlm connect codex`; the plugin bundles `prompt-recall-hook.mjs` and `stop-hook.mjs` from `plugin/scripts/`.
+- **pi.dev** — TypeScript extension module loaded via pi's `packages[]` array (`nlm/index.js`). Fires on every `input` event and returns `{ action: "transform", text }` to prepend the pointer block to the user's text — pi's injection mechanism differs from Claude Code's stdout path. Defaults to **shadow mode**; set `NLM_HOOK_MODE=live` in `~/.nlm/.env` to enable injection.
 
-Other runtimes (Cursor, Windsurf, OpenCode, Aider, pi) integrate via MCP only — they read NLM but don't expose a hook surface for NLM to instrument.
+Other runtimes (Cursor, Windsurf, OpenCode, Aider) integrate via MCP only — they read NLM but don't expose a hook surface for NLM to instrument.
 
 ## Related code
 
 - `src/hook/prompt-recall-hook.ts` — UserPromptSubmit entrypoint
 - `src/hook/session-start-hook.ts` — SessionStart entrypoint
+- `src/hook/session-end-hook.ts` — SessionEnd entrypoint (memo cleanup)
 - `src/hook/stop-hook.ts` — Stop entrypoint (citation detection)
+- `src/hook/pi-extension.ts` — pi.dev extension entrypoint
 - `src/hook/hook-auth.ts` — Bearer header attachment
 - `src/core/hook/select.ts` — gate logic (caps + thresholds)
 - `src/core/hook/pointer-block.ts` — output format

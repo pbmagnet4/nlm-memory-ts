@@ -2,7 +2,9 @@
  * pi.dev extension entrypoint for NLM recall.
  *
  * Pi exposes hooks as a TypeScript extension API, not config-file hooks like
- * Claude Code. The user loads this with `pi -e <path>/nlm-extension.mjs`.
+ * Claude Code. Loaded via the `packages[]` array in `~/.pi/agent/settings.json`
+ * pointing at `<path>/nlm/` (the extension root); wired automatically by
+ * `nlm connect pi` or `nlm setup`.
  *
  * On every user input event we route through the shared runHook orchestration
  * used by the Claude Code script. Difference: instead of writing to stdout for

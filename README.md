@@ -99,14 +99,15 @@ Two delivery paths. They share the same index.
 
 ### 1. Hooks — automatic context injection
 
-Hooks fire on user input and prepend a pointer block of likely-relevant prior sessions to the model's context. Three runtimes ship them today: Claude Code (full five-hook lifecycle), Hermes Agent (parallel set), and pi.dev (one `input` hook via [nlm/](nlm/README.md), wired by `nlm setup` or `nlm connect pi`). Full lifecycle, modes, logging surface, and the load-bearing daily liveness canary documented in [docs/hooks.md](docs/hooks.md).
+Hooks fire on user input and prepend a pointer block of likely-relevant prior sessions to the model's context. Three runtimes ship them today: Claude Code (full six-hook lifecycle), Hermes Agent (parallel set), and pi.dev (one `input` hook via [nlm/](nlm/README.md), wired by `nlm setup` or `nlm connect pi`). Full lifecycle, modes, logging surface, and the load-bearing daily liveness canary documented in [docs/hooks.md](docs/hooks.md).
 
-The Claude Code surface (the most complete) installs five hooks into `~/.claude/settings.json`:
+The Claude Code surface (the most complete) installs six hooks into `~/.claude/settings.json`:
 
 | Event | What NLM does | Mode |
 |---|---|---|
 | **UserPromptSubmit** | Score the prompt, silently prepend pointer block listing 0–3 most likely-relevant prior sessions | live by default |
 | **SessionStart** | Cold-start agents (cron, background) hit this; same pointer-block delivery without a user prompt | live by default |
+| **SessionEnd** | Delete the per-conversation memo on session close so state files don't accumulate | always on |
 | **Stop** | Scan the model's response for citations of surfaced session IDs → updates `useful_hit_rate` and builds the reranker training substrate | always on |
 | **PreCompact** | Flush the per-conversation surfaced-IDs memo so post-compaction recalls aren't gated | always on |
 | **SubagentStart** | Record parent→subagent links so threads stay coherent across dispatches | always on |
