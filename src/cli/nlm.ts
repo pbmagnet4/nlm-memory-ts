@@ -74,6 +74,7 @@ import { ScanScheduler } from "../core/scheduler/scheduler.js";
 import { MemoSweepScheduler } from "../core/hook/memo-sweep.js";
 import { isAgentLoaded, isBenignBootoutError } from "./launchctl-helpers.js";
 import { DAEMON_PKILL_PATTERN, planRestart } from "./restart-helpers.js";
+import { isDevBuild, updateCheckCachePath } from "./upgrade-helpers.js";
 import { applyEnvAssignment } from "./config-env.js";
 import { adapterFromSource } from "../core/adapters/from-source.js";
 import type { TranscriptAdapter } from "../ports/transcript-adapter.js";
@@ -746,6 +747,69 @@ program
       case "unsupported":
         console.error(`nlm restart: ${plan.reason}`);
         console.error("  Supported: macOS (LaunchAgent) and Linux (systemd user).");
+        process.exit(1);
+    }
+  });
+
+program
+  .command("upgrade")
+  .description("Install the latest nlm-memory from npm and restart the daemon")
+  .action(() => {
+    if (isDevBuild(__filename)) {
+      console.error("nlm upgrade: you're running a dev build — run `npm run build` to pick up changes.");
+      return;
+    }
+
+    console.error("nlm: upgrading nlm-memory…");
+    try {
+      execFileSync("npm", ["install", "-g", "nlm-memory@latest"], { stdio: "inherit" });
+    } catch {
+      // npm already printed its own error to stderr via stdio: "inherit"
+      process.exit(1);
+    }
+
+    rmSync(updateCheckCachePath(), { force: true });
+
+    const plan = planRestart({
+      platform: process.platform,
+      uid: process.getuid?.(),
+      agentLoaded: process.platform === "darwin" && isAgentLoaded(LAUNCH_AGENT_LABEL),
+      plistExists: existsSync(LAUNCH_AGENT_PLIST),
+      systemdAvailable: linuxSystemdUserAvailable(),
+      unitFileExists: existsSync(LINUX_SYSTEMD_UNIT_PATH),
+      label: LAUNCH_AGENT_LABEL,
+      plistPath: LAUNCH_AGENT_PLIST,
+      unitName: LINUX_SYSTEMD_UNIT_NAME,
+    });
+
+    switch (plan.kind) {
+      case "launchctl-kickstart":
+        execFileSync("launchctl", ["kickstart", "-k", `gui/${plan.uid}/${plan.label}`]);
+        console.error("nlm: upgraded and restarted.");
+        return;
+      case "launchctl-bootstrap":
+        execFileSync("launchctl", ["bootstrap", `gui/${plan.uid}`, plan.plist]);
+        console.error("nlm: upgraded — agent was not loaded, bootstrapped and started.");
+        return;
+      case "systemctl-restart":
+        execFileSync("systemctl", ["--user", "restart", plan.unit]);
+        console.error("nlm: upgraded and restarted.");
+        return;
+      case "pkill-respawn":
+        try {
+          execFileSync("pkill", ["-f", DAEMON_PKILL_PATTERN], { stdio: "ignore" });
+        } catch {
+          // No matching process — fine.
+        }
+        spawn(process.execPath, [__filename, "start"], {
+          detached: true,
+          stdio: "ignore",
+        }).unref();
+        console.error("nlm: upgraded and restarted.");
+        return;
+      case "unsupported":
+        console.error(`nlm upgrade: restart failed — ${plan.reason}`);
+        console.error("  Binary is updated on disk. Start the daemon manually.");
         process.exit(1);
     }
   });
