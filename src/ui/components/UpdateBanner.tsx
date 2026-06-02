@@ -27,7 +27,7 @@ interface UpdateStatus {
 const POLL_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6h
 const POST_COPY_POLL_MS = 30 * 1000; // 30s — used after copy to catch the restart fast
 const NUDGE_AFTER_MS = 5 * 60 * 1000; // 5min without version change → nudge
-const INSTALL_CMD = "npm i -g nlm-memory@latest && nlm restart";
+const INSTALL_CMD = "nlm upgrade";
 
 export function UpdateBanner({ collapsed }: { collapsed: boolean }) {
   const [status, setStatus] = useState<UpdateStatus | null>(null);
