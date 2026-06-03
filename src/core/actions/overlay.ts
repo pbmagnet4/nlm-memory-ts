@@ -25,6 +25,10 @@ export interface ActionOverlay {
   readonly resolvedOpens: Set<string>;
   /** open-question id → resolution text (becomes a decision at projection time) */
   readonly promotedOpens: Map<string, string>;
+  /** decision ids hidden from the projection (the underlying session body keeps the original line). */
+  readonly dismissedDecisions: Set<string>;
+  /** decision id → corrected text shown in place of the original. */
+  readonly revisedDecisions: Map<string, string>;
 }
 
 interface ActionRow {
@@ -43,6 +47,8 @@ export const EMPTY_OVERLAY: ActionOverlay = {
   renamedEntities: new Map(),
   resolvedOpens: new Set(),
   promotedOpens: new Map(),
+  dismissedDecisions: new Set(),
+  revisedDecisions: new Map(),
 };
 
 export function loadActionOverlay(db: Database.Database): ActionOverlay {
@@ -60,6 +66,8 @@ export function loadActionOverlay(db: Database.Database): ActionOverlay {
     renamedEntities: new Map(),
     resolvedOpens: new Set(),
     promotedOpens: new Map(),
+    dismissedDecisions: new Set(),
+    revisedDecisions: new Map(),
   };
 
   // ORDER BY id keeps reducer deterministic: later writes overwrite earlier
@@ -98,6 +106,12 @@ export function loadActionOverlay(db: Database.Database): ActionOverlay {
     } else if (r.kind === "promote_open" && r.subject_type === "open_question") {
       const resolution = typeof payload?.["resolution"] === "string" ? payload["resolution"].trim() : "";
       if (resolution) overlay.promotedOpens.set(r.subject_id, resolution);
+    } else if (r.kind === "dismiss_decision" && r.subject_type === "decision") {
+      overlay.dismissedDecisions.add(r.subject_id);
+    } else if (r.kind === "revise_decision" && r.subject_type === "decision") {
+      const to = typeof payload?.["to"] === "string" ? payload["to"].trim() : "";
+      if (to) overlay.revisedDecisions.set(r.subject_id, to);
+      else overlay.revisedDecisions.delete(r.subject_id);
     }
   }
   return overlay;
@@ -110,6 +124,16 @@ export function loadActionOverlay(db: Database.Database): ActionOverlay {
  */
 export function openQuestionId(sessionId: string, text: string): string {
   return `${sessionId}::${stableHash12(text)}`;
+}
+
+/**
+ * Stable id for a decision: `${sessionId}::dec::${hash12(text)}`. Same
+ * deterministic-hash trick as open questions; the `dec::` infix keeps the
+ * two ID spaces disjoint so a decision and an open question with the same
+ * text in the same session don't collide.
+ */
+export function decisionId(sessionId: string, text: string): string {
+  return `${sessionId}::dec::${stableHash12(text)}`;
 }
 
 function stableHash12(text: string): string {

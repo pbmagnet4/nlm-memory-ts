@@ -4,6 +4,7 @@ import { useDataset, relativeAge, topicDisplay } from "../lib/dataset.js";
 import type { DatasetSession, Dataset } from "../lib/dataset.js";
 import { SessionDrawer } from "../components/SessionDrawer.js";
 import { PromoteOpenButton } from "../components/PromoteOpenButton.js";
+import { ReviseDecisionButton } from "../components/ReviseDecisionButton.js";
 import { SessionListSkeleton, Skeleton } from "../components/Skeleton.js";
 import { readViewSettings, type ThreadSort } from "../lib/view-settings.js";
 import { postAction } from "../lib/actions.js";
@@ -95,10 +96,22 @@ export function ThreadPage() {
     return <EntityPicker data={data} />;
   }
 
-  const decisions = thread.flatMap((s) => s.decisions.map((d) => ({ d, sid: s.id, when: s.started_at })));
+  const decisions = thread.flatMap((s) =>
+    s.decisions.map((d, idx) => ({ d, id: s.decision_ids[idx] ?? "", sid: s.id, when: s.started_at })),
+  );
   const open = thread.flatMap((s) =>
     s.open_questions.map((q) => ({ id: q.id, q: q.text, sid: s.id, when: s.started_at })),
   );
+
+  const dismissDecision = async (id: string) => {
+    await postAction({ kind: "dismiss_decision", subject_type: "decision", subject_id: id });
+    await refetch();
+  };
+
+  const resolveOpen = async (id: string) => {
+    await postAction({ kind: "resolve_open", subject_type: "open_question", subject_id: id });
+    await refetch();
+  };
 
   return (
     <div className="page-pad">
@@ -145,10 +158,23 @@ export function ThreadPage() {
           <header className="card-head"><h3>Decisions</h3><span className="muted small">{decisions.length}</span></header>
           <ul className="marker-list">
             {(decisionsExpanded ? decisions : decisions.slice(0, 30)).map((d, i) => (
-              <li key={i} className="marker-row">
+              <li key={`${d.id}-${i}`} className="marker-row marker-row-promotable">
                 <span className="live-tag" data-kind="decision">decision</span>
                 <span className="marker-text">{d.d}</span>
-                <button type="button" className="link-button" onClick={() => openSession(d.sid)}>{relativeAge(d.when)}</button>
+                <div className="marker-actions">
+                  {d.id && (
+                    <>
+                      <ReviseDecisionButton decisionId={d.id} currentText={d.d} onRevised={refetch} />
+                      <button
+                        type="button"
+                        className="chip"
+                        onClick={() => void dismissDecision(d.id)}
+                        title="Hide this decision from the projection. Audit trail preserved."
+                      >dismiss</button>
+                    </>
+                  )}
+                  <button type="button" className="link-button" onClick={() => openSession(d.sid)}>{relativeAge(d.when)}</button>
+                </div>
               </li>
             ))}
             {decisions.length === 0 && <li className="muted empty-row">No decisions captured yet.</li>}
@@ -171,6 +197,12 @@ export function ThreadPage() {
                 <span className="marker-text">{o.q}</span>
                 <div className="marker-actions">
                   <PromoteOpenButton openId={o.id} defaultText={o.q} onPromoted={refetch} />
+                  <button
+                    type="button"
+                    className="chip"
+                    onClick={() => void resolveOpen(o.id)}
+                    title="Mark this question resolved without recording a decision."
+                  >resolve</button>
                   <button type="button" className="link-button" onClick={() => openSession(o.sid)}>{relativeAge(o.when)}</button>
                 </div>
               </li>

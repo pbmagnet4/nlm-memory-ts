@@ -15,6 +15,8 @@ export interface DatasetSession {
   summary: string;
   entities: string[];
   decisions: string[];
+  /** Stable ids parallel to decisions[]; targets for dismiss_decision / revise_decision. */
+  decision_ids: string[];
   open: string[];
   open_questions: { id: string; text: string; resolved: boolean }[];
   status: "active" | "idle" | "closed" | "superseded";

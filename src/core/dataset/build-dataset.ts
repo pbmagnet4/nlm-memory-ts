@@ -12,7 +12,7 @@ import { existsSync } from "node:fs";
 import Database from "better-sqlite3";
 import * as sqliteVec from "sqlite-vec";
 import { liveSessionStatus } from "@core/storage/live-status.js";
-import { loadActionOverlay, openQuestionId } from "@core/actions/overlay.js";
+import { loadActionOverlay, openQuestionId, decisionId } from "@core/actions/overlay.js";
 import type { ActionOverlay } from "@core/actions/overlay.js";
 import type { SessionStatus } from "@shared/types.js";
 
@@ -25,6 +25,9 @@ export interface DatasetSession {
   readonly summary: string;
   readonly entities: ReadonlyArray<string>;
   readonly decisions: ReadonlyArray<string>;
+  /** Stable ids parallel to `decisions[]`. Same length and order; use to
+   *  target overlay actions (dismiss_decision, revise_decision). */
+  readonly decision_ids: ReadonlyArray<string>;
   readonly open: ReadonlyArray<string>;
   readonly open_questions: ReadonlyArray<{ id: string; text: string; resolved: false }>;
   readonly status: SessionStatus;
@@ -275,6 +278,25 @@ function projectFromDb(db: Database.Database, dbPath: string, includePaths: bool
     const promotedDecisions = rawOpen
       .filter((o) => overlay.promotedOpens.has(o.id))
       .map((o) => overlay.promotedOpens.get(o.id)!);
+
+    // Project decision overlays: dismissed lines drop out; revised lines
+    // show the corrected text. Promoted-from-open lines pass through as-is
+    // (the open-question id already governs them).
+    const rawDecisions = decisionsBySession.get(s.id) ?? [];
+    const projectedDecisions: string[] = [];
+    const projectedDecisionIds: string[] = [];
+    for (const text of rawDecisions) {
+      const id = decisionId(s.id, text);
+      if (overlay.dismissedDecisions.has(id)) continue;
+      const revised = overlay.revisedDecisions.get(id);
+      projectedDecisions.push(revised ?? text);
+      projectedDecisionIds.push(id);
+    }
+    for (const text of promotedDecisions) {
+      projectedDecisions.push(text);
+      projectedDecisionIds.push(decisionId(s.id, text));
+    }
+
     return {
       id: s.id,
       date: (s.started_at ?? "").slice(0, 10),
@@ -283,7 +305,8 @@ function projectFromDb(db: Database.Database, dbPath: string, includePaths: bool
       label: s.label,
       summary: s.summary,
       entities: includePaths ? rawEntities : rawEntities.filter((name) => keptEntities.has(name)),
-      decisions: [...(decisionsBySession.get(s.id) ?? []), ...promotedDecisions],
+      decisions: projectedDecisions,
+      decision_ids: projectedDecisionIds,
       open: activeOpen.map((o) => o.text),
       open_questions: activeOpen.map((o) => ({ id: o.id, text: o.text, resolved: false as const })),
       status,
