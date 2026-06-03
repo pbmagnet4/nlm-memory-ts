@@ -527,15 +527,6 @@ function CoherenceDrawer({
   const start = currentPage * pageSize;
   const slice = rows.slice(start, start + pageSize);
 
-  // Size the drawer to the longest label on the current page (rounded into
-  // a character-width budget) so the action chips never collide with the
-  // name. Capped at 80% viewport so we don't overrun on small screens.
-  const longestChars = useMemo(
-    () => slice.reduce((max, e) => Math.max(max, (entityDisplay[e.canonical] ?? e.canonical).length), 0),
-    [slice, entityDisplay],
-  );
-  const drawerWidth = `clamp(420px, ${longestChars * 0.62 + 26}ch, 80vw)`;
-
   useEffect(() => {
     const onEsc = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     window.addEventListener("keydown", onEsc);
@@ -562,26 +553,25 @@ function CoherenceDrawer({
     <>
       <div className="drawer-backdrop" onClick={onClose} />
       <aside
-        className="session-drawer"
+        className="session-drawer coherence-drawer"
         role="dialog"
         aria-modal="true"
         aria-label={`${COHERENCE_TITLE[bucket]} review`}
-        style={{ width: drawerWidth }}
       >
         <header className="drawer-head">
           <h3 className="drawer-title">{COHERENCE_TITLE[bucket]}</h3>
           <span className={`chip-inline${bucket === "active" ? "" : ` severity-${bucket === "sparse" ? "medium" : "high"}`}`}>{rows.length.toLocaleString()}</span>
           <button type="button" className="drawer-close" onClick={onClose} aria-label="Close">×</button>
         </header>
-        <div className="drawer-body drawer-body-stretch">
-          <p className="drawer-paragraph">{COHERENCE_HINT[bucket]}</p>
+        <div className="drawer-body">
+          <p className="drawer-paragraph drawer-hint">{COHERENCE_HINT[bucket]}</p>
           <ul className="session-list coherence-session-list">
             {slice.map((e) => {
               const label = entityDisplay[e.canonical] ?? e.canonical;
               const overridden = e.coherence !== e.coherence_computed;
               const rowBusy = busy === e.canonical;
               return (
-                <li key={e.canonical} className="session-row">
+                <li key={e.canonical} className="session-row" aria-busy={rowBusy || undefined}>
                   <span className="dot" style={{ background: entityColors[e.canonical] ?? "#666" }} />
                   <div className="session-row-main">
                     <Link
@@ -597,6 +587,7 @@ function CoherenceDrawer({
                         key={b}
                         type="button"
                         className={`chip${e.coherence === b ? " active" : ""}`}
+                        data-bucket={b}
                         disabled={rowBusy || e.coherence === b}
                         onClick={() => void setBucket(e.canonical, b)}
                       >{b}</button>

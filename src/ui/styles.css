@@ -1708,6 +1708,11 @@ a.session-label:hover { color: var(--accent); }
   animation: slideInRight 0.18s ease;
 }
 
+/* Coherence drawer is denser than session detail — narrower base width
+   keeps the background Pulse page readable while leaving room for the
+   row's chip group. Long topic names ellipsize in the name column. */
+.coherence-drawer { width: min(480px, 100vw); }
+
 @keyframes slideInRight {
   from { transform: translateX(20px); opacity: 0; }
   to   { transform: translateX(0); opacity: 1; }
@@ -1751,21 +1756,32 @@ a.session-label:hover { color: var(--accent); }
   min-height: 0;
 }
 
-/* drawer-body-stretch: column layout where the list owns the scroll and
-   the pagination sticks to the bottom of the viewport-tall drawer. Used
-   when the drawer body needs to fill the full depth of the page. */
-.drawer-body-stretch {
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  padding-bottom: 0;
+/* Hint paragraph inside a drawer-body reads as secondary guidance. */
+.drawer-paragraph.drawer-hint { color: var(--text-2); margin: 0 0 16px; }
+
+/* Coherence drawer row treatment — matches Recent Sessions hover so the
+   reclassification rows read as obviously clickable. */
+.coherence-session-list .session-row { transition: background var(--ease); }
+.coherence-session-list .session-row:hover { background: var(--surface-2); }
+.coherence-session-list .session-row:hover .session-label { color: var(--accent); }
+.coherence-session-list .session-row[aria-busy="true"] { opacity: 0.5; pointer-events: none; }
+
+/* Bucket chips: active state takes its tint from the bucket it represents. */
+.coherence-session-list .chip[data-bucket="active"].active {
+  color: var(--accent);
+  border-color: rgba(232, 255, 110, 0.3);
+  background: var(--accent-glow);
 }
-.drawer-body-stretch > .drawer-paragraph { margin: 0 0 16px; color: var(--text-2); }
-.drawer-body-stretch > .session-list { flex: 0 0 auto; }
-/* margin-top: auto keeps the pagination pinned to the bottom of the
-   drawer body when the current page doesn't fill the full depth.
-   Pagination is the navigation primitive — no inner scroll needed. */
-.drawer-body-stretch > .pagination { border-top: 1px solid var(--border-1); padding: 12px 0; margin: auto 0 0; }
+.coherence-session-list .chip[data-bucket="sparse"].active {
+  color: var(--warn);
+  border-color: rgba(255, 153, 51, 0.35);
+  background: var(--warn-dim);
+}
+.coherence-session-list .chip[data-bucket="stale"].active {
+  color: var(--danger);
+  border-color: rgba(255, 107, 53, 0.4);
+  background: var(--danger-dim);
+}
 
 .drawer-section {
   font-size: var(--text-xs);
