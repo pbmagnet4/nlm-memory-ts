@@ -503,29 +503,10 @@ function CoherenceDrawer({
   onChanged: () => Promise<void> | void;
 }) {
   const [busy, setBusy] = useState<string | null>(null);
-  // Track viewport so drawer width and default page size both respond to
-  // window resize without a refresh.
-  const [viewport, setViewport] = useState({
-    w: typeof window === "undefined" ? 1200 : window.innerWidth,
-    h: typeof window === "undefined" ? 900 : window.innerHeight,
-  });
-  useEffect(() => {
-    const onResize = () => setViewport({ w: window.innerWidth, h: window.innerHeight });
-    window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
-  }, []);
-
-  // Derive a starting page size from the available depth. Each row is ~52px;
-  // the drawer chrome (head + hint + pagination + paddings) consumes ~220px.
-  // User can still override via the per-page select.
-  const autoPageSize = Math.max(5, Math.floor((viewport.h - 220) / 52));
-  const [pageSize, setPageSize] = useState<number>(autoPageSize);
-  // Track a "user has chosen a page size" flag so window resize doesn't
-  // stomp on an explicit selection.
-  const [userSetPage, setUserSetPage] = useState(false);
-  useEffect(() => {
-    if (!userSetPage) setPageSize(autoPageSize);
-  }, [autoPageSize, userSetPage]);
+  // Default 10 keeps the pagination visible on a typical viewport without
+  // an internal scroll. Larger page sizes are a user choice that may push
+  // rows past the drawer foot.
+  const [pageSize, setPageSize] = useState<number>(10);
   const [page, setPage] = useState(0);
 
   // Filter to the current bucket and sort by session count desc so the
@@ -546,16 +527,14 @@ function CoherenceDrawer({
   const start = currentPage * pageSize;
   const slice = rows.slice(start, start + pageSize);
 
-  // Drawer width tracks the window with a floor that fits the longest
-  // label + action chips, capped at 90% viewport on very wide screens.
+  // Size the drawer to the longest label on the current page (rounded into
+  // a character-width budget) so the action chips never collide with the
+  // name. Capped at 80% viewport so we don't overrun on small screens.
   const longestChars = useMemo(
     () => slice.reduce((max, e) => Math.max(max, (entityDisplay[e.canonical] ?? e.canonical).length), 0),
     [slice, entityDisplay],
   );
-  const labelFloorPx = Math.max(480, Math.round(longestChars * 8.6 + 240));
-  const preferredPx = Math.round(viewport.w * 0.55);
-  const maxPx = Math.round(viewport.w * 0.9);
-  const drawerWidth = `${Math.min(maxPx, Math.max(labelFloorPx, preferredPx))}px`;
+  const drawerWidth = `clamp(420px, ${longestChars * 0.62 + 26}ch, 80vw)`;
 
   useEffect(() => {
     const onEsc = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
@@ -646,7 +625,7 @@ function CoherenceDrawer({
                 <select
                   className="form-input form-input-inline"
                   value={pageSize}
-                  onChange={(ev) => { setUserSetPage(true); setPageSize(Number.parseInt(ev.target.value, 10)); }}
+                  onChange={(ev) => setPageSize(Number.parseInt(ev.target.value, 10))}
                 >
                   {DRAWER_PAGE_SIZES.map((n) => <option key={n} value={n}>{n}</option>)}
                 </select>
