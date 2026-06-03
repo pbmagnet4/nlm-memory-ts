@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useDataset, relativeAge } from "../lib/dataset.js";
-import type { DatasetAlert, DatasetEntity, DatasetRuntime, DatasetSession } from "../lib/dataset.js";
+import type { DatasetAlert, DatasetEntity, DatasetRuntime, DatasetSession, TopicCoherence } from "../lib/dataset.js";
 import { postAction } from "../lib/actions.js";
 import { SessionDrawer } from "../components/SessionDrawer.js";
 import { PromoteOpenButton } from "../components/PromoteOpenButton.js";
@@ -16,6 +16,7 @@ export function PulsePage() {
   const [sort, setSort] = useState<AlertSort>("oldest");
   const [detailId, setDetailId] = useState<string | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
+  const [coherenceBucket, setCoherenceBucket] = useState<TopicCoherence | null>(null);
 
   const filteredAlerts = useMemo(() => {
     if (!data) return [];
@@ -89,8 +90,11 @@ export function PulsePage() {
 
       <div className="pulse-grid">
         <section className="card pulse-area-coherence">
-          <header className="card-head"><h3>Coherence</h3></header>
-          <CoherenceBars metrics={data.metrics} />
+          <header className="card-head"><h3>Topic Coherence</h3></header>
+          <CoherenceBars
+            metrics={data.metrics}
+            onPick={(bucket) => setCoherenceBucket(bucket)}
+          />
         </section>
 
         <section className="card pulse-area-runtimes">
@@ -190,6 +194,17 @@ export function PulsePage() {
           onDismiss={async () => { await dismissAlert(detailAlert.id); setDetailId(null); }}
           onSnooze={async (days) => { await snoozeAlert(detailAlert.id, days); setDetailId(null); }}
           onPromoted={refetch}
+        />
+      )}
+
+      {coherenceBucket && (
+        <CoherenceDrawer
+          bucket={coherenceBucket}
+          entities={data.entities}
+          entityColors={data.entity_colors}
+          entityDisplay={data.entity_display}
+          onClose={() => setCoherenceBucket(null)}
+          onChanged={refetch}
         />
       )}
 
@@ -394,14 +409,20 @@ function KpiSparkline({ values }: { values: number[] }) {
   );
 }
 
-function CoherenceBars({ metrics }: { metrics: { healthy: number; sparse: number; stale: number } }) {
+function CoherenceBars({
+  metrics,
+  onPick,
+}: {
+  metrics: { healthy: number; sparse: number; stale: number };
+  onPick: (bucket: TopicCoherence) => void;
+}) {
   const total = metrics.healthy + metrics.sparse + metrics.stale;
   const pct = (v: number) => (total > 0 ? (v / total) * 100 : 0);
   return (
     <div className="bar-stack">
-      <Bar tone="active" label="Healthy" value={metrics.healthy} pct={pct(metrics.healthy)} />
-      <Bar tone="warn"   label="Sparse"  value={metrics.sparse}  pct={pct(metrics.sparse)} />
-      <Bar tone="danger" label="Stale"   value={metrics.stale}   pct={pct(metrics.stale)} />
+      <Bar tone="active" label="Active" value={metrics.healthy} pct={pct(metrics.healthy)} onPick={() => onPick("active")} />
+      <Bar tone="warn"   label="Sparse" value={metrics.sparse}  pct={pct(metrics.sparse)}  onPick={() => onPick("sparse")} />
+      <Bar tone="danger" label="Stale"  value={metrics.stale}   pct={pct(metrics.stale)}   onPick={() => onPick("stale")} />
     </div>
   );
 }
@@ -426,20 +447,145 @@ function RuntimesPanel({ runtimes }: { runtimes: DatasetRuntime[] }) {
   );
 }
 
-function Bar({ tone, label, value, pct }: {
+function Bar({ tone, label, value, pct, onPick }: {
   tone: "active" | "warn" | "danger";
   label: string;
   value: number;
   pct: number;
+  onPick?: () => void;
 }) {
   const rounded = Math.round(pct);
+  const interactive = !!onPick && value > 0;
   return (
-    <div className="bar-item">
+    <button
+      type="button"
+      className={`bar-item${interactive ? " bar-item-clickable" : ""}`}
+      onClick={interactive ? onPick : undefined}
+      disabled={!interactive}
+      title={`${value.toLocaleString()} topic${value === 1 ? "" : "s"} · ${rounded}% of total${interactive ? " · click to review" : ""}`}
+    >
       <span className="bar-label">{label}</span>
-      <div className="bar-track" title={`${value.toLocaleString()} entit${value === 1 ? "y" : "ies"} · ${rounded}% of total`}>
+      <div className="bar-track">
         <div className={`bar-fill tone-${tone}`} style={{ width: `${pct}%` }} />
       </div>
       <span className="bar-value mono">{value.toLocaleString()}<span className="bar-pct muted small"> · {rounded}%</span></span>
-    </div>
+    </button>
+  );
+}
+
+const COHERENCE_TITLE: Record<TopicCoherence, string> = {
+  active: "Active topics",
+  sparse: "Sparse topics",
+  stale: "Stale topics",
+};
+
+const COHERENCE_HINT: Record<TopicCoherence, string> = {
+  active: "3+ sessions and touched within 30 days. Override if you want to mark it sparse or stale.",
+  sparse: "Only 1–2 sessions but touched recently. Move to Active if it's actually a real topic.",
+  stale: "Last touched more than 30 days ago. Move back to Active if you've picked it up again.",
+};
+
+function CoherenceDrawer({
+  bucket,
+  entities,
+  entityColors,
+  entityDisplay,
+  onClose,
+  onChanged,
+}: {
+  bucket: TopicCoherence;
+  entities: DatasetEntity[];
+  entityColors: Record<string, string>;
+  entityDisplay: Record<string, string>;
+  onClose: () => void;
+  onChanged: () => Promise<void> | void;
+}) {
+  const [busy, setBusy] = useState<string | null>(null);
+
+  // Filter to the current bucket and sort by session count desc so the
+  // most-loaded topics rise to the top within their bucket.
+  const rows = useMemo(
+    () => entities
+      .filter((e) => e.coherence === bucket && e.session_count > 0)
+      .sort((a, b) => b.session_count - a.session_count),
+    [entities, bucket],
+  );
+
+  useEffect(() => {
+    const onEsc = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onEsc);
+    return () => window.removeEventListener("keydown", onEsc);
+  }, [onClose]);
+
+  const setBucket = async (canonical: string, next: TopicCoherence | null) => {
+    setBusy(canonical);
+    try {
+      await postAction({
+        kind: "set_coherence",
+        subject_type: "entity",
+        subject_id: canonical,
+        // Empty state reverts to the natural computed bucket.
+        payload: next ? { state: next } : {},
+      });
+      await onChanged();
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  return (
+    <>
+      <div className="drawer-backdrop" onClick={onClose} />
+      <aside className="session-drawer coherence-drawer" role="dialog" aria-modal="true" aria-label={`${COHERENCE_TITLE[bucket]} review`}>
+        <header className="drawer-head">
+          <h3 className="drawer-title">{COHERENCE_TITLE[bucket]}</h3>
+          <span className="muted small">{rows.length.toLocaleString()}</span>
+          <button type="button" className="drawer-close" onClick={onClose} aria-label="Close">×</button>
+        </header>
+        <div className="drawer-body">
+          <p className="drawer-paragraph muted small">{COHERENCE_HINT[bucket]}</p>
+          <ul className="coherence-list">
+            {rows.map((e) => {
+              const label = entityDisplay[e.canonical] ?? e.canonical;
+              const overridden = e.coherence !== e.coherence_computed;
+              const rowBusy = busy === e.canonical;
+              return (
+                <li key={e.canonical} className="coherence-row">
+                  <span className="dot" style={{ background: entityColors[e.canonical] ?? "#666" }} />
+                  <Link to={`/thread?entity=${encodeURIComponent(e.canonical)}`} className="coherence-name" title={e.display ? `Original: ${e.canonical}` : undefined}>
+                    {label}
+                  </Link>
+                  <span className="muted small mono">{e.session_count}</span>
+                  <div className="coherence-actions" role="group" aria-label="Move to bucket">
+                    {(["active", "sparse", "stale"] as const).map((b) => (
+                      <button
+                        key={b}
+                        type="button"
+                        className={`chip${e.coherence === b ? " active" : ""}`}
+                        data-severity={b === "active" ? undefined : b === "sparse" ? "medium" : "high"}
+                        disabled={rowBusy || e.coherence === b}
+                        onClick={() => void setBucket(e.canonical, b)}
+                      >{b}</button>
+                    ))}
+                    {overridden && (
+                      <button
+                        type="button"
+                        className="chip"
+                        disabled={rowBusy}
+                        onClick={() => void setBucket(e.canonical, null)}
+                        title={`Natural bucket is ${e.coherence_computed}. Click to revert.`}
+                      >revert</button>
+                    )}
+                  </div>
+                </li>
+              );
+            })}
+            {rows.length === 0 && (
+              <li className="muted empty-row">No topics in this bucket right now.</li>
+            )}
+          </ul>
+        </div>
+      </aside>
+    </>
   );
 }

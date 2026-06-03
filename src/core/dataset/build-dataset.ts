@@ -37,6 +37,8 @@ export interface DatasetSession {
   readonly superseded_by?: string;
 }
 
+export type TopicCoherence = "active" | "sparse" | "stale";
+
 export interface DatasetEntity {
   readonly canonical: string;
   readonly type: string;
@@ -45,6 +47,11 @@ export interface DatasetEntity {
   readonly last_seen_session: string | null;
   /** Renamed display label from the action overlay; absent if not renamed. */
   readonly display?: string;
+  /** Effective coherence bucket (override if user set one, else computed). */
+  readonly coherence: TopicCoherence;
+  /** Computed bucket from session_count + age, ignoring any override. Lets
+   *  the UI show "would naturally be X" alongside the user assertion. */
+  readonly coherence_computed: TopicCoherence;
 }
 
 export interface DatasetResponse {
@@ -130,6 +137,10 @@ interface EntityCatalogRow {
   session_count: number;
   last_seen_session: string | null;
   display?: string;
+  // Populated in the entity-row enrichment pass before entityRows is shipped
+  // out as DatasetEntity[]; the loop sets both fields on every row.
+  coherence: TopicCoherence;
+  coherence_computed: TopicCoherence;
 }
 
 const EMPTY_DATASET = (dbPath: string, present: boolean): DatasetResponse => ({
@@ -252,6 +263,10 @@ function projectFromDb(db: Database.Database, dbPath: string, includePaths: bool
     .all();
 
   const overlay = loadActionOverlay(db);
+  const sessionStartByIdForCoherence = new Map<string, string | null>(
+    sessionRows.map((s) => [s.id, s.started_at]),
+  );
+  const nowMs = Date.now();
   for (const e of allEntityRows) {
     if (overlay.retiredEntities.has(e.canonical)) e.status = "retired";
     else if (overlay.snoozedEntities.has(e.canonical)) e.status = "snoozed";
@@ -259,6 +274,8 @@ function projectFromDb(db: Database.Database, dbPath: string, includePaths: bool
     if (newType) e.type = newType;
     const newDisplay = overlay.renamedEntities.get(e.canonical);
     if (newDisplay) e.display = newDisplay;
+    e.coherence_computed = computeCoherence(e, sessionStartByIdForCoherence, nowMs);
+    e.coherence = overlay.coherenceOverrides.get(e.canonical) ?? e.coherence_computed;
   }
 
   const entityRows = includePaths
@@ -423,17 +440,16 @@ function computeMetrics(
       lastWeek += 1;
     }
   }
-  const sessionsById = new Map(sessions.map((s) => [s.id, s]));
+  // Aggregate by the effective coherence (override wins, else computed) so
+  // the headline bars match what the user sees after asserting a bucket.
   let healthy = 0;
   let sparse = 0;
   let stale = 0;
   for (const e of entityRows) {
     if (e.session_count === 0) continue;
-    const last = sessionsById.get(e.last_seen_session ?? "");
-    const lastT = last?.started_at ? Date.parse(last.started_at) : NaN;
-    const ageDays = Number.isFinite(lastT) ? (now - lastT) / 86_400_000 : 999;
-    if (ageDays > 30) stale += 1;
-    else if (e.session_count >= 3) healthy += 1;
+    const bucket = e.coherence ?? "sparse";
+    if (bucket === "stale") stale += 1;
+    else if (bucket === "active") healthy += 1;
     else sparse += 1;
   }
   const closedDecisions = sessions.reduce(
@@ -441,6 +457,22 @@ function computeMetrics(
     0,
   );
   return { this_week: thisWeek, last_week: lastWeek, sparkline, healthy, sparse, stale, closed_decisions: closedDecisions };
+}
+
+/** Natural coherence bucket for an entity, ignoring overlay overrides.
+ *  Stale dominates: any topic last touched >30d is stale regardless of count. */
+function computeCoherence(
+  e: EntityCatalogRow,
+  startedAtBySession: Map<string, string | null>,
+  nowMs: number,
+): TopicCoherence {
+  if (e.session_count === 0) return "sparse";
+  const startedAt = startedAtBySession.get(e.last_seen_session ?? "") ?? null;
+  const lastT = startedAt ? Date.parse(startedAt) : NaN;
+  const ageDays = Number.isFinite(lastT) ? (nowMs - lastT) / 86_400_000 : 999;
+  if (ageDays > 30) return "stale";
+  if (e.session_count >= 3) return "active";
+  return "sparse";
 }
 
 function computeStaleAlerts(

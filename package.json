@@ -29,6 +29,7 @@
   "files": [
     "dist",
     "plugin",
+    "plugin-hermes-agent",
     "nlm",
     "assets",
     "LICENSE",

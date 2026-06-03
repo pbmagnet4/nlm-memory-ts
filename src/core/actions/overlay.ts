@@ -29,6 +29,10 @@ export interface ActionOverlay {
   readonly dismissedDecisions: Set<string>;
   /** decision id → corrected text shown in place of the original. */
   readonly revisedDecisions: Map<string, string>;
+  /** entity canonical → user-asserted coherence bucket. Overrides the
+   *  computed (session_count + age) classification at projection time;
+   *  last non-reverted write wins. */
+  readonly coherenceOverrides: Map<string, "active" | "sparse" | "stale">;
 }
 
 interface ActionRow {
@@ -49,6 +53,7 @@ export const EMPTY_OVERLAY: ActionOverlay = {
   promotedOpens: new Map(),
   dismissedDecisions: new Set(),
   revisedDecisions: new Map(),
+  coherenceOverrides: new Map(),
 };
 
 export function loadActionOverlay(db: Database.Database): ActionOverlay {
@@ -68,6 +73,7 @@ export function loadActionOverlay(db: Database.Database): ActionOverlay {
     promotedOpens: new Map(),
     dismissedDecisions: new Set(),
     revisedDecisions: new Map(),
+    coherenceOverrides: new Map(),
   };
 
   // ORDER BY id keeps reducer deterministic: later writes overwrite earlier
@@ -112,6 +118,14 @@ export function loadActionOverlay(db: Database.Database): ActionOverlay {
       const to = typeof payload?.["to"] === "string" ? payload["to"].trim() : "";
       if (to) overlay.revisedDecisions.set(r.subject_id, to);
       else overlay.revisedDecisions.delete(r.subject_id);
+    } else if (r.kind === "set_coherence" && r.subject_type === "entity") {
+      const state = typeof payload?.["state"] === "string" ? payload["state"] : "";
+      if (state === "active" || state === "sparse" || state === "stale") {
+        overlay.coherenceOverrides.set(r.subject_id, state);
+      } else {
+        // Empty payload reverts to the computed bucket.
+        overlay.coherenceOverrides.delete(r.subject_id);
+      }
     }
   }
   return overlay;

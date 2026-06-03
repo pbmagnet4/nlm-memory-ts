@@ -26,6 +26,8 @@ export interface DatasetSession {
   superseded_by?: string;
 }
 
+export type TopicCoherence = "active" | "sparse" | "stale";
+
 export interface DatasetEntity {
   canonical: string;
   type: string;
@@ -34,6 +36,10 @@ export interface DatasetEntity {
   last_seen_session: string | null;
   /** Renamed display label from the action overlay; absent if not renamed. */
   display?: string;
+  /** Effective coherence (override if user set one, else computed). */
+  coherence: TopicCoherence;
+  /** Computed coherence ignoring any override. */
+  coherence_computed: TopicCoherence;
 }
 
 export interface DatasetAlert {

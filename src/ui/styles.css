@@ -1184,7 +1184,40 @@ code, .code-block {
 }
 
 .bar-stack { padding: 14px; display: flex; flex-direction: column; gap: 10px; }
-.bar-item  { display: grid; grid-template-columns: 80px 1fr auto; gap: 10px; align-items: center; }
+.bar-item  {
+  display: grid;
+  grid-template-columns: 80px 1fr auto;
+  gap: 10px;
+  align-items: center;
+  background: transparent;
+  border: 0;
+  padding: 6px 4px;
+  border-radius: var(--r-sm);
+  width: 100%;
+  text-align: left;
+  color: inherit;
+  font: inherit;
+}
+.bar-item-clickable { cursor: pointer; transition: background var(--ease); }
+.bar-item-clickable:hover { background: var(--surface-1); }
+.bar-item-clickable:focus-visible { outline: 1px solid var(--border-4); outline-offset: -1px; }
+.bar-item[disabled] { cursor: default; opacity: 0.7; }
+
+/* Topic Coherence drawer — opens when a user clicks a bucket bar. */
+.coherence-drawer { width: min(640px, 100vw); }
+.coherence-list { list-style: none; margin: 12px 0 0; padding: 0; }
+.coherence-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 4px;
+  border-bottom: 1px solid var(--border-1);
+}
+.coherence-row:last-child { border-bottom: none; }
+.coherence-name { color: var(--text-1); text-decoration: none; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.coherence-name:hover { color: var(--accent); }
+.coherence-actions { display: inline-flex; gap: 6px; align-items: center; }
 .bar-label { font-size: var(--text-sm); color: var(--text-2); }
 .bar-track { height: 8px; background: var(--surface-2); border-radius: 4px; overflow: hidden; }
 .bar-fill  { height: 100%; transition: width 0.3s ease; }
