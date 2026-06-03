@@ -110,11 +110,11 @@ export function LivePage() {
               <div className="body">{w.summary}</div>
               {w.entities.length > 0 && (
                 <div className="entity-chips entity-chips-row">
-                  {w.entities.slice(0, 3).map((e) => (
+                  {w.entities.slice(0, 2).map((e) => (
                     <span key={e} className="chip-inline" data-kind="entity">{e}</span>
                   ))}
-                  {w.entities.length > 3 && (
-                    <span className="muted small">+{w.entities.length - 3}</span>
+                  {w.entities.length > 2 && (
+                    <span className="muted small">+{w.entities.length - 2}</span>
                   )}
                 </div>
               )}
