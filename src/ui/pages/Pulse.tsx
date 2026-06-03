@@ -570,7 +570,7 @@ function CoherenceDrawer({
           <span className={`chip-inline${bucket === "active" ? "" : ` severity-${bucket === "sparse" ? "medium" : "high"}`}`}>{rows.length.toLocaleString()}</span>
           <button type="button" className="drawer-close" onClick={onClose} aria-label="Close">×</button>
         </header>
-        <div className="drawer-body">
+        <div className="drawer-body drawer-body-stretch">
           <p className="drawer-paragraph">{COHERENCE_HINT[bucket]}</p>
           <ul className="session-list coherence-session-list">
             {slice.map((e) => {

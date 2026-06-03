@@ -1748,7 +1748,20 @@ a.session-label:hover { color: var(--accent); }
   overflow-y: auto;
   padding: 16px 18px 80px;
   flex: 1;
+  min-height: 0;
 }
+
+/* drawer-body-stretch: column layout where the list owns the scroll and
+   the pagination sticks to the bottom of the viewport-tall drawer. Used
+   when the drawer body needs to fill the full depth of the page. */
+.drawer-body-stretch {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding-bottom: 0;
+}
+.drawer-body-stretch > .session-list { flex: 1; min-height: 0; overflow-y: auto; padding-right: 6px; }
+.drawer-body-stretch > .pagination { border-top: 1px solid var(--border-1); padding: 12px 0; margin: 0; }
 
 .drawer-section {
   font-size: var(--text-xs);
