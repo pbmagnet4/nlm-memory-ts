@@ -89,12 +89,14 @@ export function PulsePage() {
       </div>
 
       <div className="pulse-grid">
-        <section className="card pulse-area-coherence">
+        <section className="card pulse-scroll-card pulse-area-coherence">
           <header className="card-head"><h3>Topic Coherence</h3></header>
-          <CoherenceBars
-            metrics={data.metrics}
-            onPick={(bucket) => setCoherenceBucket(bucket)}
-          />
+          <div className="pulse-scroll-body">
+            <CoherenceBars
+              metrics={data.metrics}
+              onPick={(bucket) => setCoherenceBucket(bucket)}
+            />
+          </div>
         </section>
 
         <section className="card pulse-area-runtimes">
@@ -536,33 +538,36 @@ function CoherenceDrawer({
   return (
     <>
       <div className="drawer-backdrop" onClick={onClose} />
-      <aside className="session-drawer coherence-drawer" role="dialog" aria-modal="true" aria-label={`${COHERENCE_TITLE[bucket]} review`}>
+      <aside className="session-drawer" role="dialog" aria-modal="true" aria-label={`${COHERENCE_TITLE[bucket]} review`}>
         <header className="drawer-head">
           <h3 className="drawer-title">{COHERENCE_TITLE[bucket]}</h3>
-          <span className="muted small">{rows.length.toLocaleString()}</span>
+          <span className={`chip-inline${bucket === "active" ? "" : ` severity-${bucket === "sparse" ? "medium" : "high"}`}`}>{rows.length.toLocaleString()}</span>
           <button type="button" className="drawer-close" onClick={onClose} aria-label="Close">×</button>
         </header>
         <div className="drawer-body">
-          <p className="drawer-paragraph muted small">{COHERENCE_HINT[bucket]}</p>
-          <ul className="coherence-list">
+          <p className="drawer-paragraph">{COHERENCE_HINT[bucket]}</p>
+          <ul className="session-list">
             {rows.map((e) => {
               const label = entityDisplay[e.canonical] ?? e.canonical;
               const overridden = e.coherence !== e.coherence_computed;
               const rowBusy = busy === e.canonical;
               return (
-                <li key={e.canonical} className="coherence-row">
+                <li key={e.canonical} className="session-row">
                   <span className="dot" style={{ background: entityColors[e.canonical] ?? "#666" }} />
-                  <Link to={`/thread?entity=${encodeURIComponent(e.canonical)}`} className="coherence-name" title={e.display ? `Original: ${e.canonical}` : undefined}>
-                    {label}
-                  </Link>
-                  <span className="muted small mono">{e.session_count}</span>
-                  <div className="coherence-actions" role="group" aria-label="Move to bucket">
+                  <div className="session-row-main">
+                    <Link
+                      to={`/thread?entity=${encodeURIComponent(e.canonical)}`}
+                      className="session-label"
+                      title={e.display ? `Original: ${e.canonical}` : undefined}
+                    >{label}</Link>
+                    <span className="session-meta">{e.session_count} session{e.session_count === 1 ? "" : "s"}{overridden ? ` · naturally ${e.coherence_computed}` : ""}</span>
+                  </div>
+                  <div className="filter-group" role="group" aria-label="Move to bucket">
                     {(["active", "sparse", "stale"] as const).map((b) => (
                       <button
                         key={b}
                         type="button"
                         className={`chip${e.coherence === b ? " active" : ""}`}
-                        data-severity={b === "active" ? undefined : b === "sparse" ? "medium" : "high"}
                         disabled={rowBusy || e.coherence === b}
                         onClick={() => void setBucket(e.canonical, b)}
                       >{b}</button>
