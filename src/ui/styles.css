@@ -1370,14 +1370,23 @@ a.session-label:hover { color: var(--accent); }
 .marker-list { list-style: none; max-height: 360px; overflow-y: auto; }
 .marker-row {
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: auto auto 1fr auto;
   gap: 10px;
   padding: 7px 14px;
   border-bottom: 1px solid var(--border-1);
   align-items: baseline;
 }
 
-.marker-text { color: var(--text-1); font-size: var(--text-sm); }
+.marker-text { color: var(--text-1); font-size: var(--text-sm); min-width: 0; }
+.marker-timestamp { font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+.marker-action-select {
+  min-width: 130px;
+  font-size: var(--text-xs);
+}
+
+.marker-editor { display: inline-flex; align-items: center; gap: 6px; }
+.marker-editor-input { min-width: 260px; }
 
 .entity-grid {
   list-style: none;

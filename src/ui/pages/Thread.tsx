@@ -3,8 +3,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import { useDataset, relativeAge, topicDisplay } from "../lib/dataset.js";
 import type { DatasetSession, Dataset } from "../lib/dataset.js";
 import { SessionDrawer } from "../components/SessionDrawer.js";
-import { PromoteOpenButton } from "../components/PromoteOpenButton.js";
-import { ReviseDecisionButton } from "../components/ReviseDecisionButton.js";
+import { MarkerActionMenu, type MarkerActionOption } from "../components/MarkerActionMenu.js";
 import { SessionListSkeleton, Skeleton } from "../components/Skeleton.js";
 import { readViewSettings, type ThreadSort } from "../lib/view-settings.js";
 import { postAction } from "../lib/actions.js";
@@ -103,15 +102,46 @@ export function ThreadPage() {
     s.open_questions.map((q) => ({ id: q.id, q: q.text, sid: s.id, when: s.started_at })),
   );
 
-  const dismissDecision = async (id: string) => {
-    await postAction({ kind: "dismiss_decision", subject_type: "decision", subject_id: id });
-    await refetch();
-  };
+  const decisionActions = (id: string, currentText: string): MarkerActionOption[] => [
+    {
+      value: "revise",
+      label: "revise…",
+      kind: "editor",
+      buildAction: (to) => ({
+        kind: "revise_decision",
+        subject_type: "decision",
+        subject_id: id,
+        payload: { to, original_text: currentText },
+      }),
+    },
+    {
+      value: "dismiss",
+      label: "dismiss",
+      kind: "instant",
+      action: { kind: "dismiss_decision", subject_type: "decision", subject_id: id },
+    },
+  ];
 
-  const resolveOpen = async (id: string) => {
-    await postAction({ kind: "resolve_open", subject_type: "open_question", subject_id: id });
-    await refetch();
-  };
+  const openActions = (id: string, currentText: string): MarkerActionOption[] => [
+    {
+      value: "promote",
+      label: "promote to decision…",
+      kind: "editor",
+      buildAction: (resolution) => ({
+        kind: "promote_open",
+        subject_type: "open_question",
+        subject_id: id,
+        payload: { resolution, original_text: currentText },
+      }),
+    },
+    {
+      value: "resolve",
+      label: "resolve",
+      kind: "instant",
+      action: { kind: "resolve_open", subject_type: "open_question", subject_id: id },
+    },
+  ];
+
 
   return (
     <div className="page-pad">
@@ -160,20 +190,21 @@ export function ThreadPage() {
             {(decisionsExpanded ? decisions : decisions.slice(0, 30)).map((d, i) => (
               <li key={`${d.id}-${i}`} className="marker-row marker-row-promotable">
                 <span className="live-tag" data-kind="decision">decision</span>
+                <button
+                  type="button"
+                  className="link-button muted small marker-timestamp"
+                  onClick={() => openSession(d.sid)}
+                  title="Open source session"
+                >{relativeAge(d.when)}</button>
                 <span className="marker-text">{d.d}</span>
                 <div className="marker-actions">
                   {d.id && (
-                    <>
-                      <ReviseDecisionButton decisionId={d.id} currentText={d.d} onRevised={refetch} />
-                      <button
-                        type="button"
-                        className="chip"
-                        onClick={() => void dismissDecision(d.id)}
-                        title="Hide this decision from the projection. Audit trail preserved."
-                      >dismiss</button>
-                    </>
+                    <MarkerActionMenu
+                      options={decisionActions(d.id, d.d)}
+                      editorSeed={d.d}
+                      onChanged={refetch}
+                    />
                   )}
-                  <button type="button" className="link-button" onClick={() => openSession(d.sid)}>{relativeAge(d.when)}</button>
                 </div>
               </li>
             ))}
@@ -194,16 +225,19 @@ export function ThreadPage() {
             {(openExpanded ? open : open.slice(0, 30)).map((o, i) => (
               <li key={`${o.id}-${i}`} className="marker-row marker-row-promotable">
                 <span className="live-tag" data-kind="open">open</span>
+                <button
+                  type="button"
+                  className="link-button muted small marker-timestamp"
+                  onClick={() => openSession(o.sid)}
+                  title="Open source session"
+                >{relativeAge(o.when)}</button>
                 <span className="marker-text">{o.q}</span>
                 <div className="marker-actions">
-                  <PromoteOpenButton openId={o.id} defaultText={o.q} onPromoted={refetch} />
-                  <button
-                    type="button"
-                    className="chip"
-                    onClick={() => void resolveOpen(o.id)}
-                    title="Mark this question resolved without recording a decision."
-                  >resolve</button>
-                  <button type="button" className="link-button" onClick={() => openSession(o.sid)}>{relativeAge(o.when)}</button>
+                  <MarkerActionMenu
+                    options={openActions(o.id, o.q)}
+                    editorSeed={o.q}
+                    onChanged={refetch}
+                  />
                 </div>
               </li>
             ))}
