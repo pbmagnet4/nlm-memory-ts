@@ -503,6 +503,8 @@ function CoherenceDrawer({
   onChanged: () => Promise<void> | void;
 }) {
   const [busy, setBusy] = useState<string | null>(null);
+  const [pageSize, setPageSize] = useState<number>(25);
+  const [page, setPage] = useState(0);
 
   // Filter to the current bucket and sort by session count desc so the
   // most-loaded topics rise to the top within their bucket.
@@ -512,6 +514,24 @@ function CoherenceDrawer({
       .sort((a, b) => b.session_count - a.session_count),
     [entities, bucket],
   );
+
+  // Reset page when the bucket switches or the page size changes so the
+  // user never lands on an empty page.
+  useEffect(() => { setPage(0); }, [bucket, pageSize]);
+
+  const pageCount = Math.max(1, Math.ceil(rows.length / pageSize));
+  const currentPage = Math.min(page, pageCount - 1);
+  const start = currentPage * pageSize;
+  const slice = rows.slice(start, start + pageSize);
+
+  // Size the drawer to the longest label on the current page (rounded into
+  // a character-width budget) so the action chips never collide with the
+  // name. Capped at 80% viewport so we don't overrun on small screens.
+  const longestChars = useMemo(
+    () => slice.reduce((max, e) => Math.max(max, (entityDisplay[e.canonical] ?? e.canonical).length), 0),
+    [slice, entityDisplay],
+  );
+  const drawerWidth = `clamp(420px, ${longestChars * 0.62 + 26}ch, 80vw)`;
 
   useEffect(() => {
     const onEsc = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
@@ -538,7 +558,13 @@ function CoherenceDrawer({
   return (
     <>
       <div className="drawer-backdrop" onClick={onClose} />
-      <aside className="session-drawer" role="dialog" aria-modal="true" aria-label={`${COHERENCE_TITLE[bucket]} review`}>
+      <aside
+        className="session-drawer"
+        role="dialog"
+        aria-modal="true"
+        aria-label={`${COHERENCE_TITLE[bucket]} review`}
+        style={{ width: drawerWidth }}
+      >
         <header className="drawer-head">
           <h3 className="drawer-title">{COHERENCE_TITLE[bucket]}</h3>
           <span className={`chip-inline${bucket === "active" ? "" : ` severity-${bucket === "sparse" ? "medium" : "high"}`}`}>{rows.length.toLocaleString()}</span>
@@ -546,8 +572,8 @@ function CoherenceDrawer({
         </header>
         <div className="drawer-body">
           <p className="drawer-paragraph">{COHERENCE_HINT[bucket]}</p>
-          <ul className="session-list">
-            {rows.map((e) => {
+          <ul className="session-list coherence-session-list">
+            {slice.map((e) => {
               const label = entityDisplay[e.canonical] ?? e.canonical;
               const overridden = e.coherence !== e.coherence_computed;
               const rowBusy = busy === e.canonical;
@@ -589,6 +615,31 @@ function CoherenceDrawer({
               <li className="muted empty-row">No topics in this bucket right now.</li>
             )}
           </ul>
+          {rows.length > 0 && (
+            <div className="pagination pagination-compact">
+              <div className="page-size">
+                <label className="form-label">Per page</label>
+                <select
+                  className="form-input form-input-inline"
+                  value={pageSize}
+                  onChange={(ev) => setPageSize(Number.parseInt(ev.target.value, 10))}
+                >
+                  {DRAWER_PAGE_SIZES.map((n) => <option key={n} value={n}>{n}</option>)}
+                </select>
+              </div>
+              <span className="header-spacer" />
+              <span className="muted small">
+                {start + 1}–{Math.min(start + pageSize, rows.length)} of {rows.length}
+              </span>
+              <div className="page-nav">
+                <button type="button" className="chip" disabled={currentPage === 0} onClick={() => setPage(0)}>«</button>
+                <button type="button" className="chip" disabled={currentPage === 0} onClick={() => setPage((p) => Math.max(0, p - 1))}>‹</button>
+                <span className="page-indicator mono">{currentPage + 1} / {pageCount}</span>
+                <button type="button" className="chip" disabled={currentPage >= pageCount - 1} onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))}>›</button>
+                <button type="button" className="chip" disabled={currentPage >= pageCount - 1} onClick={() => setPage(pageCount - 1)}>»</button>
+              </div>
+            </div>
+          )}
         </div>
       </aside>
     </>
