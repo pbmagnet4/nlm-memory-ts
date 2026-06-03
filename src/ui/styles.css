@@ -1150,8 +1150,13 @@ code, .code-block {
   outline-offset: -1px;
 }
 
-.kpi:hover,
-.pulse-grid > .card:hover {
+.kpi:hover {
+  outline-color: rgba(255, 255, 255, 0.55);
+}
+/* Card hover only applies to cards whose rows are clickable
+   (Recent sessions, Stale alerts). Coherence and Runtimes are
+   read-only — the lift implied clickability that wasn't there. */
+.pulse-grid > .pulse-scroll-card:hover {
   outline-color: rgba(255, 255, 255, 0.55);
 }
 
@@ -1637,8 +1642,12 @@ a.session-label:hover { color: var(--accent); }
 }
 
 /* ── Thread drawer ─────────────────────────────────────────────────────── */
-.session-row.clickable { cursor: pointer; }
+.session-row.clickable { cursor: pointer; transition: background var(--ease); }
 .session-row.clickable:hover { background: var(--surface-1); }
+/* Pulse Recent Sessions: match the stale-alerts hover treatment so both
+   feed rows read as obviously clickable. */
+.pulse-area-recent .session-row.clickable:hover { background: var(--surface-2); }
+.pulse-area-recent .session-row.clickable:hover .session-label { color: var(--accent); }
 
 .link-button {
   background: none;
