@@ -23,6 +23,15 @@ export function PulsePage() {
     return [...filtered].sort((a, b) => (sort === "oldest" ? b.age_days - a.age_days : a.age_days - b.age_days));
   }, [data, severity, sort]);
 
+  const severityCounts = useMemo(() => {
+    if (!data) return { all: 0, high: 0, medium: 0 };
+    return {
+      all: data.alerts.length,
+      high: data.alerts.filter((a) => a.severity === "high").length,
+      medium: data.alerts.filter((a) => a.severity === "medium").length,
+    };
+  }, [data]);
+
   const dismissAlert = async (alertId: string) => {
     await postAction({ kind: "dismiss", subject_type: "alert", subject_id: alertId });
     await refetch();
@@ -110,8 +119,9 @@ export function PulsePage() {
                     type="button"
                     className={`chip${severity === s ? " active" : ""}`}
                     data-severity={s === "all" ? undefined : s}
+                    aria-pressed={severity === s}
                     onClick={() => setSeverity(s)}
-                  >{s}</button>
+                  >{s} · {severityCounts[s]}</button>
                 ))}
               </div>
               <div className="filter-group" role="group" aria-label="Sort">

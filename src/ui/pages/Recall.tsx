@@ -41,6 +41,22 @@ const EMPTY_FACT: FactStats = {
 
 const WINDOWS = [7, 30, 90] as const;
 
+// Source labels come from different entry points (per-prompt hook,
+// session-start hook, MCP tools, HTTP API, CLI). The raw keys are
+// kept stable for log compatibility; this map renders them as
+// human-readable names. Anything not in the map falls back to the raw key.
+const SOURCE_LABELS: Record<string, string> = {
+  "hook": "Prompt hook (per user prompt)",
+  "session-start-hook": "Session start hook",
+  "mcp": "MCP tool",
+  "http": "HTTP / browser",
+  "cli": "CLI",
+};
+
+function formatSourceLabel(raw: string): string {
+  return SOURCE_LABELS[raw] ?? raw;
+}
+
 interface BarRow {
   label: string;
   count: number;
@@ -108,7 +124,7 @@ interface StatsBlockProps {
 function StatsBlock({ title, subtitle, stats, error, topLabel, topRows, extraLabel, extraRows }: StatsBlockProps) {
   const zeroResult = stats.total - stats.with_results;
   const sourceRows: BarRow[] = Object.entries(stats.by_source)
-    .map(([label, count]) => ({ label, count }))
+    .map(([label, count]) => ({ label: formatSourceLabel(label), count }))
     .sort((a, b) => b.count - a.count);
 
   return (

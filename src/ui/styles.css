@@ -10,6 +10,11 @@
   --surface-2:    #242424;   /* card hover / raised input                */
   --surface-float: #2c2c2c;  /* floating panel (dropdowns, modals)       */
 
+  /* Aliases for legacy --bg-* tokens used by drawer menus, palette,
+     update banner. Keep these mapped to the canonical surface scale. */
+  --bg-1: var(--surface-float);
+  --bg-2: var(--surface-2);
+
   /* Border scale — 4 levels (bumped to stay visible on lighter surfaces) */
   --border-1: #262626;   /* hairline / divider     */
   --border-2: #303030;   /* card border            */
@@ -235,7 +240,7 @@ input[type="file"].file-input:disabled::file-selector-button {
   transition: border-color var(--ease), color var(--ease), background var(--ease);
 }
 .chip:hover  { border-color: var(--border-3); color: var(--text-2); }
-.chip.active { border-color: var(--border-3); color: var(--text-1); background: var(--surface-2); }
+.chip.active { border-color: var(--border-3); color: var(--text-1); background: var(--surface-2); font-weight: 600; box-shadow: inset 0 0 0 1px var(--border-3); }
 
 /* Semantic chip tints — opt-in via data attributes */
 .chip[data-severity="critical"].active { border-color: rgba(255,107,53,0.4);  color: var(--danger); background: var(--danger-dim); }
@@ -1128,6 +1133,7 @@ code, .code-block {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .card-head {
@@ -1227,7 +1233,14 @@ code, .code-block {
   border-bottom: 1px solid var(--border-1);
 }
 
-.alert-entity { color: var(--text-1); font-size: var(--text-sm); }
+.alert-entity {
+  color: var(--text-1);
+  font-size: var(--text-sm);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 .alert-summary {
   display: -webkit-box;
@@ -1498,7 +1511,7 @@ a.session-label:hover { color: var(--accent); }
 
 /* ── Inline action buttons (Pulse alerts, Labels rows) ─────────────────── */
 .alert-row {
-  grid-template-columns: auto auto 1fr auto;
+  grid-template-columns: auto minmax(0, max-content) minmax(0, 1fr) auto;
 }
 
 .alert-actions {
