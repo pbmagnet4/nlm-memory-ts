@@ -97,7 +97,7 @@ export function PulsePage() {
                 >
                   <span className={`chip-inline status-${s.status}`}>{s.status}</span>
                   <span className="session-label">{s.label}</span>
-                  <span className="session-meta">{relativeAge(s.started_at)} · {s.entities.slice(0, 3).map((c) => data.entity_display[c] ?? c).join(", ")}{s.entities.length > 3 ? ` +${s.entities.length - 3}` : ""}</span>
+                  <span className="session-meta">{relativeAge(s.started_at)}</span>
                 </li>
               ))}
             </ul>
