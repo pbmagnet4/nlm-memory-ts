@@ -503,7 +503,10 @@ function CoherenceDrawer({
   onChanged: () => Promise<void> | void;
 }) {
   const [busy, setBusy] = useState<string | null>(null);
-  const [pageSize, setPageSize] = useState<number>(25);
+  // Default 10 keeps the pagination visible on a typical viewport without
+  // an internal scroll. Larger page sizes are a user choice that may push
+  // rows past the drawer foot.
+  const [pageSize, setPageSize] = useState<number>(10);
   const [page, setPage] = useState(0);
 
   // Filter to the current bucket and sort by session count desc so the
