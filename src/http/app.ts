@@ -456,9 +456,11 @@ function registerRecallRoutes(app: Hono, deps: HttpDeps): void {
 
     // Fire-and-forget telemetry — never blocks the response.
     const source = c.req.header("x-recall-source") ?? "http";
+    const runtime = c.req.header("x-recall-runtime") ?? null;
     void logQuery(
       {
         source,
+        runtime,
         query: q || null,
         entity: entity ?? null,
         kind: (kind as RecallKindFilter | undefined) ?? null,

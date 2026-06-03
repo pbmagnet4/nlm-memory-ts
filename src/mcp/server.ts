@@ -113,6 +113,7 @@ export async function recallSessionsHandler(
     // mirrors the HTTP /api/recall handler.
     void logQuery({
       source: "mcp",
+      runtime: null,
       query: input.query ?? null,
       entity: input.entity ?? null,
       kind: input.kind ?? null,

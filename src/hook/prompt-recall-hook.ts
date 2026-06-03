@@ -124,7 +124,7 @@ async function main(): Promise<void> {
     const mode: HookMode = process.env["NLM_HOOK_MODE"] === "live" ? "live" : "shadow";
     const out = await runHook(
       { prompt, conversationId },
-      { mode, recall: recallOverHttp },
+      { mode, recall: (q) => recallOverHttp(q, "claude-code") },
     );
     if (out) process.stdout.write(out);
   } catch {

@@ -51,14 +51,16 @@ function hookAuthHeaders(extra = {}) {
 // src/hook/recall-over-http.ts
 var RECALL_LIMIT = 5;
 var RECALL_TIMEOUT_MS = 2e3;
-async function recallOverHttp(prompt) {
+async function recallOverHttp(prompt, runtime) {
   const portValue = process.env["NLM_PORT"] ?? "3940";
   const url = `http://localhost:${portValue}/api/recall?q=${encodeURIComponent(prompt)}&mode=keyword&limit=${RECALL_LIMIT}`;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), RECALL_TIMEOUT_MS);
   try {
+    const extra = { "x-recall-source": "hook" };
+    if (runtime) extra["x-recall-runtime"] = runtime;
     const res = await fetch(url, {
-      headers: hookAuthHeaders({ "x-recall-source": "hook" }),
+      headers: hookAuthHeaders(extra),
       signal: controller.signal
     });
     if (!res.ok) return [];
@@ -239,7 +241,7 @@ async function main() {
     const mode = process.env["NLM_HOOK_MODE"] === "live" ? "live" : "shadow";
     const out = await runHook(
       { prompt, conversationId },
-      { mode, recall: recallOverHttp }
+      { mode, recall: (q) => recallOverHttp(q, "claude-code") }
     );
     if (out) process.stdout.write(out);
   } catch {
@@ -264,7 +266,7 @@ function nlmExtension(pi) {
       const conversationId = ctx.sessionManager.getSessionId() || "unknown";
       const block = await runHook(
         { prompt: event.text, conversationId },
-        { mode, recall: recallOverHttp }
+        { mode, recall: (q) => recallOverHttp(q, "pi") }
       );
       if (!block) return { action: "continue" };
       return { action: "transform", text: `${block}

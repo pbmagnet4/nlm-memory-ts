@@ -180,12 +180,27 @@ export class PgSessionStore implements SessionStore {
   }
 
   async recentWrites(limit: number): Promise<RecentWrite[]> {
-    const result = await this.pool.query<RecentWrite>(
+    const result = await this.pool.query<Omit<RecentWrite, "entities">>(
       `SELECT id, runtime, label, summary, created_at AS "createdAt"
        FROM sessions ORDER BY created_at DESC LIMIT $1`,
       [limit],
     );
-    return result.rows;
+    if (result.rows.length === 0) return [];
+    const ids = result.rows.map((r) => r.id);
+    const entityResult = await this.pool.query<{ session_id: string; entity_canonical: string }>(
+      `SELECT session_id, entity_canonical
+       FROM session_entities
+       WHERE session_id = ANY($1)
+       ORDER BY entity_canonical`,
+      [ids],
+    );
+    const byId = new Map<string, string[]>();
+    for (const e of entityResult.rows) {
+      const list = byId.get(e.session_id);
+      if (list) list.push(e.entity_canonical);
+      else byId.set(e.session_id, [e.entity_canonical]);
+    }
+    return result.rows.map((r) => ({ ...r, entities: byId.get(r.id) ?? [] }));
   }
 
   async recentMarkers(limit: number): Promise<RecentMarker[]> {

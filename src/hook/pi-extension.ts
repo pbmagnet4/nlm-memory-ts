@@ -73,7 +73,7 @@ export default function nlmExtension(pi: PiExtensionAPI): void {
       const conversationId = ctx.sessionManager.getSessionId() || "unknown";
       const block = await runHook(
         { prompt: event.text, conversationId },
-        { mode, recall: recallOverHttp },
+        { mode, recall: (q) => recallOverHttp(q, "pi") },
       );
       if (!block) return { action: "continue" };
       return { action: "transform", text: `${block}\n\n${event.text}` };

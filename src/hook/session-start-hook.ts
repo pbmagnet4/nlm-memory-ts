@@ -105,7 +105,10 @@ async function recallOverHttp(query: string): Promise<ReadonlyArray<RecallHitInp
   const timer = setTimeout(() => controller.abort(), RECALL_TIMEOUT_MS);
   try {
     const res = await fetch(url, {
-      headers: hookAuthHeaders({ "x-recall-source": "session-start-hook" }),
+      headers: hookAuthHeaders({
+        "x-recall-source": "session-start-hook",
+        "x-recall-runtime": "claude-code",
+      }),
       signal: controller.signal,
     });
     if (!res.ok) return [];

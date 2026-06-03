@@ -1767,6 +1767,7 @@ a.session-label:hover { color: var(--accent); }
   flex-wrap: wrap;
   gap: 6px;
 }
+.entity-chips-row { margin-top: 4px; align-items: center; }
 
 /* ── Supersedence banners (SessionDrawer) ───────────────────────────────── */
 .supersedence-banner {

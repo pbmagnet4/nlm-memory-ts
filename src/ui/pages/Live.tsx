@@ -82,7 +82,7 @@ export function LivePage() {
             const key = readKeys[i]!;
             return (
               <div className={`live-row${freshReads.has(key) ? " is-new" : ""}`} key={key}>
-                <span className="live-tag">{r.source}</span>
+                <span className="live-tag" title={r.runtime ? `via ${r.source}` : undefined}>{r.runtime ?? r.source}</span>
                 <span className="label">{r.query ?? "(no query)"}</span>
                 <div className="body">{r.mode} · {r.nResults} hit{r.nResults === 1 ? "" : "s"}</div>
                 <div className="meta">{relativeTime(r.ts)}</div>
@@ -108,6 +108,16 @@ export function LivePage() {
               <span className="live-tag">{w.runtime.split("/")[0]}</span>
               <span className="label">{w.label}</span>
               <div className="body">{w.summary}</div>
+              {w.entities.length > 0 && (
+                <div className="entity-chips entity-chips-row">
+                  {w.entities.slice(0, 3).map((e) => (
+                    <span key={e} className="chip-inline" data-kind="entity">{e}</span>
+                  ))}
+                  {w.entities.length > 3 && (
+                    <span className="muted small">+{w.entities.length - 3}</span>
+                  )}
+                </div>
+              )}
               <div className="meta">{relativeTime(w.createdAt)} · {w.id}</div>
             </Row>
           ))}

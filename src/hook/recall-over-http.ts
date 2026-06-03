@@ -13,6 +13,7 @@ export const RECALL_TIMEOUT_MS = 2000;
 
 export async function recallOverHttp(
   prompt: string,
+  runtime?: string,
 ): Promise<ReadonlyArray<RecallHitInput>> {
   const portValue = process.env["NLM_PORT"] ?? "3940";
   const url =
@@ -21,8 +22,10 @@ export async function recallOverHttp(
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), RECALL_TIMEOUT_MS);
   try {
+    const extra: Record<string, string> = { "x-recall-source": "hook" };
+    if (runtime) extra["x-recall-runtime"] = runtime;
     const res = await fetch(url, {
-      headers: hookAuthHeaders({ "x-recall-source": "hook" }),
+      headers: hookAuthHeaders(extra),
       signal: controller.signal,
     });
     if (!res.ok) return [];

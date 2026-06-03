@@ -10,6 +10,7 @@ import { join } from "node:path";
 export interface RecentLogEntry {
   readonly ts: string;
   readonly source: string;
+  readonly runtime: string | null;
   readonly query: string | null;
   readonly entity: string | null;
   readonly kind: string | null;
@@ -40,6 +41,7 @@ export function recentQueryLog(limit: number, logPath: string = defaultLogPath()
       entries.push({
         ts: typeof raw["ts"] === "string" ? raw["ts"] : "",
         source: typeof raw["source"] === "string" ? raw["source"] : "unknown",
+        runtime: typeof raw["runtime"] === "string" ? raw["runtime"] : null,
         query: typeof raw["query"] === "string" ? raw["query"] : null,
         entity: typeof raw["entity"] === "string" ? raw["entity"] : null,
         kind: typeof raw["kind"] === "string" ? raw["kind"] : null,

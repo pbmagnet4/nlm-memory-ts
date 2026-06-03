@@ -3,6 +3,8 @@ import { useEffect, useState } from "react";
 export interface RecentRead {
   ts: string;
   source: string;
+  /** Calling agent runtime if set via x-recall-runtime; null on legacy / unknown. */
+  runtime: string | null;
   query: string | null;
   mode: string;
   nResults: number;
@@ -14,6 +16,8 @@ export interface RecentWrite {
   label: string;
   summary: string;
   createdAt: string;
+  /** Top entities (topics) associated with the session. Empty if none yet. */
+  entities: string[];
 }
 
 export interface RecentMarker {

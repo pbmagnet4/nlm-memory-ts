@@ -88,6 +88,9 @@ export interface RecentWrite {
   label: string;
   summary: string;
   createdAt: string;
+  /** Topic canonicals associated with the session at write time. Newest writes
+   *  may have empty arrays if the classifier hasn't tagged the session yet. */
+  entities: string[];
 }
 
 export interface RecentMarker {
@@ -144,14 +147,34 @@ export class SqliteSessionStore implements SessionStore {
 
   /** Recently-written sessions ordered by created_at desc. Powers /live Writes column. */
   recentWrites(limit: number): RecentWrite[] {
-    return this.db
-      .prepare<[number], RecentWrite>(
+    const rows = this.db
+      .prepare<[number], Omit<RecentWrite, "entities">>(
         `SELECT id, runtime, label, summary, created_at AS createdAt
          FROM sessions
          ORDER BY created_at DESC
          LIMIT ?`,
       )
       .all(limit);
+    if (rows.length === 0) return [];
+
+    // Pull associated entities in one shot keyed by session id; cheap because
+    // limit is small (<=50). Renders as topic chips on the /live row.
+    const placeholders = rows.map(() => "?").join(",");
+    const entityRows = this.db
+      .prepare<string[], { session_id: string; entity_canonical: string }>(
+        `SELECT session_id, entity_canonical
+         FROM session_entities
+         WHERE session_id IN (${placeholders})
+         ORDER BY entity_canonical`,
+      )
+      .all(...rows.map((r) => r.id));
+    const byId = new Map<string, string[]>();
+    for (const e of entityRows) {
+      const list = byId.get(e.session_id);
+      if (list) list.push(e.entity_canonical);
+      else byId.set(e.session_id, [e.entity_canonical]);
+    }
+    return rows.map((r) => ({ ...r, entities: byId.get(r.id) ?? [] }));
   }
 
   /** Recently-extracted markers ordered by session created_at desc. Powers /live Decisions column. */

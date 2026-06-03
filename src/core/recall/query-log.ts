@@ -16,6 +16,9 @@ import type { RecallKindFilter, RecallMode } from "@shared/types.js";
 
 export interface LogEntry {
   readonly source: string;
+  /** Calling agent runtime (claude-code / hermes / pi.dev / codex / etc).
+   *  Logged when the caller passes x-recall-runtime; null for legacy entries. */
+  readonly runtime: string | null;
   readonly query: string | null;
   readonly entity: string | null;
   readonly kind: RecallKindFilter | null;
@@ -48,6 +51,7 @@ export async function logQuery(
     const payload = {
       ts: new Date().toISOString(),
       source: entry.source,
+      runtime: entry.runtime,
       query: entry.query,
       entity: entry.entity,
       kind: entry.kind,
