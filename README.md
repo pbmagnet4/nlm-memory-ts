@@ -79,15 +79,15 @@ One corpus across every adapter. MCP works against all nine. **Automatic context
 
 | Runtime | Connect | Sessions read from | Hooks |
 |---|---|---|---|
-| **Claude Code** | `nlm connect claude-code` | `~/.claude/projects/**/*.jsonl` | 6 (UserPromptSubmit, SessionStart, SessionEnd, Stop, PreCompact, SubagentStart) |
-| **Codex CLI** | `nlm connect codex` | `~/.codex/sessions/` | Marketplace plugin |
-| **Hermes** | `nlm connect hermes` | Hermes session DB | MCP only |
-| **Hermes Agent** | `nlm connect hermes-agent` | Hermes plugin path | pre-turn, post-turn, lifecycle |
+| **Claude Code** | `nlm connect claude-code` | `~/.claude/projects/**/*.jsonl` | 6 hooks: UserPromptSubmit, SessionStart, SessionEnd, Stop, PreCompact, SubagentStart |
+| **Codex CLI** | `nlm connect codex` | `~/.codex/sessions/` | Marketplace plugin (UserPromptSubmit + Stop) |
+| **Hermes** | `nlm connect hermes` | `~/.hermes/sessions/` | MCP only |
+| **Hermes Agent** | `nlm connect hermes-agent` | `~/.hermes/state.db` | 6 hooks: pre_llm_call, post_llm_call, on_session_start/end/finalize/reset |
 | **Cursor** | `nlm connect cursor` | Cursor IDE chat DB | MCP only |
 | **Windsurf** | `nlm connect windsurf` | Windsurf user dir | MCP only |
 | **OpenCode** | adapter active | `~/.local/share/opencode/` | MCP only |
 | **Aider** | adapter active | `AIDER_CHAT_HISTORY_FILE` | MCP only |
-| **pi.dev** | `nlm setup` (auto) or `nlm connect pi` | `~/.pi/agent/sessions/**/*.jsonl` | 1 (input) |
+| **pi.dev** | `nlm setup` (auto) or `nlm connect pi` | `~/.pi/agent/sessions/**/*.jsonl` | 1 hook: input (prepend via transform) |
 
 `nlm disconnect <runtime>` reverses any of the above.
 
@@ -99,9 +99,9 @@ Two delivery paths. They share the same index.
 
 ### 1. Hooks — automatic context injection
 
-Hooks fire on user input and prepend a pointer block of likely-relevant prior sessions to the model's context. Three runtimes ship them today: Claude Code (full six-hook lifecycle), Hermes Agent (parallel set), and pi.dev (one `input` hook via [nlm/](nlm/README.md), wired by `nlm setup` or `nlm connect pi`). Pi's extension API only exposes `input` — there are no session-lifecycle events — so transcript ingestion is handled by the passive adapter scanning `~/.pi/agent/sessions/` instead. Full lifecycle, modes, logging surface, and the load-bearing daily liveness canary documented in [docs/hooks.md](docs/hooks.md).
+Hooks fire on user input and prepend a pointer block of likely-relevant prior sessions to the model's context. Three runtimes ship hooks today: Claude Code (six-hook lifecycle), Hermes Agent (six parallel hooks), and pi.dev (one `input` hook via [nlm/](nlm/README.md)). On all other runtimes the agent calls `recall_sessions` explicitly via MCP. Full lifecycle, modes, logging surface, and the daily liveness canary documented in [docs/hooks.md](docs/hooks.md).
 
-The Claude Code surface (the most complete) installs six hooks into `~/.claude/settings.json`:
+**Claude Code** — six hooks written to `~/.claude/settings.json` via `nlm connect claude-code`:
 
 | Event | What NLM does | Mode |
 |---|---|---|
@@ -112,7 +112,24 @@ The Claude Code surface (the most complete) installs six hooks into `~/.claude/s
 | **PreCompact** | Flush the per-conversation surfaced-IDs memo so post-compaction recalls aren't gated | always on |
 | **SubagentStart** | Record parent→subagent links so threads stay coherent across dispatches | always on |
 
-Switch to **shadow** mode (log-only, no injection) anytime with `NLM_HOOK_MODE=shadow` on the hook command. Toggle for an existing install: re-run `nlm hook install` after changing the env var. The hook fails open — any error yields a clean exit and never blocks the model.
+**Hermes Agent** — six hooks installed to `~/.hermes/plugins/nlm-memory/` via `nlm connect hermes-agent`. All calls are fire-and-forget except `pre_llm_call`, which returns a context string for injection:
+
+| Hook | What NLM does | Blocks turn? |
+|---|---|---|
+| **pre_llm_call** | POST prompt to daemon → inject pointer block of relevant prior sessions into context | yes (returns context string) |
+| **post_llm_call** | POST assistant response to daemon → citation scan, `useful_hit_rate` update | no |
+| **on_session_start** | Signal session open → daemon initialises per-session memo | no |
+| **on_session_end** | Signal session close → daemon flushes memo | no |
+| **on_session_finalize** | Signal transcript finalised → triggers async classifier run | no |
+| **on_session_reset** | Signal session reset → daemon clears per-session state | no |
+
+**pi.dev** — one `input` hook registered via `nlm connect pi`. Pi's extension API only exposes `input`, so transcript ingestion is handled separately by the passive adapter scanning `~/.pi/agent/sessions/`:
+
+| Hook | What NLM does | Blocks turn? |
+|---|---|---|
+| **input** | Score user message → if relevant sessions found, prepend pointer block to the prompt text via `{ action: "transform" }` | yes (returns transformed text) |
+
+All three fail-open: any daemon error yields a clean exit and never blocks the model. Switch Claude Code hooks to **shadow** mode (log-only, no injection) with `NLM_HOOK_MODE=shadow`.
 
 ### 2. MCP — explicit tools any agent can call
 
