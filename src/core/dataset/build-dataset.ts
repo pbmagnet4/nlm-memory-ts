@@ -40,6 +40,8 @@ export interface DatasetEntity {
   readonly status: string;
   readonly session_count: number;
   readonly last_seen_session: string | null;
+  /** Renamed display label from the action overlay; absent if not renamed. */
+  readonly display?: string;
 }
 
 export interface DatasetResponse {
@@ -55,6 +57,8 @@ export interface DatasetResponse {
   readonly entity_colors: Record<string, string>;
   readonly entity_type: Record<string, string>;
   readonly entity_status: Record<string, string>;
+  /** canonical → display label; only canonicals with an active rename appear. */
+  readonly entity_display: Record<string, string>;
   readonly metrics: {
     readonly this_week: number;
     readonly last_week: number;
@@ -122,6 +126,7 @@ interface EntityCatalogRow {
   status: string;
   session_count: number;
   last_seen_session: string | null;
+  display?: string;
 }
 
 const EMPTY_DATASET = (dbPath: string, present: boolean): DatasetResponse => ({
@@ -137,6 +142,7 @@ const EMPTY_DATASET = (dbPath: string, present: boolean): DatasetResponse => ({
   entity_colors: {},
   entity_type: {},
   entity_status: {},
+  entity_display: {},
   metrics: { this_week: 0, last_week: 0, sparkline: [0, 0, 0, 0, 0, 0, 0], healthy: 0, sparse: 0, stale: 0, closed_decisions: 0 },
   alerts: [],
   runtimes: [],
@@ -248,6 +254,8 @@ function projectFromDb(db: Database.Database, dbPath: string, includePaths: bool
     else if (overlay.snoozedEntities.has(e.canonical)) e.status = "snoozed";
     const newType = overlay.labeledEntities.get(e.canonical);
     if (newType) e.type = newType;
+    const newDisplay = overlay.renamedEntities.get(e.canonical);
+    if (newDisplay) e.display = newDisplay;
   }
 
   const entityRows = includePaths
@@ -292,10 +300,12 @@ function projectFromDb(db: Database.Database, dbPath: string, includePaths: bool
   const entityColors: Record<string, string> = {};
   const entityType: Record<string, string> = {};
   const entityStatus: Record<string, string> = {};
+  const entityDisplay: Record<string, string> = {};
   for (const e of entityRows) {
     entityColors[e.canonical] = stableColor(e.canonical);
     entityType[e.canonical] = e.type;
     entityStatus[e.canonical] = e.status;
+    if (e.display) entityDisplay[e.canonical] = e.display;
   }
 
   const metrics = computeMetrics(sessions, entityRows);
@@ -315,6 +325,7 @@ function projectFromDb(db: Database.Database, dbPath: string, includePaths: bool
     entity_colors: entityColors,
     entity_type: entityType,
     entity_status: entityStatus,
+    entity_display: entityDisplay,
     metrics,
     alerts,
     runtimes,

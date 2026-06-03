@@ -30,6 +30,8 @@ export interface DatasetEntity {
   status: string;
   session_count: number;
   last_seen_session: string | null;
+  /** Renamed display label from the action overlay; absent if not renamed. */
+  display?: string;
 }
 
 export interface DatasetAlert {
@@ -56,6 +58,8 @@ export interface Dataset {
   entity_colors: Record<string, string>;
   entity_type: Record<string, string>;
   entity_status: Record<string, string>;
+  /** canonical → display label; only canonicals with an active rename are present. */
+  entity_display: Record<string, string>;
   metrics: {
     this_week: number;
     last_week: number;
@@ -125,6 +129,16 @@ export function useDataset(pollMs?: number): DatasetState {
   }, [pollMs, load]);
 
   return { ...state, refetch: load };
+}
+
+/**
+ * Resolve a topic's display label from the canonical storage key. Renames
+ * land in data.entity_display via the action overlay; absent means no rename
+ * and the canonical doubles as the label.
+ */
+export function topicDisplay(data: Dataset | null | undefined, canonical: string): string {
+  if (!data) return canonical;
+  return data.entity_display[canonical] ?? canonical;
 }
 
 export function relativeAge(iso: string | null | undefined): string {

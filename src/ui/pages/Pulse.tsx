@@ -96,7 +96,7 @@ export function PulsePage() {
                 >
                   <span className={`chip-inline status-${s.status}`}>{s.status}</span>
                   <span className="session-label">{s.label}</span>
-                  <span className="session-meta">{relativeAge(s.started_at)} · {s.entities.slice(0, 3).join(", ")}{s.entities.length > 3 ? ` +${s.entities.length - 3}` : ""}</span>
+                  <span className="session-meta">{relativeAge(s.started_at)} · {s.entities.slice(0, 3).map((c) => data.entity_display[c] ?? c).join(", ")}{s.entities.length > 3 ? ` +${s.entities.length - 3}` : ""}</span>
                 </li>
               ))}
             </ul>
@@ -142,7 +142,7 @@ export function PulsePage() {
                   onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setDetailId(a.id); } }}
                 >
                   <span className={`chip-inline severity-${a.severity}`}>{a.severity}</span>
-                  <span className="alert-entity">{a.entity}</span>
+                  <span className="alert-entity" title={data.entity_display[a.entity] ? `Original: ${a.entity}` : undefined}>{data.entity_display[a.entity] ?? a.entity}</span>
                   <span className="alert-summary">{a.summary}</span>
                   <div className="alert-actions" onClick={(e) => e.stopPropagation()}>
                     <button type="button" className="chip" onClick={() => void snoozeAlert(a.id, 7)}>snooze 7d</button>
@@ -239,10 +239,10 @@ function AlertDrawer({ alert, entity, entityColor, sessions, onClose, onDismiss,
   return (
     <>
       <div className="drawer-backdrop" onClick={onClose} />
-      <aside className="session-drawer" role="dialog" aria-modal="true" aria-label={`Alert detail: ${alert.entity}`}>
+      <aside className="session-drawer" role="dialog" aria-modal="true" aria-label={`Alert detail: ${entity?.display ?? alert.entity}`}>
         <header className="drawer-head">
           <span className="dot lg" style={{ background: entityColor }} />
-          <h3 className="drawer-title">{alert.entity}</h3>
+          <h3 className="drawer-title" title={entity?.display ? `Original: ${alert.entity}` : undefined}>{entity?.display ?? alert.entity}</h3>
           <span className={`chip-inline severity-${alert.severity}`}>{alert.severity}</span>
           <button type="button" className="drawer-close" onClick={onClose} aria-label="Close">×</button>
         </header>

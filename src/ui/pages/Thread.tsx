@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { useDataset, relativeAge } from "../lib/dataset.js";
+import { useDataset, relativeAge, topicDisplay } from "../lib/dataset.js";
 import type { DatasetSession, Dataset } from "../lib/dataset.js";
 import { SessionDrawer } from "../components/SessionDrawer.js";
 import { PromoteOpenButton } from "../components/PromoteOpenButton.js";
 import { SessionListSkeleton, Skeleton } from "../components/Skeleton.js";
 import { readViewSettings, type ThreadSort } from "../lib/view-settings.js";
+import { postAction } from "../lib/actions.js";
 
 export function ThreadPage() {
   const { data, loading, error, refetch } = useDataset();
@@ -29,10 +30,45 @@ export function ThreadPage() {
   }, [data, entity, sort]);
 
   const entityColor = entity && data ? (data.entity_colors[entity] ?? "#666") : "#666";
+  const entityLabel = topicDisplay(data, entity);
+  const isRenamed = entity !== entityLabel;
+
+  const [renaming, setRenaming] = useState(false);
+  const [renameDraft, setRenameDraft] = useState("");
+  const [renameBusy, setRenameBusy] = useState(false);
 
   useEffect(() => {
-    if (entity && data) document.title = `${entity} — Thread`;
-  }, [entity, data]);
+    if (entity && data) document.title = `${entityLabel} — Thread`;
+  }, [entity, entityLabel, data]);
+
+  const beginRename = () => {
+    setRenameDraft(entityLabel);
+    setRenaming(true);
+  };
+
+  const cancelRename = () => {
+    setRenaming(false);
+    setRenameDraft("");
+  };
+
+  const commitRename = async () => {
+    const next = renameDraft.trim();
+    if (!next) { cancelRename(); return; }
+    setRenameBusy(true);
+    try {
+      await postAction({
+        kind: "rename_entity",
+        subject_type: "entity",
+        subject_id: entity,
+        payload: { to: next === entity ? "" : next },
+      });
+      await refetch();
+    } finally {
+      setRenameBusy(false);
+      setRenaming(false);
+      setRenameDraft("");
+    }
+  };
 
   const openSession = (id: string) => {
     const next = new URLSearchParams(params);
@@ -68,7 +104,31 @@ export function ThreadPage() {
     <div className="page-pad">
       <div className="thread-header">
         <span className="dot lg" style={{ background: entityColor }} />
-        <h2 className="page-title">{entity}</h2>
+        {renaming ? (
+          <input
+            className="form-input form-input-inline"
+            autoFocus
+            value={renameDraft}
+            disabled={renameBusy}
+            onChange={(ev) => setRenameDraft(ev.target.value)}
+            onKeyDown={(ev) => {
+              if (ev.key === "Enter") { ev.preventDefault(); void commitRename(); }
+              else if (ev.key === "Escape") { ev.preventDefault(); cancelRename(); }
+            }}
+            onBlur={() => void commitRename()}
+            aria-label={`Rename topic ${entity}`}
+          />
+        ) : (
+          <h2 className="page-title" title={isRenamed ? `Original: ${entity}` : undefined}>{entityLabel}</h2>
+        )}
+        {!renaming && (
+          <button
+            type="button"
+            className="chip"
+            onClick={beginRename}
+            title="Rename this topic. Recall still resolves the original name."
+          >rename</button>
+        )}
         <span className="muted">{thread.length} session{thread.length === 1 ? "" : "s"}</span>
         <span className="header-spacer" />
         <div className="filter-group" role="group" aria-label="Sort order">
@@ -353,16 +413,20 @@ function EntityPicker({ data }: { data: Dataset }) {
   const filtered = useMemo(() => {
     const q = entitySearch.toLowerCase().trim();
     const matches = q
-      ? data.entities.filter((e) => e.canonical.toLowerCase().includes(q))
+      ? data.entities.filter((e) =>
+          e.canonical.toLowerCase().includes(q) ||
+          (e.display ?? "").toLowerCase().includes(q),
+        )
       : [...data.entities];
     const result = runtimeFilter === "all"
       ? matches
       : matches.filter((e) => entityRuntimeMap.get(e.canonical)?.has(runtimeFilter) ?? false);
+    const labelOf = (e: typeof data.entities[number]) => e.display ?? e.canonical;
     result.sort((a, b) => {
       if (sort === "most-active") return b.session_count - a.session_count;
       if (sort === "least-active") return a.session_count - b.session_count;
-      if (sort === "a-z") return a.canonical.localeCompare(b.canonical);
-      return b.canonical.localeCompare(a.canonical);
+      if (sort === "a-z") return labelOf(a).localeCompare(labelOf(b));
+      return labelOf(b).localeCompare(labelOf(a));
     });
     return result;
   }, [data.entities, entitySearch, sort, runtimeFilter, entityRuntimeMap]);
@@ -434,7 +498,7 @@ function EntityPicker({ data }: { data: Dataset }) {
           <li key={e.canonical}>
             <Link to={`/thread?entity=${encodeURIComponent(e.canonical)}`} className="card card-lift entity-card">
               <span className="dot" style={{ background: data.entity_colors[e.canonical] ?? "#666" }} />
-              <span className="entity-name">{e.canonical}</span>
+              <span className="entity-name" title={e.display ? `Original: ${e.canonical}` : undefined}>{e.display ?? e.canonical}</span>
               <span className="muted small">{e.session_count}</span>
             </Link>
           </li>

@@ -264,7 +264,7 @@ export function SearchPage() {
             <div className="filter-group" role="group" aria-label="Topic filter" style={{ flexWrap: "wrap" }}>
               <button type="button" className={`chip${entityFilter === "" ? " active" : ""}`} onClick={() => setEntityFilter("")}>all topics</button>
               {topEntities.slice(0, 12).map((e) => (
-                <button key={e} type="button" className={`chip${entityFilter === e ? " active" : ""}`} onClick={() => setEntityFilter(entityFilter === e ? "" : e)}>{e}</button>
+                <button key={e} type="button" className={`chip${entityFilter === e ? " active" : ""}`} onClick={() => setEntityFilter(entityFilter === e ? "" : e)} title={data?.entity_display[e] ? `Original: ${e}` : undefined}>{data?.entity_display[e] ?? e}</button>
               ))}
               {topEntities.length > 12 && (
                 <select
@@ -274,7 +274,7 @@ export function SearchPage() {
                 >
                   <option value="">more topics…</option>
                   {topEntities.slice(12).map((e) => (
-                    <option key={e} value={e}>{e}</option>
+                    <option key={e} value={e}>{data?.entity_display[e] ?? e}</option>
                   ))}
                 </select>
               )}

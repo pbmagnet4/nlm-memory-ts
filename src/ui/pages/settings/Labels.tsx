@@ -28,6 +28,8 @@ export function SettingsLabelsPage() {
   const [pageSize, setPageSize] = useState<number>(50);
   const [page, setPage] = useState(0);
   const [busyEntity, setBusyEntity] = useState<string | null>(null);
+  const [editingEntity, setEditingEntity] = useState<string | null>(null);
+  const [renameDraft, setRenameDraft] = useState("");
 
   const entities = data?.entities ?? [];
 
@@ -43,7 +45,11 @@ export function SettingsLabelsPage() {
       if (type !== "all" && e.type !== type) return false;
       if (status !== "all" && e.status !== status) return false;
       if (!q) return true;
-      return e.canonical.toLowerCase().includes(q) || e.type.toLowerCase().includes(q);
+      return (
+        e.canonical.toLowerCase().includes(q) ||
+        (e.display ?? "").toLowerCase().includes(q) ||
+        e.type.toLowerCase().includes(q)
+      );
     });
     const sorted = [...list];
     sorted.sort((a, b) => {
@@ -93,6 +99,35 @@ export function SettingsLabelsPage() {
     );
   };
 
+  const beginRename = (canonical: string, currentDisplay: string) => {
+    setEditingEntity(canonical);
+    setRenameDraft(currentDisplay);
+  };
+
+  const cancelRename = () => {
+    setEditingEntity(null);
+    setRenameDraft("");
+  };
+
+  const commitRename = (canonical: string) => {
+    const next = renameDraft.trim();
+    // Empty or unchanged → no-op. Reverting to canonical writes an empty
+    // rename row, which the overlay reducer treats as un-rename.
+    if (!next) {
+      cancelRename();
+      return;
+    }
+    cancelRename();
+    void mutate(canonical, () =>
+      postAction({
+        kind: "rename_entity",
+        subject_type: "entity",
+        subject_id: canonical,
+        payload: { to: next === canonical ? "" : next },
+      }).then(() => {}),
+    );
+  };
+
   return (
     <div className="page-pad">
       <SettingsSubnav />
@@ -100,7 +135,7 @@ export function SettingsLabelsPage() {
         <h2 className="page-title">Topics</h2>
         <input
           className="search-input"
-          placeholder="search canonical or type…"
+          placeholder="search topic or type…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
@@ -145,7 +180,7 @@ export function SettingsLabelsPage() {
       <table className="data-table">
         <thead>
           <tr>
-            <th>Canonical</th>
+            <th>Topic</th>
             <th>Type</th>
             <th>Status</th>
             <th className="right">Sessions</th>
@@ -157,11 +192,33 @@ export function SettingsLabelsPage() {
         <tbody>
           {slice.map((e) => {
             const busy = busyEntity === e.canonical;
+            const editing = editingEntity === e.canonical;
+            const display = e.display ?? e.canonical;
             return (
               <tr key={e.canonical} className={busy ? "row-busy" : ""}>
                 <td className="canonical">
                   <span className="dot" style={{ background: data?.entity_colors[e.canonical] ?? "#666" }} />
-                  {e.canonical}
+                  {editing ? (
+                    <input
+                      className="form-input form-input-inline"
+                      autoFocus
+                      value={renameDraft}
+                      onChange={(ev) => setRenameDraft(ev.target.value)}
+                      onKeyDown={(ev) => {
+                        if (ev.key === "Enter") { ev.preventDefault(); commitRename(e.canonical); }
+                        else if (ev.key === "Escape") { ev.preventDefault(); cancelRename(); }
+                      }}
+                      onBlur={() => commitRename(e.canonical)}
+                      aria-label={`Rename topic ${e.canonical}`}
+                    />
+                  ) : (
+                    <span className="topic-name">
+                      {display}
+                      {e.display && (
+                        <span className="muted small mono" title="original storage key">({e.canonical})</span>
+                      )}
+                    </span>
+                  )}
                 </td>
                 <td>
                   <select
@@ -179,6 +236,12 @@ export function SettingsLabelsPage() {
                 <td className="right mono">{e.session_count}</td>
                 <td className="mono small">{e.last_seen_session ?? "—"}</td>
                 <td className="row-actions">
+                  <button
+                    type="button"
+                    className="chip"
+                    disabled={busy || editing}
+                    onClick={() => beginRename(e.canonical, e.display ?? e.canonical)}
+                  >rename</button>
                   <button type="button" className="chip" disabled={busy} onClick={() => void snooze(e.canonical)}>snooze 30d</button>
                   <button type="button" className="chip" disabled={busy} onClick={() => void retire(e.canonical)}>retire</button>
                 </td>

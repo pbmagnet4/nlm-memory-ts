@@ -988,6 +988,8 @@ code, .code-block {
 .data-table tr:hover td { background: var(--surface-1); }
 
 .canonical .dot { margin-right: 8px; vertical-align: middle; }
+.topic-name { display: inline-flex; align-items: baseline; gap: 8px; }
+.topic-name .muted.small.mono { font-size: var(--text-xs); opacity: 0.7; }
 
 .dot {
   display: inline-block;

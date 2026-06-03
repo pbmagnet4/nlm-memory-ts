@@ -17,6 +17,10 @@ export interface ActionOverlay {
   readonly retiredEntities: Set<string>;
   readonly snoozedEntities: Map<string, string>;
   readonly labeledEntities: Map<string, string>;
+  /** entity canonical → new display label. Storage canonical is untouched;
+   *  legacy-name recall still resolves because sessions stay tagged with
+   *  the original canonical. Last non-reverted rename per subject wins. */
+  readonly renamedEntities: Map<string, string>;
   /** open-question ids resolved without becoming decisions */
   readonly resolvedOpens: Set<string>;
   /** open-question id → resolution text (becomes a decision at projection time) */
@@ -36,6 +40,7 @@ export const EMPTY_OVERLAY: ActionOverlay = {
   retiredEntities: new Set(),
   snoozedEntities: new Map(),
   labeledEntities: new Map(),
+  renamedEntities: new Map(),
   resolvedOpens: new Set(),
   promotedOpens: new Map(),
 };
@@ -52,15 +57,19 @@ export function loadActionOverlay(db: Database.Database): ActionOverlay {
     retiredEntities: new Set(),
     snoozedEntities: new Map(),
     labeledEntities: new Map(),
+    renamedEntities: new Map(),
     resolvedOpens: new Set(),
     promotedOpens: new Map(),
   };
 
+  // ORDER BY id keeps reducer deterministic: later writes overwrite earlier
+  // ones, so the latest non-reverted rename per subject wins.
   const rows = db
     .prepare<[], ActionRow>(`
       SELECT kind, subject_type, subject_id, payload
       FROM actions
       WHERE reverted_by IS NULL
+      ORDER BY id
     `)
     .all();
 
@@ -80,6 +89,10 @@ export function loadActionOverlay(db: Database.Database): ActionOverlay {
     } else if (r.kind === "label_entity" && r.subject_type === "entity") {
       const newType = typeof payload?.["new_type"] === "string" ? payload["new_type"] : null;
       if (newType) overlay.labeledEntities.set(r.subject_id, newType);
+    } else if (r.kind === "rename_entity" && r.subject_type === "entity") {
+      const to = typeof payload?.["to"] === "string" ? payload["to"].trim() : "";
+      if (to && to !== r.subject_id) overlay.renamedEntities.set(r.subject_id, to);
+      else overlay.renamedEntities.delete(r.subject_id);
     } else if (r.kind === "resolve_open" && r.subject_type === "open_question") {
       overlay.resolvedOpens.add(r.subject_id);
     } else if (r.kind === "promote_open" && r.subject_type === "open_question") {
