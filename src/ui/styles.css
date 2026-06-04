@@ -1796,10 +1796,11 @@ a.session-label:hover { color: var(--accent); }
   min-height: 0;
   overflow-y: auto;
 }
-.coherence-pagination {
+.coherence-drawer .pagination {
   flex-shrink: 0;
   padding: 10px 18px;
   border-top: 1px solid var(--border-1);
+  margin-top: 0;
 }
 
 /* #264 — Merge picker sub-panel */

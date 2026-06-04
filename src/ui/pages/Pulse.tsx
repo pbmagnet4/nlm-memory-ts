@@ -788,7 +788,7 @@ function CoherenceDrawer({
           </ul>
         </div>
         {rows.length > 0 && (
-          <div className="pagination pagination-compact coherence-pagination">
+          <div className="pagination pagination-compact">
             <div className="page-size">
               <label className="form-label">Per page</label>
               <select
