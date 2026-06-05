@@ -210,7 +210,7 @@ export function ThreadPage() {
             ))}
             {decisions.length === 0 && <li className="muted empty-row">No decisions captured yet.</li>}
             {decisions.length > 30 && (
-              <li style={{ padding: "8px 14px" }}>
+              <li className="list-action-row">
                 <button type="button" className="link-button" onClick={() => setDecisionsExpanded((v) => !v)}>
                   {decisionsExpanded ? "Show less" : `Showing 30 of ${decisions.length} — show all`}
                 </button>
@@ -243,7 +243,7 @@ export function ThreadPage() {
             ))}
             {open.length === 0 && <li className="muted empty-row">No open questions captured yet.</li>}
             {open.length > 30 && (
-              <li style={{ padding: "8px 14px" }}>
+              <li className="list-action-row">
                 <button type="button" className="link-button" onClick={() => setOpenExpanded((v) => !v)}>
                   {openExpanded ? "Show less" : `Showing 30 of ${open.length} — show all`}
                 </button>

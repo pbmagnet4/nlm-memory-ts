@@ -190,7 +190,7 @@ function BarCard({ title, rows, emptyText }: { title: string; rows: BarRow[]; em
     <section className="card">
       <header className="card-head"><h3>{title}</h3></header>
       <div className="bar-stack recall-bars">
-        {rows.length === 0 && <div className="muted small recall-bars-empty">{emptyText}</div>}
+        {rows.length === 0 && <div className="muted empty-row">{emptyText}</div>}
         {rows.map((r) => (
           <div key={r.label} className="bar-item">
             <span className="bar-label recall-bar-label" title={r.label}>{r.label}</span>

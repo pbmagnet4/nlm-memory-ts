@@ -1,3 +1,8 @@
+// Note: SessionDrawer doesn't use the canonical <Drawer> wrapper. Its
+// requirements diverge: arrow-key prev/next nav, supersede palette with
+// nested Escape gating, kebab action menu, and a skeleton rendered
+// outside .drawer-body. Refactoring through Drawer would need too many
+// escape hatches. New drawers should use Drawer + Pagination.
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { SessionDrawerSkeleton } from "./Skeleton.js";

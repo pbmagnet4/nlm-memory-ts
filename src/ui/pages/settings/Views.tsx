@@ -31,8 +31,8 @@ export function SettingsViewsPage() {
   return (
     <div className="page-pad">
       <SettingsSubnav />
-      <div className="form-row" style={{ justifyContent: "space-between" }}>
-        <h2 className="page-title" style={{ margin: 0 }}>Views</h2>
+      <div className="form-row between">
+        <h2 className="page-title">Views</h2>
         {saved && <span className="muted small">Saved</span>}
       </div>
       <div className="form-grid">

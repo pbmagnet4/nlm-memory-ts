@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { SettingsSubnav } from "./SettingsSubnav.js";
+import { confirmAction } from "../../lib/confirm.js";
 import {
   fetchProviders,
   testProvider,
@@ -42,7 +43,13 @@ export function SettingsProvidersPage() {
   };
 
   const remove = async (row: ProviderRow) => {
-    if (!confirm(`Delete provider "${row.name}"? The Classifier will fall back to another provider if this one was active.`)) return;
+    const ok = await confirmAction({
+      title: `Delete provider "${row.name}"?`,
+      message: "The Classifier will fall back to another provider if this one was active.",
+      confirmLabel: "Delete",
+      kind: "danger",
+    });
+    if (!ok) return;
     await fetch(`/api/providers/${row.id}`, { method: "DELETE" });
     await load();
   };
@@ -63,8 +70,8 @@ export function SettingsProvidersPage() {
   return (
     <div className="page-pad">
       <SettingsSubnav />
-      <div className="form-row" style={{ justifyContent: "space-between" }}>
-        <h2 className="page-title" style={{ margin: 0 }}>Providers</h2>
+      <div className="form-row between">
+        <h2 className="page-title">Providers</h2>
         <button type="button" className="btn btn-accent" onClick={() => setShowWizard(true)}>
           Add provider
         </button>
@@ -120,7 +127,7 @@ export function SettingsProvidersPage() {
                     )}
                   </td>
                   <td>
-                    <div className="form-row" style={{ gap: "0.5rem" }}>
+                    <div className="form-row tight">
                       <button type="button" className="btn small" onClick={() => void runTest(p)}>
                         Test
                       </button>
@@ -283,11 +290,11 @@ function AddProviderWizard({
       </div>
 
       {testInline && !testInline.ok && (
-        <p className="muted error small">
+        <p className="form-error">
           Saved, but test failed: {testInline.error} ({testInline.latencyMs}ms). You can edit or delete from the list.
         </p>
       )}
-      {err && <p className="muted error small">{err}</p>}
+      {err && <p className="form-error">{err}</p>}
 
       <div className="form-row">
         <button type="button" className="btn btn-accent" onClick={() => void submit(true)} disabled={!canSubmit}>

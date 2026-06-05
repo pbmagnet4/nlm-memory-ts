@@ -26,6 +26,7 @@ export function Skeleton({
 }
 
 export function PulseSkeleton() {
+  const areas = ["pulse-area-coherence", "pulse-area-runtimes", "pulse-area-recent", "pulse-area-stale"] as const;
   return (
     <div className="page-pad">
       <div className="kpi-row">
@@ -39,13 +40,19 @@ export function PulseSkeleton() {
         <div className="kpi"><Skeleton h={56} /></div>
       </div>
       <div className="pulse-grid">
-        {Array.from({ length: 4 }).map((_, i) => (
-          <section key={i} className="card">
+        {areas.map((area, i) => (
+          <section key={area} className={`card pulse-scroll-card ${area}`}>
             <header className="card-head"><Skeleton h={14} w={140} /></header>
-            <div style={{ display: "flex", flexDirection: "column", gap: 10, padding: "12px 0" }}>
-              {Array.from({ length: 5 }).map((__, j) => (
-                <Skeleton key={j} h={12} w={`${65 + ((j * 7) % 30)}%`} />
-              ))}
+            <div className="pulse-scroll-body">
+              <ul className="session-list">
+                {Array.from({ length: 5 }).map((_, j) => (
+                  <li key={j} className="session-row">
+                    <Skeleton h={14} w={48} radius={10} />
+                    <Skeleton h={12} w={`${50 + ((i + j) * 11) % 35}%`} />
+                    <Skeleton h={10} w={40} />
+                  </li>
+                ))}
+              </ul>
             </div>
           </section>
         ))}

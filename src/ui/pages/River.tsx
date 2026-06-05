@@ -3,7 +3,9 @@ import { useNavigate } from "react-router-dom";
 import { useDataset, relativeAge } from "../lib/dataset.js";
 import type { DatasetSession } from "../lib/dataset.js";
 import { SessionDrawer } from "../components/SessionDrawer.js";
+import { Drawer } from "../components/Drawer.js";
 import { Skeleton } from "../components/Skeleton.js";
+import { rowProps } from "../lib/rowProps.js";
 import { readViewSettings } from "../lib/view-settings.js";
 
 type Span = "7d" | "30d" | "90d" | "all";
@@ -324,49 +326,35 @@ interface CellPickerProps {
 }
 
 function CellPicker({ state, entityColor, onClose, onPick, onOpenThread }: CellPickerProps) {
-  useEffect(() => {
-    const onEsc = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
-    window.addEventListener("keydown", onEsc);
-    return () => window.removeEventListener("keydown", onEsc);
-  }, [onClose]);
-
   return (
-    <>
-      <div className="drawer-backdrop" onClick={onClose} />
-      <aside className="session-drawer" role="dialog" aria-modal="true" aria-label={`Sessions on ${state.date}`}>
-        <header className="drawer-head">
+    <Drawer
+      onClose={onClose}
+      ariaLabel={`Sessions on ${state.date}`}
+      head={
+        <>
           <span className="dot lg" style={{ background: entityColor }} />
           <h3 className="drawer-title">{state.entity}</h3>
           <span className="muted small">{state.date}</span>
-          <button type="button" className="drawer-close" onClick={onClose} aria-label="Close">×</button>
-        </header>
-        <div className="drawer-body">
-          <p className="muted small">{state.sessions.length} sessions on this day. Pick one to inspect.</p>
-          <div className="drawer-actions">
-            <button type="button" className="btn btn-accent" onClick={onOpenThread}>Open thread</button>
-          </div>
-          <ul className="session-list">
-            {state.sessions.map((s) => (
-              <li
-                key={s.id}
-                className="session-row session-row-detail clickable"
-                onClick={() => onPick(s.id)}
-                role="button"
-                tabIndex={0}
-                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onPick(s.id); } }}
-              >
-                <span className={`chip-inline status-${s.status}`}>{s.status}</span>
-                <div className="session-row-main">
-                  <span className="session-label">{s.label}</span>
-                  <span className="session-meta">{s.summary}</span>
-                </div>
-                <span className="muted small mono">{relativeAge(s.started_at)}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      </aside>
-    </>
+        </>
+      }
+    >
+      <p className="muted small">{state.sessions.length} sessions on this day. Pick one to inspect.</p>
+      <div className="drawer-actions">
+        <button type="button" className="btn btn-accent" onClick={onOpenThread}>Open thread</button>
+      </div>
+      <ul className="session-list">
+        {state.sessions.map((s) => (
+          <li key={s.id} className="session-row session-row-detail clickable" {...rowProps(() => onPick(s.id))}>
+            <span className={`chip-inline status-${s.status}`}>{s.status}</span>
+            <div className="session-row-main">
+              <span className="session-label">{s.label}</span>
+              <span className="session-meta">{s.summary}</span>
+            </div>
+            <span className="muted small mono">{relativeAge(s.started_at)}</span>
+          </li>
+        ))}
+      </ul>
+    </Drawer>
   );
 }
 

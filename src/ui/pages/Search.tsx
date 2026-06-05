@@ -311,7 +311,7 @@ export function SearchPage() {
           return (
             <li
               key={s.id}
-              className={`session-row session-row-detail clickable${drawerSid === s.id ? " is-active" : ""}`}
+              className={`session-row session-row-detail clickable${drawerSid === s.id ? " is-selected" : ""}`}
               onClick={() => openSession(s.id)}
             >
               <span className={`chip-inline status-${s.status}`}>{s.status}</span>

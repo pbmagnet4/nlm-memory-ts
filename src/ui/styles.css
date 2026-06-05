@@ -61,9 +61,30 @@
   --r-md: 5px;
   --r-lg: 7px;
 
-  /* Motion */
-  --ease:      0.15s ease;
+  /* Motion. Tokens are `<duration> <timing>` — apply via
+     `transition: <property> var(--ease)`. Pick by speed-feel:
+     fast = micro feedback (opacity, item ticks);
+     base = most interactions (hover background, color);
+     slow = larger visual changes (bar fills, panel slides). */
   --ease-fast: 0.1s ease;
+  --ease:      0.15s ease;
+  --ease-slow: 0.3s ease;
+
+  /* Z-index scale. Each layer has a 10-unit gap so future "between" cases
+     can land at 25, 45, etc. without anyone forcing 49 or 51. Never write a
+     raw z-index value — pick the layer that matches the semantic role. */
+  --z-base:        0;   /* default stacking context                        */
+  --z-raised:      1;   /* hover-to-front, in-card chart layers            */
+  --z-sticky:     10;   /* sticky page headers                             */
+  --z-sidenav:    20;   /* sidenav rail                                    */
+  --z-dropdown:   30;   /* anchored menus, kebab dropdowns                 */
+  --z-overlay:    40;   /* generic overlay layer (river selection rects)   */
+  --z-drawer-bg:  50;   /* drawer/modal backdrop scrim                     */
+  --z-drawer:     60;   /* slide-in drawer panel                           */
+  --z-palette-bg: 70;   /* command-palette backdrop (sits above drawer)    */
+  --z-palette:    80;   /* command palette (above drawer)                  */
+  --z-tooltip:    90;   /* tooltips, above everything except toast         */
+  --z-toast:     100;   /* toasts/notifications, top of stack              */
 }
 
 /* ── Reset ───────────────────────────────────────────────────────────────── */
@@ -172,6 +193,10 @@ body {
 .btn-primary:hover  { background: #d4eb5e; border-color: #d4eb5e; color: #080808; }
 .btn-accent         { color: var(--accent); border-color: rgba(232,255,110,0.25); }
 .btn-accent:hover   { background: var(--accent-glow); border-color: rgba(232,255,110,0.4); }
+/* Danger only signals on hover — base state inherits .btn so the action
+   reads as neutral until the user commits intent by hovering. */
+.btn-danger:hover   { border-color: var(--danger); color: var(--danger); }
+.btn.small          { padding: 3px 9px; font-size: var(--text-xs); }
 
 .form-row {
   display: flex;
@@ -180,8 +205,9 @@ body {
   flex-wrap: wrap;
   margin: 12px 0;
 }
+.form-row.between { justify-content: space-between; }
+.form-row.tight { gap: 8px; }
 .form-row .form-label { color: var(--text-3); font-size: var(--text-xs); }
-.btn-danger:hover   { border-color: var(--danger); color: var(--danger); }
 
 /* File input — restyle the native picker button to match .btn; the
    filename text stays native but tuned to the app's muted mono. */
@@ -374,7 +400,7 @@ input[type="file"].file-input:disabled::file-selector-button {
 .app-header {
   position: sticky;
   top: 0;
-  z-index: 50;
+  z-index: var(--z-sticky);
   height: 52px;
   padding: 0 var(--page-x);
   display: flex;
@@ -427,8 +453,8 @@ input[type="file"].file-input:disabled::file-selector-button {
   top: 0;
   height: 100vh;
   overflow: hidden;
-  transition: width 150ms ease;
-  z-index: 100;
+  transition: width var(--ease);
+  z-index: var(--z-sidenav);
 }
 
 .sidenav.collapsed { width: 52px; }
@@ -444,7 +470,7 @@ input[type="file"].file-input:disabled::file-selector-button {
 }
 
 .sidenav-wordmark {
-  font-size: 11px;
+  font-size: var(--text-sm);
   font-family: var(--font-mono);
   letter-spacing: 0.2em;
   text-transform: uppercase;
@@ -452,7 +478,7 @@ input[type="file"].file-input:disabled::file-selector-button {
   user-select: none;
   white-space: nowrap;
   overflow: hidden;
-  transition: opacity 100ms ease, width 100ms ease;
+  transition: opacity var(--ease-fast), width var(--ease-fast);
 }
 
 .sidenav.collapsed .sidenav-wordmark { opacity: 0; width: 0; padding: 0; }
@@ -490,7 +516,7 @@ input[type="file"].file-input:disabled::file-selector-button {
   gap: 9px;
   padding: 8px 10px;
   border-radius: var(--r-sm);
-  font-size: 11px;
+  font-size: var(--text-sm);
   font-family: var(--font-mono);
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -513,7 +539,7 @@ input[type="file"].file-input:disabled::file-selector-button {
 
 .item-icon { flex-shrink: 0; display: flex; align-items: center; opacity: 0.7; }
 .sidenav-item.active .item-icon { opacity: 1; }
-.item-label { transition: opacity 100ms ease; }
+.item-label { transition: opacity var(--ease-fast); }
 
 .sidenav.collapsed .item-label { display: none; }
 .sidenav.collapsed .sidenav-item {
@@ -532,7 +558,7 @@ input[type="file"].file-input:disabled::file-selector-button {
   transform: translateY(-50%);
   background: var(--surface-float);
   color: var(--text-1);
-  font-size: 10px;
+  font-size: var(--text-xs);
   font-family: var(--font-mono);
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -542,8 +568,8 @@ input[type="file"].file-input:disabled::file-selector-button {
   white-space: nowrap;
   pointer-events: none;
   opacity: 0;
-  transition: opacity 100ms ease;
-  z-index: 200;
+  transition: opacity var(--ease-fast);
+  z-index: var(--z-tooltip);
 }
 
 .sidenav.collapsed .sidenav-item:hover::after { opacity: 1; }
@@ -554,7 +580,7 @@ input[type="file"].file-input:disabled::file-selector-button {
   flex-shrink: 0;
 }
 
-.sidenav-data { font-size: 10px; }
+.sidenav-data { font-size: var(--text-xs); }
 
 /* ── Update banner (footer-anchored, dismissible per-release) ─────────── */
 .update-banner {
@@ -605,7 +631,7 @@ input[type="file"].file-input:disabled::file-selector-button {
   gap: 8px;
 }
 .update-banner-copy {
-  background: var(--accent, #4a8);
+  background: var(--accent);
   border: none;
   color: var(--bg-1);
   padding: 4px 8px;
@@ -624,7 +650,7 @@ input[type="file"].file-input:disabled::file-selector-button {
   margin: 8px 0 0;
   padding: 6px 8px;
   background: var(--bg-1);
-  border-left: 2px solid var(--accent, #4a8);
+  border-left: 2px solid var(--accent);
   border-radius: 3px;
   color: var(--text-2, var(--text-1));
 }
@@ -647,7 +673,7 @@ input[type="file"].file-input:disabled::file-selector-button {
   cursor: pointer;
 }
 .update-dot {
-  color: var(--accent, #4a8);
+  color: var(--accent);
   font-size: 14px;
   line-height: 1;
   animation: nlm-update-pulse 2.6s ease-in-out infinite;
@@ -755,15 +781,29 @@ input[type="file"].file-input:disabled::file-selector-button {
 
 .live-row:last-child { border-bottom: none; }
 
+/* ── Canonical row states ─────────────────────────────────────────────────
+   Applies to every interactive row regardless of variant. States layer in
+   this order: hover → focus → is-selected → aria-busy/is-disabled.
+   See src/ui/components/README.md for the full specification. */
+.clickable:focus-visible,
+.bar-item-clickable:focus-visible,
+.kpi-clickable:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
+.clickable[aria-busy="true"],
+.clickable.is-disabled,
+.bar-item-clickable[aria-busy="true"],
+.bar-item-clickable.is-disabled {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
 .live-row.clickable {
   cursor: pointer;
   transition: background var(--ease);
 }
 .live-row.clickable:hover { background: var(--surface-2); }
-.live-row.clickable:focus-visible {
-  outline: 1px solid rgba(255, 255, 255, 0.5);
-  outline-offset: -1px;
-}
 
 /* Newly arrived rows flash once so the feed reads as live. */
 .live-row.is-new { animation: fadeSlideIn 200ms ease-out, liveFlash 1200ms ease-out; }
@@ -874,7 +914,8 @@ input[type="file"].file-input:disabled::file-selector-button {
   padding-top: 0;
 }
 
-.page-header .page-title { margin-bottom: 0; }
+.page-header .page-title,
+.form-row.between .page-title { margin-bottom: 0; }
 .page-header .header-spacer,
 .thread-header .header-spacer,
 .river-toolbar .header-spacer { flex: 1; }
@@ -977,8 +1018,41 @@ code, .code-block {
   font-family: var(--font-mono);
   font-size: var(--text-sm);
   border-radius: var(--r-sm);
+  transition: border-color var(--ease);
 }
+.form-input:hover:not(:disabled) { border-color: var(--border-3); }
 .form-input:focus { border-color: var(--border-4); outline: none; }
+/* Keyboard focus gets the accent ring matching every other interactive
+   element. Mouse focus keeps the calmer border-color treatment above. */
+.form-input:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
+.form-input:disabled,
+.form-input.is-disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+/* Invalid state. Use `aria-invalid="true"` (set automatically by browsers
+   on :invalid, but also settable by JS for server-validated errors). */
+.form-input[aria-invalid="true"],
+.form-input.is-invalid {
+  border-color: var(--danger);
+}
+.form-input[aria-invalid="true"]:focus-visible,
+.form-input.is-invalid:focus-visible {
+  outline-color: var(--danger);
+  border-color: var(--danger);
+}
+
+/* Canonical inline error message below a field or above a form. Replaces
+   the ad-hoc `<p className="muted error small">` and `<div className="muted error">`
+   patterns. Use semantically: <p className="form-error">…</p>. */
+.form-error {
+  color: var(--danger);
+  font-size: var(--text-xs);
+  margin: 4px 0 0 0;
+}
 
 /* ── Data table (labels page) ───────────────────────────────────────────── */
 .data-table {
@@ -1008,7 +1082,7 @@ code, .code-block {
   vertical-align: middle;
 }
 
-.data-table tr:hover td { background: var(--surface-1); }
+.data-table tr:hover td { background: var(--surface-2); }
 
 .canonical .dot { margin-right: 8px; vertical-align: middle; }
 .topic-name { display: inline-flex; align-items: baseline; gap: 8px; }
@@ -1153,9 +1227,14 @@ code, .code-block {
 .kpi:hover {
   outline-color: rgba(255, 255, 255, 0.55);
 }
-/* Card hover only applies to cards whose rows are clickable
-   (Recent sessions, Stale alerts). Coherence and Runtimes are
-   read-only — the lift implied clickability that wasn't there. */
+.kpi-clickable {
+  cursor: pointer;
+  text-decoration: none;
+  color: inherit;
+}
+.kpi-clickable:hover .kpi-value { color: var(--accent); }
+.kpi-clickable:hover { border-color: var(--border-3); }
+/* Card outline lifts on hover for any card whose rows respond to a click. */
 .pulse-grid > .pulse-scroll-card:hover {
   outline-color: rgba(255, 255, 255, 0.55);
 }
@@ -1183,7 +1262,10 @@ code, .code-block {
   font-weight: 500;
 }
 
-.bar-stack { padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+/* Bars sit edge-to-edge inside .pulse-scroll-body, matching the row chrome
+   used by every other Pulse panel (Runtimes, Recent sessions, Stale alerts).
+   The bar track + fill inside is the visualization; the row shell is shared. */
+.bar-stack { display: flex; flex-direction: column; padding: 4px 0; }
 .bar-item  {
   display: grid;
   grid-template-columns: 80px 1fr auto;
@@ -1191,22 +1273,22 @@ code, .code-block {
   align-items: center;
   background: transparent;
   border: 0;
-  padding: 6px 4px;
-  border-radius: var(--r-sm);
+  border-bottom: 1px solid var(--border-1);
+  padding: 8px 14px;
   width: 100%;
   text-align: left;
   color: inherit;
   font: inherit;
 }
+.bar-stack .bar-item:last-child { border-bottom: none; }
 .bar-item-clickable { cursor: pointer; transition: background var(--ease); }
 .bar-item-clickable:hover { background: var(--surface-2); }
 .bar-item-clickable:hover .bar-label { color: var(--accent); }
-.bar-item-clickable:focus-visible { outline: 1px solid var(--border-4); outline-offset: -1px; }
-.bar-item[disabled] { cursor: default; opacity: 0.7; }
+.bar-item[disabled] { cursor: default; opacity: 0.5; }
 
 .bar-label { font-size: var(--text-sm); color: var(--text-2); }
 .bar-track { height: 8px; background: var(--surface-2); border-radius: 4px; overflow: hidden; }
-.bar-fill  { height: 100%; transition: width 0.3s ease; }
+.bar-fill  { height: 100%; transition: width var(--ease-slow); }
 .bar-fill.tone-active { background: var(--accent); }
 .bar-fill.tone-warn   { background: var(--warn); }
 .bar-fill.tone-danger { background: var(--danger); }
@@ -1240,7 +1322,6 @@ code, .code-block {
   white-space: nowrap;
 }
 .recall-bars .bar-value { min-width: 0; }
-.recall-bars-empty { padding: 4px 0; }
 
 @media (max-width: 720px) {
   .recall-head { flex-direction: column; gap: 12px; }
@@ -1253,7 +1334,7 @@ code, .code-block {
   grid-template-columns: 12px 1fr auto auto;
   align-items: center;
   gap: 10px;
-  padding: 8px 12px;
+  padding: 8px 14px;
   border-bottom: 1px solid var(--border-1);
 }
 .runtime-row:last-child { border-bottom: none; }
@@ -1270,9 +1351,12 @@ code, .code-block {
 .runtime-counts-sep { margin: 0 6px; opacity: 0.5; }
 .runtime-counts-prev { opacity: 0.7; }
 .runtime-age { min-width: 60px; text-align: right; }
+.runtime-row.clickable { cursor: pointer; transition: background var(--ease); }
+.runtime-row.clickable:hover { background: var(--surface-2); }
+.runtime-row.clickable:hover .runtime-name { color: var(--accent); }
+.runtime-topics { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 4px; align-items: center; }
 
 .alert-list { list-style: none; padding: 4px 0; }
-.alert-row-empty { padding: 16px 14px; }
 
 .alert-row {
   display: grid;
@@ -1307,7 +1391,6 @@ code, .code-block {
 
 .alert-row.clickable { cursor: pointer; transition: background var(--ease); }
 .alert-row.clickable:hover { background: var(--surface-2); }
-.alert-row.clickable:focus-visible { outline: 1px solid var(--border-4); outline-offset: -2px; }
 .alert-row.clickable:hover .alert-entity { color: var(--accent); }
 
 .drawer-actions {
@@ -1594,7 +1677,7 @@ a.session-label:hover { color: var(--accent); }
   padding: 2px 8px;
 }
 
-.row-busy { opacity: 0.5; pointer-events: none; transition: opacity 0.15s ease; }
+.row-busy { opacity: 0.5; pointer-events: none; transition: opacity var(--ease); }
 
 .form-input-inline {
   padding: 3px 8px;
@@ -1616,7 +1699,7 @@ a.session-label:hover { color: var(--accent); }
   border-left: 1px dashed var(--accent);
   border-right: 1px dashed var(--accent);
   pointer-events: none;
-  z-index: 1;
+  z-index: var(--z-raised);
 }
 
 .river-lane-label {
@@ -1632,12 +1715,12 @@ a.session-label:hover { color: var(--accent); }
   outline: 1px solid transparent;
   outline-offset: 1px;
   position: relative;
-  z-index: 0;
+  z-index: var(--z-base);
 }
 
 .river-cell:hover {
   outline-color: rgba(255, 255, 255, 0.7);
-  z-index: 1;
+  z-index: var(--z-raised);
 }
 
 .river-hover {
@@ -1651,7 +1734,7 @@ a.session-label:hover { color: var(--accent); }
   padding: 6px 10px;
   font-size: var(--text-xs);
   pointer-events: none;
-  z-index: 200;
+  z-index: var(--z-tooltip);
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
 }
 
@@ -1660,13 +1743,12 @@ a.session-label:hover { color: var(--accent); }
   font-size: var(--text-sm);
 }
 
-/* ── Thread drawer ─────────────────────────────────────────────────────── */
+/* ── Clickable session rows ────────────────────────────────────────────── */
+/* Canonical: rows sit on surface-1 (cards, drawer bodies), hover steps up
+   to surface-2, and the primary label tints to accent. */
 .session-row.clickable { cursor: pointer; transition: background var(--ease); }
-.session-row.clickable:hover { background: var(--surface-1); }
-/* Pulse Recent Sessions: match the stale-alerts hover treatment so both
-   feed rows read as obviously clickable. */
-.pulse-area-recent .session-row.clickable:hover { background: var(--surface-2); }
-.pulse-area-recent .session-row.clickable:hover .session-label { color: var(--accent); }
+.session-row.clickable:hover { background: var(--surface-2); }
+.session-row.clickable:hover .session-label { color: var(--accent); }
 
 .link-button {
   background: none;
@@ -1684,7 +1766,7 @@ a.session-label:hover { color: var(--accent); }
   position: fixed;
   inset: 0;
   background: rgba(0, 0, 0, 0.55);
-  z-index: 199;
+  z-index: var(--z-drawer-bg);
   animation: fadeIn 0.15s ease;
 }
 
@@ -1702,7 +1784,7 @@ a.session-label:hover { color: var(--accent); }
   background: var(--surface-1);
   border-left: 1px solid var(--border-3);
   box-shadow: -16px 0 40px rgba(0, 0, 0, 0.55);
-  z-index: 200;
+  z-index: var(--z-drawer);
   display: flex;
   flex-direction: column;
   animation: slideInRight 0.18s ease;
@@ -1761,7 +1843,12 @@ a.session-label:hover { color: var(--accent); }
 
 /* Coherence drawer row treatment — matches Recent Sessions hover so the
    reclassification rows read as obviously clickable. */
-.coherence-session-list .session-row { transition: background var(--ease); }
+.coherence-session-list .session-row {
+  grid-template-columns: auto 1fr auto auto;
+  transition: background var(--ease);
+}
+.coherence-session-list .coherence-meta { white-space: nowrap; }
+.coherence-session-list .session-row { cursor: pointer; }
 .coherence-session-list .session-row:hover { background: var(--surface-2); }
 .coherence-session-list .session-row:hover .session-label { color: var(--accent); }
 .coherence-session-list .session-row[aria-busy="true"] { opacity: 0.5; pointer-events: none; }
@@ -1798,9 +1885,11 @@ a.session-label:hover { color: var(--accent); }
 }
 .coherence-drawer .pagination {
   flex-shrink: 0;
-  padding: 10px 18px;
   border-top: 1px solid var(--border-1);
   margin-top: 0;
+}
+.coherence-drawer .pagination.pagination-compact {
+  padding: 10px 18px;
 }
 
 /* #264 — Merge picker sub-panel */
@@ -1826,13 +1915,27 @@ a.session-label:hover { color: var(--accent); }
   border-radius: 4px;
   cursor: pointer;
 }
-.merge-result-row:hover { background: var(--surface-3); }
-.merge-result-row.selected {
+.merge-result-row:hover { background: var(--surface-float); }
+.merge-result-row.is-selected {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
-  background: var(--surface-3);
+  background: var(--surface-float);
 }
 .coherence-rows-dimmed { opacity: 0.4; pointer-events: none; }
+
+.coherence-filters {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.coherence-search { width: 100%; }
+.coherence-filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
 
 .drawer-section {
   font-size: var(--text-xs);
@@ -1937,7 +2040,7 @@ a.session-label:hover { color: var(--accent); }
   background: none;
   border: none;
   color: var(--text-3);
-  font-size: 18px;
+  font-size: var(--text-lg);
   line-height: 1;
   cursor: pointer;
   padding: 4px 8px;
@@ -1950,7 +2053,7 @@ a.session-label:hover { color: var(--accent); }
   position: absolute;
   top: calc(100% + 4px);
   right: 0;
-  z-index: 60;
+  z-index: var(--z-dropdown);
   margin: 0;
   padding: 4px;
   list-style: none;
@@ -1982,7 +2085,7 @@ a.session-label:hover { color: var(--accent); }
   position: fixed;
   inset: 0;
   background: rgba(0,0,0,0.55);
-  z-index: 90;
+  z-index: var(--z-palette-bg);
 }
 
 .supersede-palette {
@@ -1997,7 +2100,7 @@ a.session-label:hover { color: var(--accent); }
   background: var(--bg-1);
   border: 1px solid var(--border-1);
   border-radius: 8px;
-  z-index: 100;
+  z-index: var(--z-palette);
   box-shadow: 0 24px 60px rgba(0,0,0,0.45);
 }
 
@@ -2063,7 +2166,7 @@ a.session-label:hover { color: var(--accent); }
 }
 .palette-input:focus {
   outline: none;
-  border-color: var(--accent, #4a8);
+  border-color: var(--accent);
 }
 
 .palette-list {
@@ -2093,7 +2196,7 @@ a.session-label:hover { color: var(--accent); }
 .palette-row:last-child { border-bottom: none; }
 .palette-row--hot { background: var(--bg-2); }
 .palette-row:focus-visible {
-  outline: 2px solid var(--accent, #4a8);
+  outline: 2px solid var(--accent);
   outline-offset: -2px;
 }
 .palette-row[aria-selected="true"] .palette-row-date,
@@ -2111,7 +2214,7 @@ a.session-label:hover { color: var(--accent); }
   padding: 10px 12px;
   background: var(--bg-2);
   border-radius: 4px;
-  border-left: 2px solid var(--accent, #4a8);
+  border-left: 2px solid var(--accent);
 }
 .palette-pick .palette-context-id { grid-column: 2 / 3; }
 .palette-undo {
@@ -2147,7 +2250,7 @@ a.session-label:hover { color: var(--accent); }
 }
 .palette-hint { font-family: var(--font-mono); }
 .palette-confirm {
-  background: var(--accent, #4a8);
+  background: var(--accent);
   border: none;
   color: var(--bg-1);
   padding: 8px 14px;
@@ -2313,7 +2416,123 @@ a.session-label:hover { color: var(--accent); }
 .river-legend-cell.tier-4 { background: var(--accent); }
 
 /* ── Empty row ───────────────────────────────────────────────────────────── */
-.empty-row { color: var(--text-2); padding: 16px 0; font-size: var(--text-sm); }
+/* Canonical empty-state row. Sits inside a list/table/stack where rows would
+   normally render. Horizontal padding matches row chrome (14px); vertical
+   gives more breathing room than a regular row to read as a callout. */
+.empty-row { color: var(--text-2); padding: 16px 14px; font-size: var(--text-sm); }
+/* Row-shaped slot for "show more" / "load more" interactions inside a list
+   of data rows. Matches row chrome padding so the toggle aligns with rows. */
+.list-action-row { padding: 8px 14px; }
+
+/* ── Toast ─────────────────────────────────────────────────────────────── */
+.toast-host {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: var(--z-toast);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: min(420px, calc(100vw - 48px));
+  pointer-events: none;
+}
+.toast {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  background: var(--surface-float);
+  border: 1px solid var(--border-3);
+  border-left: 3px solid var(--text-2);
+  border-radius: var(--r-md);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  font-size: var(--text-sm);
+  color: var(--text-1);
+  pointer-events: auto;
+  animation: fadeSlideIn 200ms ease-out;
+}
+.toast-success { border-left-color: var(--accent); }
+.toast-error   { border-left-color: var(--danger); }
+.toast-info    { border-left-color: var(--text-2); }
+.toast-message { flex: 1; line-height: var(--lh-base); }
+.toast-close {
+  background: transparent;
+  border: 0;
+  color: var(--text-3);
+  cursor: pointer;
+  font-size: var(--text-lg);
+  line-height: 1;
+  padding: 0 2px;
+  margin-top: -2px;
+}
+.toast-close:hover { color: var(--text-1); }
+
+/* ── Tooltip ───────────────────────────────────────────────────────────── */
+.tooltip-anchor {
+  position: relative;
+  display: inline-flex;
+}
+.tooltip {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%) translateY(-4px);
+  background: var(--surface-float);
+  color: var(--text-1);
+  border: 1px solid var(--border-3);
+  border-radius: var(--r-sm);
+  padding: 4px 8px;
+  font-size: var(--text-xs);
+  font-family: var(--font-mono);
+  letter-spacing: 0.04em;
+  max-width: 240px;
+  width: max-content;
+  text-align: center;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--ease-fast), transform var(--ease-fast);
+  z-index: var(--z-tooltip);
+}
+.tooltip-top    .tooltip { bottom: 100%; margin-bottom: 4px; }
+.tooltip-bottom .tooltip { top: 100%; margin-top: 4px; }
+.tooltip-anchor:hover .tooltip,
+.tooltip-anchor:focus-within .tooltip {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+/* ── Confirm dialog ────────────────────────────────────────────────────── */
+.confirm-dialog {
+  position: fixed;
+  top: 22vh;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(440px, 92vw);
+  background: var(--surface-float);
+  border: 1px solid var(--border-3);
+  border-radius: var(--r-md);
+  padding: 20px 22px 16px;
+  z-index: var(--z-palette);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+  animation: fadeSlideIn 200ms ease-out;
+}
+.confirm-title {
+  margin: 0 0 8px 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-base);
+  color: var(--text-1);
+  letter-spacing: 0.04em;
+}
+.confirm-message {
+  margin: 0 0 16px 0;
+  color: var(--text-2);
+  font-size: var(--text-sm);
+  line-height: var(--lh-base);
+}
+.confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
 
 /* ── Session meta 2-line wrap ───────────────────────────────────────────── */
 .session-meta {
@@ -2365,9 +2584,9 @@ a.session-label:hover { color: var(--accent); }
 /* ── Search page additions ───────────────────────────────────────────────── */
 .search-hint { margin: 8px 0 12px; }
 
-.search-header { position: sticky; top: 0; z-index: 10; background: var(--surface-0); padding-bottom: 12px; border-bottom: 1px solid var(--border-1); margin-bottom: 16px; }
+.search-header { position: sticky; top: 0; z-index: var(--z-sticky); background: var(--surface-0); padding-bottom: 12px; border-bottom: 1px solid var(--border-1); margin-bottom: 16px; }
 
-.session-row.is-active { background: var(--surface-2); border-left: 2px solid var(--accent); padding-left: 12px; }
+.session-row.is-selected { background: var(--surface-2); border-left: 2px solid var(--accent); padding-left: 12px; }
 
 .live-tag[data-kind="summary"] { background: var(--surface-2); color: var(--text-2); }
 .live-tag[data-kind="label"]   { background: var(--surface-2); color: var(--text-1); }

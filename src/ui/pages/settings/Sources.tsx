@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { SettingsSubnav } from "./SettingsSubnav.js";
+import { toast } from "../../lib/toast.js";
+import { confirmAction } from "../../lib/confirm.js";
 import {
   fetchSources,
   SOURCE_KINDS,
@@ -40,28 +42,40 @@ export function SettingsSourcesPage() {
   };
 
   const remove = async (row: SourceRow) => {
-    if (!confirm(`Delete source "${row.name}"? This stops scanning but leaves ingested sessions in place.`)) return;
+    const ok = await confirmAction({
+      title: `Delete source "${row.name}"?`,
+      message: "This stops scanning but leaves ingested sessions in place.",
+      confirmLabel: "Delete",
+      kind: "danger",
+    });
+    if (!ok) return;
     await fetch(`/api/sources/${row.id}`, { method: "DELETE" });
     await load();
   };
 
   const regenerateToken = async (row: SourceRow) => {
-    if (!confirm(`Regenerate token for "${row.name}"? Any client using the current token will stop working.`)) return;
+    const ok = await confirmAction({
+      title: `Regenerate token for "${row.name}"?`,
+      message: "Any client using the current token will stop working.",
+      confirmLabel: "Regenerate",
+      kind: "danger",
+    });
+    if (!ok) return;
     const r = await fetch(`/api/sources/${row.id}/regenerate-token`, { method: "POST" });
     const data = (await r.json()) as { token?: string; error?: string };
     if (data.token) {
       setRevealedToken({ name: row.name, token: data.token });
       await load();
     } else {
-      alert(`Failed: ${data.error ?? r.statusText}`);
+      toast.error(`Failed to regenerate token: ${data.error ?? r.statusText}`);
     }
   };
 
   return (
     <div className="page-pad">
       <SettingsSubnav />
-      <div className="form-row" style={{ justifyContent: "space-between" }}>
-        <h2 className="page-title" style={{ margin: 0 }}>Sources</h2>
+      <div className="form-row between">
+        <h2 className="page-title">Sources</h2>
         <button type="button" className="btn btn-accent" onClick={() => setShowWizard(true)}>
           Add source
         </button>
@@ -103,7 +117,7 @@ export function SettingsSourcesPage() {
                   </span>
                 </td>
                 <td>
-                  <div className="form-row" style={{ gap: "0.5rem" }}>
+                  <div className="form-row tight">
                     <button type="button" className="btn small" onClick={() => void toggleEnabled(s)}>
                       {s.enabled ? "Disable" : "Enable"}
                     </button>
@@ -311,7 +325,7 @@ function AddSourceWizard({
         </p>
       )}
 
-      {err && <p className="muted error small">{err}</p>}
+      {err && <p className="form-error">{err}</p>}
 
       <div className="form-row">
         <button type="button" className="btn btn-accent" onClick={() => void submit()} disabled={!canSubmit}>

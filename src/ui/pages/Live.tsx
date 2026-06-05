@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { usePolledEndpoint, relativeTime } from "../lib/api.js";
 import type { PolledResult, RecentMarker, RecentRead, RecentWrite } from "../lib/api.js";
 import { SessionDrawer } from "../components/SessionDrawer.js";
+import { rowProps } from "../lib/rowProps.js";
 
 const POLL_MS = 3000;
 /** Past this many ms with no successful fetch, the board is treated as stale. */
@@ -242,16 +243,11 @@ function Row({
   return (
     <div
       className={`live-row clickable${fresh ? " is-new" : ""}${related ? " is-related" : ""}`}
-      onClick={onOpen}
+      {...rowProps(onOpen)}
       onMouseEnter={onHover ? () => onHover(true) : undefined}
       onMouseLeave={onHover ? () => onHover(false) : undefined}
       onFocus={onHover ? () => onHover(true) : undefined}
       onBlur={onHover ? () => onHover(false) : undefined}
-      role="button"
-      tabIndex={0}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onOpen(); }
-      }}
     >
       {children}
     </div>

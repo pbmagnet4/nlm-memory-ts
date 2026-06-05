@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { SettingsSubnav } from "./SettingsSubnav.js";
+import { confirmAction } from "../../lib/confirm.js";
 
 interface TableStat {
   name: string;
@@ -67,10 +68,13 @@ export function SettingsDataPage() {
   const submitRestore = async () => {
     const file = fileRef.current?.files?.[0];
     if (!file) return;
-    if (!confirm(
-      `Restore from "${file.name}"? Your current database is archived (not deleted), ` +
-      `and the new one takes effect after the daemon restarts.`,
-    )) return;
+    const ok = await confirmAction({
+      title: `Restore from "${file.name}"?`,
+      message: "Your current database is archived (not deleted), and the new one takes effect after the daemon restarts.",
+      confirmLabel: "Restore",
+      kind: "danger",
+    });
+    if (!ok) return;
     setRestoring(true);
     setRestore(null);
     try {

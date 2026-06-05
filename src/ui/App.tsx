@@ -14,11 +14,15 @@ import { SettingsClassifierPage } from "./pages/settings/Classifier.js";
 import { SettingsSourcesPage } from "./pages/settings/Sources.js";
 import { SettingsProvidersPage } from "./pages/settings/Providers.js";
 import { StubPage } from "./pages/Stub.js";
+import { ToastHost } from "./components/Toast.js";
+import { ConfirmDialog } from "./components/ConfirmDialog.js";
 import { readViewSettings } from "./lib/view-settings.js";
 
 export function App() {
   return (
     <div className="page-shell">
+      <ToastHost />
+      <ConfirmDialog />
       <SideNav />
       <div className="page-main">
         <AppHeader />
