@@ -17,3 +17,7 @@ reports/longmemeval/
 # kept on disk for personal history but never tracked in git.
 logs/
 .worktrees/
+
+# Personal sub-project guide for the orchestrator — contains absolute paths to
+# Edward's local vault + Whtnxt Agent workspace, not useful to other contributors.
+CLAUDE.md
