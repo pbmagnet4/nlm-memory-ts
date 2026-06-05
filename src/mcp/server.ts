@@ -322,9 +322,13 @@ Prefer this over recall_sessions when the user wants the *answer*, not the
 + source quote), no scanning required. recall_sessions is the right tool when
 the user wants context, reasoning, or the full discussion.
 
-Returns matching Fact records ordered by recency. Superseded facts are excluded
-by default; call get_fact_history to walk the chain of how a value evolved
-("when did X flip from Fastify to Hono?").
+Returns matching Fact records ordered by relevance. Each hit carries a
+\`corroborationCount\` — the number of distinct sessions across the full
+history that asserted the same (subject, predicate, value). Highly
+corroborated facts are boosted in scoring (log-scale, capped) so an
+"uses DuckDB" asserted across 10 sessions outranks a one-off mention.
+Superseded facts are excluded by default; call get_fact_history to walk
+the chain of how a value evolved ("when did X flip from Fastify to Hono?").
 
 Examples:
   recall_facts(subject="mac-pro-llm-host", predicate="model")

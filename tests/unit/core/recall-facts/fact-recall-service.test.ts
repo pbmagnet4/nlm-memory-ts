@@ -56,6 +56,15 @@ class InMemoryFactStore implements FactStore {
   async getHistory(): Promise<ReadonlyArray<FactHistoryChain>> {
     return [];
   }
+  async corroborationCounts(
+    triples: ReadonlyArray<{ subject: string; predicate: string; value: string }>,
+  ): Promise<Map<string, number>> {
+    // Default: every triple is corroborated by exactly one session (no boost
+    // factor != 1.0). Subclass/spy if a test wants to inject specific counts.
+    const m = new Map<string, number>();
+    for (const t of triples) m.set(`${t.subject} ${t.predicate} ${t.value}`, 1);
+    return m;
+  }
   async upsertEmbedding(): Promise<void> {}
   async ingestSessionFacts(): Promise<void> {}
 }

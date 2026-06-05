@@ -314,6 +314,83 @@ export function runFactStoreContract(h: FactStoreContractHarness): void {
       });
     });
 
+    describe("corroborationCounts", () => {
+      it("returns 0 for triples never asserted", async () => {
+        const counts = await storage.facts.corroborationCounts([
+          { subject: "x", predicate: "y", value: "z" },
+        ]);
+        expect(counts.get("x y z")).toBe(0);
+      });
+
+      it("counts a single assertion as 1", async () => {
+        await storage.facts.insert(
+          makeFact({
+            id: "f1",
+            subject: "polysignal",
+            predicate: "uses",
+            value: "duckdb",
+            sourceSessionId: "sess_parent",
+          }),
+        );
+        const counts = await storage.facts.corroborationCounts([
+          { subject: "polysignal", predicate: "uses", value: "duckdb" },
+        ]);
+        expect(counts.get("polysignal uses duckdb")).toBe(1);
+      });
+
+      it("counts distinct sessions across the full history (including superseded)", async () => {
+        await h.seedSession(storage, makeSession({ id: "sess_a", label: "A" }));
+        await h.seedSession(storage, makeSession({ id: "sess_b", label: "B" }));
+        await h.seedSession(storage, makeSession({ id: "sess_c", label: "C" }));
+        await storage.facts.insertMany([
+          makeFact({ id: "f_a", subject: "p", predicate: "u", value: "duckdb", sourceSessionId: "sess_a" }),
+          makeFact({ id: "f_b", subject: "p", predicate: "u", value: "duckdb", sourceSessionId: "sess_b" }),
+          makeFact({ id: "f_c", subject: "p", predicate: "u", value: "duckdb", sourceSessionId: "sess_c" }),
+        ]);
+        // Mark earlier ones as superseded — the contract is that they STILL count.
+        await storage.facts.markSuperseded("f_a", "f_c");
+        await storage.facts.markSuperseded("f_b", "f_c");
+        const counts = await storage.facts.corroborationCounts([
+          { subject: "p", predicate: "u", value: "duckdb" },
+        ]);
+        expect(counts.get("p u duckdb")).toBe(3);
+      });
+
+      it("does not double-count multiple facts from the same session", async () => {
+        await storage.facts.insertMany([
+          makeFact({ id: "f1", subject: "x", predicate: "y", value: "v", sourceSessionId: "sess_parent" }),
+          makeFact({ id: "f2", subject: "x", predicate: "y", value: "v", sourceSessionId: "sess_parent" }),
+        ]);
+        const counts = await storage.facts.corroborationCounts([
+          { subject: "x", predicate: "y", value: "v" },
+        ]);
+        // Distinct sessions, so 2 rows from one session = 1
+        expect(counts.get("x y v")).toBe(1);
+      });
+
+      it("returns the empty map for empty input", async () => {
+        const counts = await storage.facts.corroborationCounts([]);
+        expect(counts.size).toBe(0);
+      });
+
+      it("batches multiple triples in a single call", async () => {
+        await h.seedSession(storage, makeSession({ id: "sess_a", label: "A" }));
+        await storage.facts.insertMany([
+          makeFact({ id: "f1", subject: "x", predicate: "y", value: "a", sourceSessionId: "sess_parent" }),
+          makeFact({ id: "f2", subject: "x", predicate: "y", value: "a", sourceSessionId: "sess_a" }),
+          makeFact({ id: "f3", subject: "x", predicate: "y", value: "b", sourceSessionId: "sess_a" }),
+        ]);
+        const counts = await storage.facts.corroborationCounts([
+          { subject: "x", predicate: "y", value: "a" },
+          { subject: "x", predicate: "y", value: "b" },
+          { subject: "x", predicate: "y", value: "never-asserted" },
+        ]);
+        expect(counts.get("x y a")).toBe(2);
+        expect(counts.get("x y b")).toBe(1);
+        expect(counts.get("x y never-asserted")).toBe(0);
+      });
+    });
+
     describe("semanticSearch", () => {
       it("returns nearest neighbors by L2 distance over fact_embeddings", async () => {
         await storage.facts.insertMany([

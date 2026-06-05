@@ -40,6 +40,15 @@ const STORAGE_FETCH_CAP = 500;
 const HYBRID_KW_WEIGHT = 0.4;
 const HYBRID_SEM_WEIGHT = 0.6;
 const SEMANTIC_OVERFETCH = 3;
+const DEFAULT_BOOST_CAP = 2.0;
+
+function readBoostCap(): number {
+  const raw = process.env["NLM_FACT_CORROBORATION_BOOST_CAP"];
+  if (raw === undefined) return DEFAULT_BOOST_CAP;
+  const parsed = Number.parseFloat(raw);
+  if (!Number.isFinite(parsed) || parsed < 1) return DEFAULT_BOOST_CAP;
+  return parsed;
+}
 
 const FIELD_WEIGHTS = {
   value: 3,
@@ -128,21 +137,73 @@ export class FactRecallService {
       const rows = candidates
         .slice(0, limit)
         .map((f) => factToHit(f, 0, []));
-      return finalize(queryText, subject, predicate, kind, mode, limit, rows);
+      const boosted = await this.applyCorroboration(rows);
+      return finalize(queryText, subject, predicate, kind, mode, limit, boosted);
     }
 
     if (mode === "keyword") {
-      return finalize(queryText, subject, predicate, kind, mode, limit, kwHits.map(toKeywordHit));
+      const boosted = await this.applyCorroboration(kwHits.map(toKeywordHit));
+      return finalize(queryText, subject, predicate, kind, mode, limit, boosted);
     }
 
     if (mode === "semantic") {
-      return finalize(queryText, subject, predicate, kind, mode, limit, semHits.map(toSemanticHit));
+      const boosted = await this.applyCorroboration(semHits.map(toSemanticHit));
+      return finalize(queryText, subject, predicate, kind, mode, limit, boosted);
     }
 
     // hybrid
     const merged = mergeHybrid(kwHits, semHits, byId);
-    const result = finalize(queryText, subject, predicate, kind, mode, limit, merged);
+    const boosted = await this.applyCorroboration(merged);
+    const result = finalize(queryText, subject, predicate, kind, mode, limit, boosted);
     return semError ? { ...result, modeUnavailable: semError } : result;
+  }
+
+  /**
+   * Fetch corroboration counts for the candidate hits and apply a log-scale
+   * boost to matchScore. Sessions that asserted the same (subject, predicate,
+   * value) get a multiplicative bonus capped at NLM_FACT_CORROBORATION_BOOST_CAP
+   * (default 2.0). Set the env var to 1.0 to disable the boost while still
+   * returning the count on each hit.
+   *
+   * Failure mode: any DB error reverts to returning the raw hits unchanged.
+   * The boost is a quality improvement, not a correctness contract.
+   */
+  private async applyCorroboration(hits: ReadonlyArray<FactHit>): Promise<ReadonlyArray<FactHit>> {
+    if (hits.length === 0) return hits;
+    try {
+      const triples = hits.map((h) => ({
+        subject: h.subject,
+        predicate: h.predicate,
+        value: h.value,
+      }));
+      const counts = await this.deps.factStore.corroborationCounts(triples);
+      const cap = readBoostCap();
+      const boosted: FactHit[] = hits.map((h) => {
+        const key = `${h.subject} ${h.predicate} ${h.value}`;
+        const count = counts.get(key) ?? 1;
+        const factor = Math.min(cap, 1 + Math.log10(Math.max(1, count)));
+        return {
+          ...h,
+          matchScore: round4(h.matchScore * factor),
+          corroborationCount: count,
+        };
+      });
+      // Sort by matchScore, then corroborationCount as tiebreaker — but only
+      // when the boost is active (cap > 1). Cap = 1 means "count is reported
+      // but never affects ranking", so the tiebreaker is skipped to preserve
+      // native order on ties.
+      if (cap > 1) {
+        boosted.sort((a, b) => {
+          if (b.matchScore !== a.matchScore) return b.matchScore - a.matchScore;
+          return (b.corroborationCount ?? 0) - (a.corroborationCount ?? 0);
+        });
+      } else {
+        boosted.sort((a, b) => b.matchScore - a.matchScore);
+      }
+      return boosted;
+    } catch {
+      return hits;
+    }
   }
 
   private async runSemantic(

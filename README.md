@@ -259,6 +259,11 @@ recall: prompt / query
 | `NLM_RECALL_DECAY_FLOOR` | `0.25` | Lower bound on the recency multiplier — even ancient sessions retain at least 25% of their raw score so a perfect-match old session can still surface. |
 | `NLM_RECALL_REWRITE_DEFAULT` | `true` | Default value for the MCP `recall_sessions` `rewrite` parameter. When true, the service runs an LLM rewrite on vague natural-language queries before search. The HTTP hook caller bypasses rewrite regardless (hot-path protection). |
 | `NLM_RECALL_REWRITE_TIMEOUT_MS` | `5000` | Per-call timeout for the rewrite LLM. Separate from the classifier timeout. |
+| `NLM_FACT_CORROBORATION_BOOST_CAP` | `2.0` | Maximum multiplicative boost applied to fact recall scores based on how many sessions corroborate the same `(subject, predicate, value)`. Log-scale: 1 corroboration is 1.0×, 10 is 2.0× (capped). Set to `1.0` to disable the boost — the count is still returned on each hit. |
+| `NLM_HOOK_INJECT_FACTS` | `true` | Whether to attach high-confidence facts about top-hit entities to the pointer block injected by the hook. Set to `0` to disable globally. |
+| `NLM_HOOK_FACT_LIMIT` | `5` | Maximum number of facts in the "Known facts" section of the pointer block. |
+| `NLM_HOOK_FACT_MIN_CORROBORATION` | `2` | Minimum number of sessions that must have asserted a fact before it qualifies for hook injection. Set to `1` to include single-source facts. |
+| `NLM_HOOK_FACT_MIN_CONFIDENCE` | `0.7` | Minimum classifier confidence for a fact to qualify for hook injection. |
 | `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` | — | Required for `nlm digest --telegram` |
 
 ### Changing the classifier from the UI

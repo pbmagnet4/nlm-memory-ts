@@ -14,7 +14,7 @@ import { pathToFileURL } from "node:url";
 import { classifyPrompt } from "@core/hook/gate.js";
 import { appendHookLog } from "@core/hook/hook-log.js";
 import { loadSurfaced, recordSurfaced } from "@core/hook/memo.js";
-import { formatPointerBlock } from "@core/hook/pointer-block.js";
+import { formatPointerBlock, type PointerFact } from "@core/hook/pointer-block.js";
 import { selectHits, type RecallHitInput } from "@core/hook/select.js";
 import { autoloadEnv } from "../llm/env-autoload.js";
 import { recallOverHttp } from "./recall-over-http.js";
@@ -35,9 +35,27 @@ export interface HookInput {
   readonly conversationId: string;
 }
 
+export interface RecallFetchResult {
+  readonly hits: ReadonlyArray<RecallHitInput>;
+  readonly facts: ReadonlyArray<PointerFact>;
+}
+
 export interface RunHookDeps {
   readonly mode: HookMode;
-  readonly recall: (prompt: string) => Promise<ReadonlyArray<RecallHitInput>>;
+  /**
+   * Returns hits + optional related facts. Older callers may return a
+   * bare hit array; runHook normalizes both shapes.
+   */
+  readonly recall: (
+    prompt: string,
+  ) => Promise<ReadonlyArray<RecallHitInput> | RecallFetchResult>;
+}
+
+function normalizeRecall(
+  raw: ReadonlyArray<RecallHitInput> | RecallFetchResult,
+): RecallFetchResult {
+  if (Array.isArray(raw)) return { hits: raw, facts: [] };
+  return raw as RecallFetchResult;
 }
 
 /** Orchestration. Returns the text to emit on stdout ("" for nothing). */
@@ -59,12 +77,13 @@ export async function runHook(input: HookInput, deps: RunHookDeps): Promise<stri
     return "";
   }
 
-  let hits: ReadonlyArray<RecallHitInput> = [];
+  let fetched: RecallFetchResult = { hits: [], facts: [] };
   try {
-    hits = await deps.recall(input.prompt);
+    fetched = normalizeRecall(await deps.recall(input.prompt));
   } catch {
-    hits = [];
+    fetched = { hits: [], facts: [] };
   }
+  const hits = fetched.hits;
 
   const surfaced = loadSurfaced(input.conversationId);
   const selected = selectHits({
@@ -74,7 +93,7 @@ export async function runHook(input: HookInput, deps: RunHookDeps): Promise<stri
     perFireCap: PER_FIRE_CAP,
     perConversationCap: PER_CONVERSATION_CAP,
   });
-  const block = formatPointerBlock(selected);
+  const block = formatPointerBlock(selected, fetched.facts);
   const estTokens = Math.ceil(block.length / 4);
 
   appendHookLog({

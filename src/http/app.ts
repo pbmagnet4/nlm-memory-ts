@@ -479,6 +479,17 @@ function registerRecallRoutes(app: Hono, deps: HttpDeps): void {
       rewrite = rewriteParam === "true" || rewriteParam === "1";
     }
 
+    // Spec G.2: `?withFacts=true` (or hook source = automatic) attaches
+    // a relatedFacts array. Hooks get facts by default; other callers
+    // opt in via the query param.
+    const factsParam = c.req.query("withFacts");
+    let withRelatedFacts: boolean | undefined;
+    if (factsParam !== undefined) {
+      withRelatedFacts = factsParam === "true" || factsParam === "1";
+    } else if (source === "hook") {
+      withRelatedFacts = true;
+    }
+
     const query: RecallQuery = {
       query: q,
       mode: mode as RecallMode,
@@ -486,6 +497,7 @@ function registerRecallRoutes(app: Hono, deps: HttpDeps): void {
       ...(entity !== undefined ? { entity } : {}),
       ...(kind !== undefined ? { kind: kind as RecallKindFilter } : {}),
       ...(rewrite !== undefined ? { rewrite } : {}),
+      ...(withRelatedFacts !== undefined ? { withRelatedFacts } : {}),
     };
     const result = await deps.recall.search(query);
 
@@ -710,6 +722,7 @@ function registerHermesAgentHookRoutes(app: Hono, deps: HttpDeps): void {
         query: userMessage,
         mode: "keyword",
         limit: 5,
+        withRelatedFacts: true,
       });
       const hits: ReadonlyArray<RecallHitInput> = result.results.map((r) => ({
         id: r.id,
@@ -719,9 +732,13 @@ function registerHermesAgentHookRoutes(app: Hono, deps: HttpDeps): void {
       }));
       const surfaced = loadSurfaced(sessionId);
       const selected = selectHits({ hits, surfaced, scoreThreshold: 0, perFireCap: 3, perConversationCap: 10 });
-      if (selected.length === 0) return c.json({ context: null });
-      recordSurfaced(sessionId, selected.map((h) => h.id));
-      return c.json({ context: formatPointerBlock(selected) });
+      if (selected.length === 0 && (result.relatedFacts ?? []).length === 0) {
+        return c.json({ context: null });
+      }
+      if (selected.length > 0) {
+        recordSurfaced(sessionId, selected.map((h) => h.id));
+      }
+      return c.json({ context: formatPointerBlock(selected, result.relatedFacts ?? []) });
     } catch {
       return c.json({ context: null });
     }

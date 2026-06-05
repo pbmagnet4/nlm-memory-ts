@@ -273,6 +273,47 @@ export class PgFactStore implements FactStore {
     }
     return [...byPred.entries()].map(([pred, history]) => ({ subject, predicate: pred, history }));
   }
+
+  async corroborationCounts(
+    triples: ReadonlyArray<{
+      readonly subject: string;
+      readonly predicate: string;
+      readonly value: string;
+    }>,
+  ): Promise<Map<string, number>> {
+    const out = new Map<string, number>();
+    if (triples.length === 0) return out;
+
+    const values: string[] = [];
+    const args: string[] = [];
+    for (let i = 0; i < triples.length; i++) {
+      const t = triples[i]!;
+      const base = i * 3;
+      values.push(`($${base + 1}, $${base + 2}, $${base + 3})`);
+      args.push(t.subject, t.predicate, t.value);
+    }
+    const sql = `
+      WITH q(subject, predicate, value) AS (VALUES ${values.join(", ")})
+      SELECT q.subject, q.predicate, q.value,
+             COUNT(DISTINCT f.source_session_id)::int AS session_count
+      FROM q
+      LEFT JOIN facts f
+        ON f.subject = q.subject
+       AND f.predicate = q.predicate
+       AND f.value = q.value
+      GROUP BY q.subject, q.predicate, q.value
+    `;
+    const result = await this.pool.query<{
+      subject: string;
+      predicate: string;
+      value: string;
+      session_count: number;
+    }>(sql, args);
+    for (const r of result.rows) {
+      out.set(`${r.subject} ${r.predicate} ${r.value}`, r.session_count);
+    }
+    return out;
+  }
 }
 
 function rowToFact(row: FactRow): Fact {

@@ -100,6 +100,11 @@ export class PgTxBoundFactStore implements FactStore {
   listForRecall(_f: FactListFilter): Promise<ReadonlyArray<Fact>> { return noRead("FactStore.listForRecall"); }
   semanticSearch(_v: Float32Array, _n: number): Promise<ReadonlyArray<FactSemanticNeighbor>> { return noRead("FactStore.semanticSearch"); }
   getHistory(_s: string, _p?: string): Promise<ReadonlyArray<FactHistoryChain>> { return noRead("FactStore.getHistory"); }
+  corroborationCounts(
+    _t: ReadonlyArray<{ subject: string; predicate: string; value: string }>,
+  ): Promise<Map<string, number>> {
+    return noRead("FactStore.corroborationCounts");
+  }
 }
 
 export class PgTxBoundSessionStore implements SessionStore {

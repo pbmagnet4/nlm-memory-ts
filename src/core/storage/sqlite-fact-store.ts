@@ -228,6 +228,49 @@ export class SqliteFactStore implements FactStore {
     return chains;
   }
 
+  async corroborationCounts(
+    triples: ReadonlyArray<{
+      readonly subject: string;
+      readonly predicate: string;
+      readonly value: string;
+    }>,
+  ): Promise<Map<string, number>> {
+    const out = new Map<string, number>();
+    if (triples.length === 0) return out;
+
+    // Batched query: COUNT(DISTINCT source_session_id) for each triple.
+    // Uses a CTE join over a VALUES table — SQLite supports this since 3.8.3.
+    // Each row counts how many sessions across the full fact history asserted
+    // the same (subject, predicate, value), including superseded predecessors.
+    const placeholders = triples.map(() => "(?, ?, ?)").join(", ");
+    const args: string[] = [];
+    for (const t of triples) {
+      args.push(t.subject, t.predicate, t.value);
+    }
+    const sql = `
+      WITH q(subject, predicate, value) AS (VALUES ${placeholders})
+      SELECT q.subject, q.predicate, q.value,
+             COUNT(DISTINCT f.source_session_id) AS session_count
+      FROM q
+      LEFT JOIN facts f
+        ON f.subject = q.subject
+       AND f.predicate = q.predicate
+       AND f.value = q.value
+      GROUP BY q.subject, q.predicate, q.value
+    `;
+    type Row = {
+      subject: string;
+      predicate: string;
+      value: string;
+      session_count: number;
+    };
+    const rows = this.db.prepare<unknown[], Row>(sql).all(...args);
+    for (const r of rows) {
+      out.set(`${r.subject} ${r.predicate} ${r.value}`, r.session_count);
+    }
+    return out;
+  }
+
   /**
    * Insert (or replace) the embedding row for a fact. Best-effort: callers
    * trap embedder errors so an unreachable Ollama doesn't roll back ingest.
