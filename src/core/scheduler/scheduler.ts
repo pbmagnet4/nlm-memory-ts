@@ -19,12 +19,15 @@
 
 import type { LLMClient } from "@ports/llm-client.js";
 import type { TranscriptAdapter } from "@ports/transcript-adapter.js";
+import type { SignalStore } from "@ports/signal-store.js";
 import { extractFacts } from "@core/facts/extract-facts.js";
+import { normalizeSignal } from "@core/signals/ingest-signal.js";
 import type { SqliteFactStore } from "@core/storage/sqlite-fact-store.js";
 import type {
   IngestRecord,
   SqliteSessionStore,
 } from "@core/storage/sqlite-session-store.js";
+import type { Signal } from "@shared/types.js";
 import { MAX_CLASSIFY_FAILURES, getFileSize, recordClassified, recordFailed, recordFailedPg, scanOnce, scanOncePg } from "./scan-once.js";
 
 const DEFAULT_INTERVAL_MS = 30 * 60 * 1000; // 30 min, matches Python default
@@ -46,6 +49,11 @@ export interface SchedulerOptions {
    * updated, and for any future caller that wants facts off).
    */
   readonly factStore?: SqliteFactStore | null;
+  /** SignalStore for the self-improvement lane. When set, the tick drains
+   *  each chunk's embedded nlm.signal payloads, decoupled from classification. */
+  readonly signalStore?: SignalStore | null;
+  /** Per-install scope stamped on drained signals. Required when signalStore is set. */
+  readonly installScope?: string;
   readonly intervalMs?: number;
   readonly classifyTimeoutMs?: number;
   readonly confidenceFloor?: number;
@@ -63,9 +71,11 @@ export interface TickReport {
 }
 
 export class ScanScheduler {
-  private readonly opts: Required<Omit<SchedulerOptions, "embedder" | "factStore">> & {
+  private readonly opts: Required<Omit<SchedulerOptions, "embedder" | "factStore" | "signalStore" | "installScope">> & {
     readonly embedder: LLMClient | null;
     readonly factStore: SqliteFactStore | null;
+    readonly signalStore: SignalStore | null;
+    readonly installScope: string;
   };
   private stopped = true;
   private timer: NodeJS.Timeout | null = null;
@@ -77,6 +87,8 @@ export class ScanScheduler {
       classifier: opts.classifier,
       embedder: opts.embedder ?? null,
       factStore: opts.factStore ?? null,
+      signalStore: opts.signalStore ?? null,
+      installScope: opts.installScope ?? "default",
       intervalMs: opts.intervalMs ?? DEFAULT_INTERVAL_MS,
       classifyTimeoutMs: opts.classifyTimeoutMs ?? DEFAULT_CLASSIFY_TIMEOUT_MS,
       confidenceFloor: opts.confidenceFloor ?? DEFAULT_CONFIDENCE_FLOOR,
@@ -129,6 +141,7 @@ export class ScanScheduler {
 
       for (const { chunk, supersedes } of results) {
         chunksSeen += 1;
+        await this.drainSignals(chunk);
 
         let classification;
         try {
@@ -219,6 +232,25 @@ export class ScanScheduler {
     }
 
     return { inserted, skippedLowConfidence, classifyFailures, storageFailures, chunksSeen };
+  }
+
+  private async drainSignals(chunk: { id: string; signals?: ReadonlyArray<unknown> }): Promise<void> {
+    if (!this.opts.signalStore || !chunk.signals?.length) return;
+    try {
+      const normalized: Signal[] = [];
+      for (const raw of chunk.signals) {
+        try {
+          normalized.push(normalizeSignal(raw, this.opts.installScope));
+        } catch {
+          // skip a malformed embedded signal; one bad entry must not lose the rest
+        }
+      }
+      if (normalized.length > 0) await this.opts.signalStore.insertMany(normalized);
+    } catch (e) {
+      this.opts.logger(
+        `[scheduler] signal drain failed for ${chunk.id}: ${e instanceof Error ? e.message : String(e)}`,
+      );
+    }
   }
 }
 
