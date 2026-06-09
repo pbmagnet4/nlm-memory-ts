@@ -13,6 +13,7 @@
 
 import type { FactStore } from "./fact-store.js";
 import type { SessionStore } from "./session-store.js";
+import type { SignalStore } from "./signal-store.js";
 
 export interface StorageContext {
   readonly facts: FactStore;
@@ -22,6 +23,7 @@ export interface StorageContext {
 export interface Storage {
   readonly facts: FactStore;
   readonly sessions: SessionStore;
+  readonly signals: SignalStore;
 
   /**
    * Run `fn` inside an adapter-defined transaction. The handles on the

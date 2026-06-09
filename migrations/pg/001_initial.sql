@@ -193,3 +193,22 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
 
 INSERT INTO schema_migrations (version, name) VALUES (1, '001_initial')
   ON CONFLICT DO NOTHING;
+
+-- Signals - agent self-improvement telemetry lane (mirror of SQLite 017).
+CREATE TABLE IF NOT EXISTS signals (
+  id            TEXT PRIMARY KEY,
+  v             INTEGER NOT NULL DEFAULT 1,
+  install_scope TEXT NOT NULL,
+  kind          TEXT NOT NULL CHECK (kind IN ('gate', 'eval', 'review', 'test')),
+  producer      TEXT NOT NULL,
+  outcome       TEXT NOT NULL CHECK (outcome IN ('pass', 'fail', 'fix', 'exhausted')),
+  model         TEXT NOT NULL,
+  repo          TEXT NOT NULL,
+  step          TEXT,
+  detail        TEXT,
+  session_id    TEXT,
+  ts            TEXT NOT NULL,
+  created_at    TEXT NOT NULL DEFAULT (now()::text)
+);
+CREATE INDEX IF NOT EXISTS idx_signals_agg ON signals(install_scope, repo, model, kind, step);
+CREATE INDEX IF NOT EXISTS idx_signals_ts ON signals(ts);
