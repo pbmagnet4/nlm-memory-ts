@@ -82,6 +82,29 @@ export function usePolledEndpoint<T>(path: string, intervalMs: number, initial: 
   return state;
 }
 
+export interface UiFailureMode {
+  repo: string;
+  model: string;
+  kind: string;
+  step: string | null;
+  total: number;
+  failures: number;
+  failRate: number;
+  lastTs: string;
+}
+
+export interface FailureModeStats {
+  days: number;
+  total: number;
+  modes: UiFailureMode[];
+}
+
+export async function fetchFailureModeStats(days = 14): Promise<FailureModeStats> {
+  const res = await fetch(`/api/signals/stats?days=${days}`);
+  if (!res.ok) throw new Error(`/api/signals/stats → ${res.status}`);
+  return res.json() as Promise<FailureModeStats>;
+}
+
 export function relativeTime(iso: string): string {
   if (!iso) return "";
   const t = Date.parse(iso);

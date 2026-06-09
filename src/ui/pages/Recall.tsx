@@ -11,8 +11,9 @@
  * they distinguish an adoption problem from a corpus-coverage problem.
  */
 
-import { useState } from "react";
-import { usePolledEndpoint } from "../lib/api.js";
+import { useState, useEffect } from "react";
+import { usePolledEndpoint, fetchFailureModeStats, type FailureModeStats, type UiFailureMode } from "../lib/api.js";
+import { fmt } from "../lib/format.js";
 
 interface BaseStats {
   days: number;
@@ -106,6 +107,8 @@ export function RecallPage() {
         extraLabel="Top predicates"
         extraRows={facts.data.top_predicates.map((p) => ({ label: p.predicate, count: p.count }))}
       />
+
+      <FailureModesPanel />
     </div>
   );
 }
@@ -181,6 +184,67 @@ function Kpi({ label, value, hint }: { label: string; value: number | string; hi
       <span className="kpi-value">{typeof value === "number" ? value.toLocaleString() : value}</span>
       {hint && <span className="kpi-hint">{hint}</span>}
     </div>
+  );
+}
+
+const EMPTY_FAILURE_STATS: FailureModeStats = { days: 14, total: 0, modes: [] };
+
+function FailureModesPanel() {
+  const [stats, setStats] = useState<FailureModeStats>(EMPTY_FAILURE_STATS);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetchFailureModeStats(14)
+      .then(setStats)
+      .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)));
+  }, []);
+
+  return (
+    <section className="recall-block">
+      <header className="recall-block-head">
+        <h2 className="page-title">Failure modes (14d)</h2>
+        <p className="muted small">
+          Per-model, per-repo check failure rates over the last 14 days. Rates above 50% are flagged red.
+        </p>
+      </header>
+
+      {error && <div className="muted error small">{error}</div>}
+
+      <section className="card">
+        {stats.modes.length === 0 ? (
+          <div className="muted empty-row">No failure modes captured yet.</div>
+        ) : (
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Model</th>
+                <th>Repo</th>
+                <th>Check</th>
+                <th>Fail rate</th>
+                <th>n</th>
+                <th>Last seen</th>
+              </tr>
+            </thead>
+            <tbody>
+              {stats.modes.map((m: UiFailureMode, i: number) => (
+                <tr key={i}>
+                  <td className="mono">{m.model}</td>
+                  <td>{m.repo}</td>
+                  <td>{m.step ? `${m.kind} / ${m.step}` : m.kind}</td>
+                  <td>
+                    <span className={`chip-inline severity-${m.failRate >= 0.5 ? "high" : "medium"}`}>
+                      {Math.round(m.failRate * 100)}%
+                    </span>
+                  </td>
+                  <td className="mono">{m.total.toLocaleString()}</td>
+                  <td className="muted">{fmt.shortDate(m.lastTs)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </section>
+    </section>
   );
 }
 
