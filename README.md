@@ -444,7 +444,6 @@ The defining property is the editable timeline. mem0 and Letta append; NLM lets 
 - [docs/supersedence.md](docs/supersedence.md) — the editable timeline: statuses, what gets recorded when, how supersedence flows through recall
 - [docs/hooks.md](docs/hooks.md) — full hook lifecycle, modes, selection logic, pointer-block format, logging surface, daily liveness canary
 - [docs/methodology-recall-baseline.md](docs/methodology-recall-baseline.md) — how R@5 = 97.2% is measured + how to run LongMemEval-S on your own machine
-- [docs/signals.md](docs/signals.md) — agent self-improvement signals: full payload contract, failure-mode aggregation algorithm, retention and privacy details
 - [SECURITY.md](SECURITY.md) — threat model + responsible disclosure
 
 ---
