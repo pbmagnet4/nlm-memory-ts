@@ -14,8 +14,8 @@ describe("PiAdapter nlm.signal recognition", () => {
     const lines = [
       JSON.stringify({ type: "session", id: "pi_abc", cwd: "/repo/x" }),
       JSON.stringify({ type: "message", message: { role: "user", content: "do work", timestamp: "2026-06-09T18:00:00Z" } }),
-      JSON.stringify({ type: "custom_message", customType: "nlm.signal", details: { kind: "gate", producer: "qg", outcome: "fail", model: "m", repo: "/repo/x", detail: { step: "types" }, ts: "2026-06-09T18:01:00Z" } }),
-      JSON.stringify({ type: "custom_message", customType: "whtnxt-tasks", content: "ignored" }),
+      JSON.stringify({ type: "custom", customType: "nlm.signal", data: { kind: "gate", producer: "qg", outcome: "fail", model: "m", repo: "/repo/x", detail: { step: "types" }, ts: "2026-06-09T18:01:00Z" } }),
+      JSON.stringify({ type: "custom", customType: "whtnxt-tasks", data: { ignored: true } }),
       JSON.stringify({ type: "message", message: { role: "assistant", content: "done", timestamp: "2026-06-09T18:02:00Z" } }),
     ];
     writeFileSync(file, lines.join("\n"));

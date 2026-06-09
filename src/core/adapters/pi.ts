@@ -126,14 +126,18 @@ export class PiAdapter implements TranscriptAdapter {
         if (typeof evt["cwd"] === "string") projectDir = evt["cwd"];
         continue;
       }
-      if (evtType === "custom_message") {
+      if (evtType === "custom") {
         if (evt["customType"] === "nlm.signal") {
-          const payload = evt["details"] ?? evt["content"];
+          const payload = evt["data"];
           if (payload && typeof payload === "object") signals.push(payload);
         }
         continue;
       }
-      if (evtType === "model_change" || evtType === "thinking_level_change") {
+      if (
+        evtType === "custom_message" ||
+        evtType === "model_change" ||
+        evtType === "thinking_level_change"
+      ) {
         continue;
       }
       if (evtType !== "message") continue;
