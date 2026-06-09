@@ -1,5 +1,5 @@
 /**
- * PgSignalStore — SignalStore over pg.Pool. Receives its Pool from PgStorage.
+ * PgSignalStore - SignalStore over pg.Pool. Receives its Pool from PgStorage.
  * Insert is idempotent via ON CONFLICT (id) DO NOTHING.
  */
 
