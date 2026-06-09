@@ -235,6 +235,7 @@ export class ScanScheduler {
   }
 
   private async drainSignals(chunk: { id: string; signals?: ReadonlyArray<unknown> }): Promise<void> {
+    if (process.env["NLM_SIGNALS_ENABLED"] === "0") return;
     if (!this.opts.signalStore || !chunk.signals?.length) return;
     try {
       const normalized: Signal[] = [];

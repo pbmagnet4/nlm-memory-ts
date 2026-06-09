@@ -216,4 +216,52 @@ describe("ScanScheduler signal drain", () => {
 
     await storage.close();
   });
+
+  it("skips the drain entirely when NLM_SIGNALS_ENABLED=0", async () => {
+    const prev = process.env["NLM_SIGNALS_ENABLED"];
+    process.env["NLM_SIGNALS_ENABLED"] = "0";
+    try {
+      const storage = await memStore();
+      const dir = mkdtempSync(join(tmpdir(), "nlm-sched-gate-"));
+      const transcriptPath = writeTempJsonl(dir, "sess.jsonl");
+      const stored: Signal[] = [];
+      const signalStore: SignalStore = {
+        async insert(s) { stored.push(s); },
+        async insertMany(ss) { stored.push(...ss); },
+        async listForAggregation() { return []; },
+        async countSince() { return 0; },
+        async pruneOlderThan() { return 0; },
+      };
+      const adapter: TranscriptAdapter = {
+        name: "pi",
+        runtimeVersion: "pi/1.0",
+        transcriptKind: "pi-jsonl",
+        detect: () => ({ adapterName: "pi", enabled: true, path: null, hint: null }),
+        discover: async () => [transcriptPath],
+        parseSession: async () =>
+          chunkWithSignals(transcriptPath, [
+            { kind: "gate", producer: "qg", outcome: "fail", model: "m", repo: "/r", detail: { step: "lint" }, ts: "2026-06-09T18:02:00Z" },
+          ]),
+      };
+      const scheduler = new ScanScheduler({
+        store: storage.sessions,
+        adapters: [adapter],
+        classifier: {
+          embed: async () => { throw new Error("no"); },
+          classify: async () => { throw new Error("classify fail"); },
+        },
+        embedder: null,
+        signalStore,
+        installScope: "install-test",
+        idleMinutes: 0,
+        logger: () => {},
+      });
+      await scheduler.tick();
+      expect(stored).toHaveLength(0);
+      await storage.close();
+    } finally {
+      if (prev === undefined) delete process.env["NLM_SIGNALS_ENABLED"];
+      else process.env["NLM_SIGNALS_ENABLED"] = prev;
+    }
+  });
 });
