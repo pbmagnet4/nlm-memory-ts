@@ -90,6 +90,10 @@ import type {
   RecallMode,
   RecallQuery,
 } from "@shared/types.js";
+import type { SignalStore } from "@ports/signal-store.js";
+import { normalizeSignal } from "@core/signals/ingest-signal.js";
+import { buildFailureModeBlock } from "@core/signals/failure-mode-recall.js";
+import { aggregateFailureModes } from "@core/signals/aggregate.js";
 
 export interface HttpDeps {
   readonly recall: RecallService;
@@ -124,6 +128,10 @@ export interface HttpDeps {
    * Omitting this keeps the route absent — no auth surface, no risk.
    */
   readonly mcpDeps?: McpDeps;
+  /** Signal store - wire to enable POST /api/signal + GET /api/signals/*. */
+  readonly signalStore?: SignalStore;
+  /** Per-install scope stamped on every ingested signal. */
+  readonly installScope?: string;
 }
 
 const MIME_TYPES: Record<string, string> = {
@@ -213,6 +221,7 @@ export function createApp(deps: HttpDeps): Hono {
   registerIngestRoute(app, deps);
   registerProviderRoutes(app, deps);
   registerSessionRoute(app, deps);
+  registerSignalRoutes(app, deps);
 
   const nonceStore = createNonceStore();
   registerNonceRoute(app, nonceStore);
@@ -1427,6 +1436,64 @@ function parseProviderUpdate(raw: unknown): ProviderUpdate | null {
   if (typeof r["enabled"] === "boolean") (patch as { enabled?: boolean }).enabled = r["enabled"] as boolean;
   if (Object.keys(patch).length === 0) return null;
   return patch;
+}
+
+function registerSignalRoutes(app: Hono, deps: HttpDeps): void {
+  app.post("/api/signal", async (c) => {
+    if (!deps.signalStore || deps.installScope === undefined) {
+      return c.json({ error: "signal store not wired in this deployment" }, 503);
+    }
+    if (process.env["NLM_SIGNALS_ENABLED"] === "0") {
+      return c.json({ error: "signals disabled" }, 403);
+    }
+    let body: unknown;
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ error: "body must be JSON" }, 400);
+    }
+    let signal;
+    try {
+      signal = normalizeSignal(body, deps.installScope);
+    } catch (e) {
+      return c.json({ error: e instanceof Error ? e.message : "invalid signal" }, 400);
+    }
+    try {
+      await deps.signalStore.insert(signal);
+    } catch {
+      return c.json({ error: "signal insert failed" }, 500);
+    }
+    return c.json({ id: signal.id, status: "accepted" }, 202);
+  });
+
+  app.get("/api/signals/failure-modes", async (c) => {
+    if (!deps.signalStore || deps.installScope === undefined) {
+      return c.json({ error: "signal store not wired in this deployment" }, 503);
+    }
+    const repo = c.req.query("repo");
+    if (!repo) return c.json({ error: "repo is required" }, 400);
+    const model = c.req.query("model");
+    const block = await buildFailureModeBlock(
+      deps.signalStore,
+      { installScope: deps.installScope, repo, ...(model ? { model } : {}) },
+    );
+    return c.json({ repo, model: model ?? null, block });
+  });
+
+  app.get("/api/signals/stats", async (c) => {
+    if (!deps.signalStore || deps.installScope === undefined) {
+      return c.json({ error: "signal store not wired in this deployment" }, 503);
+    }
+    const daysStr = c.req.query("days") ?? "14";
+    const days = Number.parseInt(daysStr, 10);
+    if (!Number.isFinite(days) || days < 1 || days > 365) {
+      return c.json({ error: "days must be 1..365" }, 400);
+    }
+    const sinceTs = new Date(Date.now() - days * 86_400_000).toISOString();
+    const rows = await deps.signalStore.listForAggregation({ installScope: deps.installScope, sinceTs });
+    const modes = aggregateFailureModes(rows);
+    return c.json({ days, total: rows.length, modes });
+  });
 }
 
 function mountSpa(app: Hono, dist: string): void {
