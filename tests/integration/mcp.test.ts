@@ -5,6 +5,7 @@
  */
 
 import { mkdtempSync, rmSync } from "node:fs";
+import { writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -295,6 +296,55 @@ describe("MCP adapter", () => {
       const cBody = parsePayload(cRes) as { supersedes: { id: string }[] };
       expect(cBody.supersedes).toHaveLength(1);
       expect(cBody.supersedes[0]?.id).toBe("sess_a");
+    });
+
+    it("get_session includes reason and recordedBy on supersededBy when log has an entry", async () => {
+      // markSupersededHandler fires appendSupersedence as fire-and-forget I/O.
+      // Write the log entry directly so the read in getSessionHandler sees it
+      // without racing against async disk I/O.
+      store.insertEdgeForTest("sess_b", "sess_a", "supersedes");
+      const logPath = join(tmp, "supersedence-log.jsonl");
+      await writeFile(
+        logPath,
+        JSON.stringify({
+          ts: new Date().toISOString(),
+          predecessor_id: "sess_a",
+          successor_id: "sess_b",
+          reason: "plan revised after client feedback",
+          source: "mcp",
+        }) + "\n",
+        "utf8",
+      );
+      const result = await getSessionHandler({ recall, store }, { id: "sess_a" });
+      type EnrichedSupersededBy = {
+        id: string;
+        label: string;
+        summary: string;
+        reason?: string;
+        recordedBy?: string;
+      } | null;
+      const body = parsePayload(result) as { supersededBy: EnrichedSupersededBy };
+      expect(body.supersededBy).not.toBeNull();
+      expect(body.supersededBy?.reason).toBe("plan revised after client feedback");
+      expect(body.supersededBy?.recordedBy).toBe("mcp");
+    });
+
+    it("get_session has reason undefined on supersededBy when log has no matching entry", async () => {
+      // Insert edge directly (bypasses log — simulates pre-feature supersedence)
+      store.insertEdgeForTest("sess_b", "sess_a", "supersedes");
+      const result = await getSessionHandler({ recall, store }, { id: "sess_a" });
+      type EnrichedSupersededBy = { id: string; reason?: string; recordedBy?: string } | null;
+      const body = parsePayload(result) as { supersededBy: EnrichedSupersededBy };
+      expect(body.supersededBy).not.toBeNull();
+      expect(body.supersededBy?.reason).toBeUndefined();
+      expect(body.supersededBy?.recordedBy).toBeUndefined();
+    });
+
+    it("get_session on a non-superseded session has supersededBy null", async () => {
+      // sess_b has not been superseded
+      const result = await getSessionHandler({ recall, store }, { id: "sess_b" });
+      const body = parsePayload(result) as { supersededBy: null };
+      expect(body.supersededBy).toBeNull();
     });
   });
 

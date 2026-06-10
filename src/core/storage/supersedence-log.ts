@@ -10,7 +10,7 @@
  * issue doesn't leave the operator believing their audit trail is intact.
  */
 
-import { appendFile, mkdir } from "node:fs/promises";
+import { appendFile, mkdir, readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
 
@@ -26,6 +26,41 @@ function defaultLogPath(): string {
     process.env["NLM_SUPERSEDENCE_LOG"] ??
     join(homedir(), ".nlm", "supersedence-log.jsonl")
   );
+}
+
+/** Read all supersedence log entries. Never raises — returns [] on missing file. */
+export async function readSupersedenceLog(): Promise<
+  ReadonlyArray<SupersedenceEntry & { ts: string; source?: string }>
+> {
+  const path = defaultLogPath();
+  let raw: string;
+  try {
+    raw = await readFile(path, "utf8");
+  } catch {
+    return [];
+  }
+  const results: Array<SupersedenceEntry & { ts: string; source?: string }> = [];
+  for (const line of raw.split("\n")) {
+    if (!line.trim()) continue;
+    try {
+      const obj = JSON.parse(line) as Record<string, unknown>;
+      if (
+        typeof obj["predecessor_id"] !== "string" ||
+        typeof obj["successor_id"] !== "string"
+      )
+        continue;
+      results.push({
+        predecessorId: obj["predecessor_id"],
+        successorId: obj["successor_id"],
+        ts: typeof obj["ts"] === "string" ? obj["ts"] : "",
+        ...(typeof obj["reason"] === "string" ? { reason: obj["reason"] } : {}),
+        ...(typeof obj["source"] === "string" ? { source: obj["source"] } : {}),
+      });
+    } catch {
+      continue;
+    }
+  }
+  return results;
 }
 
 export async function appendSupersedence(

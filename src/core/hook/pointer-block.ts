@@ -16,6 +16,7 @@ export interface PointerHit {
   readonly id: string;
   readonly label: string;
   readonly startedAt: string;
+  readonly summary?: string;
 }
 
 export interface PointerFact {
@@ -34,7 +35,12 @@ export function formatPointerBlock(
   if (hits.length > 0) {
     out.push("## Possibly-relevant prior sessions (nlm-memory)");
     for (const h of hits) {
-      out.push(`- ${h.id} · ${h.label} (${h.startedAt.slice(0, 10)})`);
+      const datePart = h.startedAt.slice(0, 10);
+      if (h.summary) {
+        out.push(`- ${h.id} · ${h.label} (${datePart}) — ${h.summary.slice(0, 120)}`);
+      } else {
+        out.push(`- ${h.id} · ${h.label} (${datePart})`);
+      }
     }
   }
   if (facts.length > 0) {

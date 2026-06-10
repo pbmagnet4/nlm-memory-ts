@@ -677,6 +677,25 @@ export class SqliteSessionStore implements SessionStore {
           "UPDATE sessions SET status = 'superseded', updated_at = datetime('now') WHERE id = ?",
         )
         .run(predecessorId);
+
+      // Cascade supersedence to facts: link predecessor facts to their successors
+      const selectPredFacts = this.db.prepare<[string], { id: string; subject: string; predicate: string }>(
+        "SELECT id, subject, predicate FROM facts WHERE source_session_id = ?"
+      );
+      const selectSuccFact = this.db.prepare<[string, string, string], { id: string }>(
+        "SELECT id FROM facts WHERE source_session_id = ? AND subject = ? AND predicate = ? AND superseded_by IS NULL LIMIT 1"
+      );
+      const updateFactSuperseded = this.db.prepare(
+        "UPDATE facts SET superseded_by = ? WHERE id = ?"
+      );
+
+      const predecessorFacts = selectPredFacts.all(predecessorId);
+      for (const pFact of predecessorFacts) {
+        const successor = selectSuccFact.get(successorId, pFact.subject, pFact.predicate);
+        if (successor) {
+          updateFactSuperseded.run(successor.id, pFact.id);
+        }
+      }
     });
     txn();
   }

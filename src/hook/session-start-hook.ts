@@ -144,6 +144,7 @@ async function recallOverHttp(query: string): Promise<ReadonlyArray<RecallHitInp
         label: string;
         startedAt: string;
         matchScore: number;
+        summary?: string;
       }>;
     };
     let body: RecallBody;
@@ -157,6 +158,7 @@ async function recallOverHttp(query: string): Promise<ReadonlyArray<RecallHitInp
       label: r.label,
       startedAt: r.startedAt,
       matchScore: r.matchScore,
+      ...(r.summary !== undefined ? { summary: r.summary } : {}),
     }));
   } finally {
     clearTimeout(timer);
