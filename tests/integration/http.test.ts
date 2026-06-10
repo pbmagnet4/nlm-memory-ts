@@ -147,6 +147,39 @@ describe("HTTP adapter", () => {
     expect(res.status).toBe(200);
   });
 
+  describe("include_superseded (#303)", () => {
+    // sess_b is "pgvector migration plan"; sess_a is "Hono router setup".
+    // Supersede sess_b by sess_a so a pgvector query has a superseded best hit.
+    beforeEach(async () => {
+      await store.markSuperseded("sess_b", "sess_a");
+    });
+
+    it("default (no param) excludes superseded — hook-path strict exclusion preserved", async () => {
+      const res = await app.request("/api/recall?q=pgvector&mode=keyword");
+      const body = (await res.json()) as { results: { id: string }[] };
+      expect(body.results.map((r) => r.id)).not.toContain("sess_b");
+    });
+
+    it("hook-shaped call (x-recall-source: hook, no include_superseded) excludes superseded", async () => {
+      const res = await app.request("/api/recall?q=pgvector&mode=keyword", {
+        headers: { "x-recall-source": "hook" },
+      });
+      const body = (await res.json()) as { results: { id: string }[] };
+      expect(body.results.map((r) => r.id)).not.toContain("sess_b");
+    });
+
+    it("include_superseded=true surfaces the superseded hit with status + superseded_by", async () => {
+      const res = await app.request("/api/recall?q=pgvector&mode=keyword&include_superseded=true");
+      const body = (await res.json()) as {
+        results: { id: string; status: string; supersededBy: string | null }[];
+      };
+      const hit = body.results.find((r) => r.id === "sess_b");
+      expect(hit).toBeDefined();
+      expect(hit!.status).toBe("superseded");
+      expect(hit!.supersededBy).toBe("sess_a");
+    });
+  });
+
   it("GET /api/recall semantic mode goes through the embedder + vec0", async () => {
     const res = await app.request("/api/recall?q=anything&mode=semantic&limit=2");
     expect(res.status).toBe(200);

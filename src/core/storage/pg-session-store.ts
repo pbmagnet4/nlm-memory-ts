@@ -9,6 +9,7 @@
 import type { Pool } from "pg";
 import type {
   KeywordNeighbor,
+  SearchOptions,
   SemanticNeighbor,
   SessionFilter,
   SessionStore,
@@ -95,9 +96,14 @@ export class PgSessionStore implements SessionStore {
   async semanticSearch(
     queryVector: Float32Array,
     limit: number,
+    opts?: SearchOptions,
   ): Promise<ReadonlyArray<SemanticNeighbor>> {
     const k = Math.max(1, Math.trunc(limit));
     const vecStr = `[${Array.from(queryVector).join(",")}]`;
+    const statusFilter =
+      opts?.includeSuperseded === true
+        ? "s.status != 'replaced'"
+        : "s.status NOT IN ('superseded', 'replaced')";
     const result = await this.pool.query<{
       session_id: string;
       distance: number;
@@ -107,7 +113,7 @@ export class PgSessionStore implements SessionStore {
        FROM session_embedding_chunks sec
        JOIN sessions s ON s.id = sec.session_id
        GROUP BY sec.session_id, s.status
-       HAVING s.status NOT IN ('superseded', 'replaced')
+       HAVING ${statusFilter}
        ORDER BY distance
        LIMIT $2`,
       [vecStr, k],
@@ -118,20 +124,38 @@ export class PgSessionStore implements SessionStore {
   async keywordSearch(
     query: string,
     limit: number,
+    opts?: SearchOptions,
   ): Promise<ReadonlyArray<KeywordNeighbor>> {
     if (!query.trim()) return [];
     const k = Math.max(1, Math.trunc(limit));
+    const statusFilter =
+      opts?.includeSuperseded === true
+        ? "status != 'replaced'"
+        : "status NOT IN ('superseded', 'replaced')";
     const result = await this.pool.query<{ session_id: string; score: number }>(
       `SELECT id AS session_id,
               ts_rank_cd(fts_vector, websearch_to_tsquery('english', $1)) AS score
        FROM sessions
        WHERE fts_vector @@ websearch_to_tsquery('english', $1)
-         AND status NOT IN ('superseded', 'replaced')
+         AND ${statusFilter}
        ORDER BY score DESC
        LIMIT $2`,
       [query, k],
     );
     return result.rows.map((r) => ({ sessionId: r.session_id, score: r.score }));
+  }
+
+  async resolveSuccessors(ids: ReadonlyArray<string>): Promise<Map<string, string>> {
+    if (ids.length === 0) return new Map();
+    const placeholders = ids.map((_, i) => `$${i + 1}`).join(",");
+    const result = await this.pool.query<{ from_session: string; to_session: string }>(
+      `SELECT from_session, to_session FROM session_edges
+       WHERE kind = 'supersedes' AND to_session IN (${placeholders})`,
+      [...ids],
+    );
+    const out = new Map<string, string>();
+    for (const r of result.rows) out.set(r.to_session, r.from_session);
+    return out;
   }
 
   async updateStatus(sessionId: string, status: SessionStatus): Promise<void> {

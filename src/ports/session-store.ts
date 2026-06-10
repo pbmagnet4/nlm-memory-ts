@@ -24,6 +24,16 @@ export interface KeywordNeighbor {
   readonly score: number;
 }
 
+/**
+ * Search-time supersedence handling. Replaced sessions (mechanical re-ingest
+ * noise) are always excluded. When `includeSuperseded` is true, operator-
+ * asserted superseded sessions are kept in the candidate set so investigative
+ * recall can surface them down-ranked; when false (default), they are excluded.
+ */
+export interface SearchOptions {
+  readonly includeSuperseded?: boolean;
+}
+
 export interface SessionStore {
   list(filter?: SessionFilter): Promise<ReadonlyArray<Session>>;
 
@@ -34,12 +44,23 @@ export interface SessionStore {
   semanticSearch(
     queryVector: Float32Array,
     limit: number,
+    opts?: SearchOptions,
   ): Promise<ReadonlyArray<SemanticNeighbor>>;
 
   keywordSearch(
     query: string,
     limit: number,
+    opts?: SearchOptions,
   ): Promise<ReadonlyArray<KeywordNeighbor>>;
+
+  /**
+   * For each id that is a superseded session, return its successor session id
+   * (the `from_session` of the `supersedes` edge pointing at it). Ids with no
+   * supersedes edge are absent from the map. Cheap edge-only lookup — does not
+   * load session bodies. Used at recall result-assembly to badge superseded
+   * hits with their successor.
+   */
+  resolveSuccessors(ids: ReadonlyArray<string>): Promise<Map<string, string>>;
 
   updateStatus(sessionId: string, status: SessionStatus): Promise<void>;
 

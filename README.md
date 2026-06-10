@@ -222,7 +222,7 @@ The pi `quality-gate` extension (in the `pi-sandbox` repo) is a ~10-line integra
 
 | Tool | What it does |
 |---|---|
-| `recall_sessions` | Hybrid keyword+semantic search across the full session corpus. Returns label, started_at, snippet, match score. |
+| `recall_sessions` | Hybrid keyword+semantic search across the full session corpus. Returns label, started_at, snippet, match score, `status`, and `superseded_by`. Superseded sessions are included (down-ranked, badged) so a decision investigation sees overturned reasoning; prefer the `superseded_by` successor for current state. |
 | `get_session` | Full body of one session by ID. Includes enriched `supersedes` / `supersededBy` links (id + label + summary) so chasing corrected facts doesn't need a second round-trip. |
 | `recall_facts` | Search structured facts: decisions, open questions, project state. Filterable by entity and kind. |
 | `get_fact_history` | Full version history of one fact — how a decision evolved over time. |
@@ -241,7 +241,7 @@ Daemon binds `127.0.0.1:3940` (override with `NLM_PORT`). Selected endpoints:
 | Method | Path | Auth | Purpose |
 |---|---|---|---|
 | GET | `/api/health` | Host-only | Liveness probe; returns `{version, status, service}` |
-| GET | `/api/recall` | Bearer/Origin | Hybrid recall — `?q=`, `?mode=keyword\|semantic\|hybrid`, `?limit=` |
+| GET | `/api/recall` | Bearer/Origin | Hybrid recall — `?q=`, `?mode=keyword\|semantic\|hybrid`, `?limit=`, `?include_superseded=true` (default off; opt-in to surface overturned sessions down-ranked, badged with `superseded_by`). Each result carries `status` + `superseded_by`. |
 | GET | `/api/recall/stats` | Bearer/Origin | 7-day stats: total, hit_rate, useful_hit_rate, top queries |
 | GET | `/api/recall/recent` | Bearer/Origin | Last N recall events for live tail/telemetry |
 | GET | `/api/recall/cite-stats` | Bearer/Origin | Citation rate over `?days=` |

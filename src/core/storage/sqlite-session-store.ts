@@ -18,6 +18,7 @@ import Database from "better-sqlite3";
 import * as sqliteVec from "sqlite-vec";
 import type {
   KeywordNeighbor,
+  SearchOptions,
   SemanticNeighbor,
   SessionFilter,
   SessionStore,
@@ -562,6 +563,7 @@ export class SqliteSessionStore implements SessionStore {
   async semanticSearch(
     queryVector: Float32Array,
     limit: number,
+    opts?: SearchOptions,
   ): Promise<ReadonlyArray<SemanticNeighbor>> {
     const k = Math.max(1, Math.trunc(limit));
     const blob = Buffer.from(
@@ -600,8 +602,9 @@ export class SqliteSessionStore implements SessionStore {
           `SELECT id, status FROM sessions WHERE id IN (${placeholders})`,
         )
         .all(...uniqueSessionIds);
+      const excludeSuperseded = opts?.includeSuperseded !== true;
       for (const sr of statusRows) {
-        if (sr.status === "superseded" || sr.status === "replaced") {
+        if (sr.status === "replaced" || (excludeSuperseded && sr.status === "superseded")) {
           excludedSessionIds.add(sr.id);
         }
       }
@@ -630,10 +633,15 @@ export class SqliteSessionStore implements SessionStore {
   async keywordSearch(
     query: string,
     limit: number,
+    opts?: SearchOptions,
   ): Promise<ReadonlyArray<KeywordNeighbor>> {
     const matchExpr = toMatchExpression(query);
     if (!matchExpr) return [];
     const k = Math.max(1, Math.trunc(limit));
+    const statusFilter =
+      opts?.includeSuperseded === true
+        ? "AND s.status != 'replaced'"
+        : "AND s.status NOT IN ('superseded', 'replaced')";
     const rows = this.db
       .prepare<[string, number], KeywordRow>(`
         SELECT s.id AS session_id,
@@ -641,12 +649,28 @@ export class SqliteSessionStore implements SessionStore {
         FROM sessions_fts
         JOIN sessions s ON s.rowid = sessions_fts.rowid
         WHERE sessions_fts MATCH ?
-          AND s.status NOT IN ('superseded', 'replaced')
+          ${statusFilter}
         ORDER BY score DESC
         LIMIT ?
       `)
       .all(matchExpr, k);
     return rows.map((r) => ({ sessionId: r.session_id, score: r.score }));
+  }
+
+  async resolveSuccessors(ids: ReadonlyArray<string>): Promise<Map<string, string>> {
+    if (ids.length === 0) return new Map();
+    const placeholders = ids.map(() => "?").join(",");
+    const rows = this.db
+      .prepare<string[], { from_session: string; to_session: string }>(`
+        SELECT from_session, to_session
+        FROM session_edges
+        WHERE kind = 'supersedes'
+          AND to_session IN (${placeholders})
+      `)
+      .all(...ids);
+    const out = new Map<string, string>();
+    for (const r of rows) out.set(r.to_session, r.from_session);
+    return out;
   }
 
   async updateStatus(sessionId: string, status: SessionStatus): Promise<void> {

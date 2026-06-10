@@ -223,4 +223,76 @@ describe.skipIf(!PG_TEST_URL)("PgSessionStore search with supersedence", () => {
       expect(ids).not.toContain("p_kw_rep");
     });
   });
+
+  describe("include-superseded (#303)", () => {
+    it("keywordSearch includes superseded when opted in, never replaced", async () => {
+      const store = storage.sessions;
+      await store.insertSessionForTest(
+        makeSession({ id: "i_kw_old", label: "redis cache", body: "redis overturned" }),
+      );
+      await store.insertSessionForTest(
+        makeSession({ id: "i_kw_new", label: "redis cache", body: "redis current" }),
+      );
+      await store.insertSessionForTest(
+        makeSession({ id: "i_kw_rep", label: "redis cache", body: "redis reparsed", status: "replaced" }),
+      );
+      await store.markSuperseded("i_kw_old", "i_kw_new");
+
+      const excluded = (await store.keywordSearch("redis", 10)).map((h) => h.sessionId);
+      expect(excluded).not.toContain("i_kw_old");
+
+      const included = (await store.keywordSearch("redis", 10, { includeSuperseded: true })).map(
+        (h) => h.sessionId,
+      );
+      expect(included).toContain("i_kw_old");
+      expect(included).toContain("i_kw_new");
+      expect(included).not.toContain("i_kw_rep");
+    });
+
+    it("semanticSearch includes superseded when opted in, never replaced", async () => {
+      const store = storage.sessions;
+      const pool = storage.pgPool();
+      const vec = (a: number, b: number) =>
+        `[${Array(768).fill(0).map((_, i) => (i === 0 ? a : i === 1 ? b : 0)).join(",")}]`;
+      await store.insertSessionForTest(makeSession({ id: "i_sem_old", label: "old" }));
+      await store.insertSessionForTest(makeSession({ id: "i_sem_new", label: "new" }));
+      await store.insertSessionForTest(makeSession({ id: "i_sem_rep", label: "rep", status: "replaced" }));
+      await pool.query(
+        "INSERT INTO session_embedding_chunks (session_id, chunk_idx, embedding) VALUES ($1, 0, $2::vector)",
+        ["i_sem_old", vec(1, 0)],
+      );
+      await pool.query(
+        "INSERT INTO session_embedding_chunks (session_id, chunk_idx, embedding) VALUES ($1, 0, $2::vector)",
+        ["i_sem_new", vec(1, 0.1)],
+      );
+      await pool.query(
+        "INSERT INTO session_embedding_chunks (session_id, chunk_idx, embedding) VALUES ($1, 0, $2::vector)",
+        ["i_sem_rep", vec(1, 0.05)],
+      );
+      await store.markSuperseded("i_sem_old", "i_sem_new");
+
+      const q = new Float32Array(768);
+      q[0] = 1;
+      const excluded = (await store.semanticSearch(q, 10)).map((r) => r.sessionId);
+      expect(excluded).not.toContain("i_sem_old");
+
+      const included = (await store.semanticSearch(q, 10, { includeSuperseded: true })).map(
+        (r) => r.sessionId,
+      );
+      expect(included).toContain("i_sem_old");
+      expect(included).toContain("i_sem_new");
+      expect(included).not.toContain("i_sem_rep");
+    });
+
+    it("resolveSuccessors maps superseded → successor", async () => {
+      const store = storage.sessions;
+      await store.insertSessionForTest(makeSession({ id: "i_rs_old", label: "old" }));
+      await store.insertSessionForTest(makeSession({ id: "i_rs_new", label: "new" }));
+      await store.markSuperseded("i_rs_old", "i_rs_new");
+
+      const map = await store.resolveSuccessors(["i_rs_old", "i_rs_new"]);
+      expect(map.get("i_rs_old")).toBe("i_rs_new");
+      expect(map.has("i_rs_new")).toBe(false);
+    });
+  });
 });

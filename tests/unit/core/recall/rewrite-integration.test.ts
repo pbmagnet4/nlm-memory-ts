@@ -39,6 +39,9 @@ class CapturingStore implements SessionStore {
     this.keywordSearchCalls.push(query);
     return [{ sessionId: this.sessions[0]!.id, score: 5 }];
   }
+  async resolveSuccessors(): Promise<Map<string, string>> {
+    return new Map();
+  }
   async updateStatus() {}
   async markSuperseded() {}
 }

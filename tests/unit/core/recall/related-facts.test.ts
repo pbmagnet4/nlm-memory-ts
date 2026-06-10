@@ -36,6 +36,7 @@ function hit(id: string, entities: string[]): RecallHit {
     status: "active",
     matchScore: 1,
     matchedIn: ["label"],
+    supersededBy: null,
   };
 }
 

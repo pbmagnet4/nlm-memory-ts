@@ -38,6 +38,14 @@ class InMemoryStore implements SessionStore {
   async keywordSearch(): Promise<ReadonlyArray<KeywordNeighbor>> {
     return this.keywordHits;
   }
+  async resolveSuccessors(ids: ReadonlyArray<string>): Promise<Map<string, string>> {
+    const out = new Map<string, string>();
+    for (const id of ids) {
+      const s = this.sessions.find((x) => x.id === id);
+      if (s?.supersededBy) out.set(id, s.supersededBy);
+    }
+    return out;
+  }
   async updateStatus(): Promise<void> {}
   async markSuperseded(): Promise<void> {}
 }
@@ -223,5 +231,83 @@ describe("RecallService.search", () => {
     expect(result.results.map((r) => r.id)).toEqual(["s7", "s42"]);
     expect(store.listCalls).toBe(0);
     expect(store.getByIdsCalls).toBe(1);
+  });
+
+  describe("supersedence surfacing (#303)", () => {
+    const now = new Date().toISOString();
+
+    it("down-ranks a superseded hit below an equally-matching active one", async () => {
+      // Same age, same store score; only difference is status. The superseded
+      // hit must sort below the active one after the 0.7 multiplier.
+      const sessions: Session[] = [
+        makeSession({ id: "sup", label: "pgvector decision", startedAt: now, status: "superseded", supersededBy: "act" }),
+        makeSession({ id: "act", label: "pgvector decision", startedAt: now, status: "active" }),
+      ];
+      const store = new InMemoryStore(sessions, [], [
+        { sessionId: "sup", score: 5 },
+        { sessionId: "act", score: 5 },
+      ]);
+      const svc = new RecallService({ store, llm: new StubEmbedder() });
+      const result = await svc.search({ query: "pgvector", mode: "keyword", includeSuperseded: true });
+      expect(result.results.map((r) => r.id)).toEqual(["act", "sup"]);
+      const sup = result.results.find((r) => r.id === "sup")!;
+      const act = result.results.find((r) => r.id === "act")!;
+      expect(sup.matchScore).toBeLessThan(act.matchScore);
+      expect(sup.matchScore).toBeCloseTo(5 * 0.7, 4);
+    });
+
+    it("resolves supersededBy to the successor id for superseded hits", async () => {
+      const sessions: Session[] = [
+        makeSession({ id: "sup", label: "pgvector decision", startedAt: now, status: "superseded", supersededBy: "act" }),
+        makeSession({ id: "act", label: "pgvector decision", startedAt: now, status: "active" }),
+      ];
+      const store = new InMemoryStore(sessions, [], [
+        { sessionId: "sup", score: 5 },
+        { sessionId: "act", score: 5 },
+      ]);
+      const svc = new RecallService({ store, llm: new StubEmbedder() });
+      const result = await svc.search({ query: "pgvector", mode: "keyword", includeSuperseded: true });
+      const sup = result.results.find((r) => r.id === "sup")!;
+      const act = result.results.find((r) => r.id === "act")!;
+      expect(sup.supersededBy).toBe("act");
+      expect(act.supersededBy).toBe(null);
+    });
+
+    it("acceptance: the best-matching session is superseded by a weaker successor — surfaced, badged, down-ranked (stranger scenario)", async () => {
+      // s2 is the decision session (strongest keyword match) but was overturned
+      // by s5 (weaker match). With includeSuperseded, s2 must appear carrying a
+      // supersededBy pointer to s5, ranked below s5 despite its stronger raw score.
+      const sessions: Session[] = [
+        makeSession({
+          id: "s2",
+          label: "chose pgvector over qdrant pgvector pgvector",
+          startedAt: now,
+          status: "superseded",
+          supersededBy: "s5",
+          decisions: ["pgvector over qdrant"],
+        }),
+        makeSession({
+          id: "s5",
+          label: "reconsidered: qdrant",
+          startedAt: now,
+          status: "active",
+          decisions: ["moved to qdrant"],
+        }),
+      ];
+      const store = new InMemoryStore(sessions, [], [
+        { sessionId: "s2", score: 12 }, // strongest raw match
+        { sessionId: "s5", score: 4 },  // weaker successor
+      ]);
+      const svc = new RecallService({ store, llm: new StubEmbedder() });
+      const result = await svc.search({ query: "pgvector qdrant", mode: "keyword", includeSuperseded: true });
+      const ids = result.results.map((r) => r.id);
+      expect(ids).toContain("s2");
+      const s2 = result.results.find((r) => r.id === "s2")!;
+      expect(s2.status).toBe("superseded");
+      expect(s2.supersededBy).toBe("s5");
+      // 12 * 0.7 = 8.4 still beats 4 here — down-rank does not flip this pair,
+      // but the badge + successor pointer is what the stranger needed.
+      expect(s2.matchScore).toBeCloseTo(12 * 0.7, 4);
+    });
   });
 });

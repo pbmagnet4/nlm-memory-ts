@@ -116,6 +116,10 @@ export async function recallSessionsHandler(
       mode: input.mode ?? "hybrid",
       limit: input.limit ?? DEFAULT_LIMIT,
       rewrite,
+      // Investigative surface: include superseded sessions, down-ranked and
+      // badged with their successor in `supersededBy`, so an agent chasing a
+      // decision sees the overturned reasoning rather than a silent gap. Task #303.
+      includeSuperseded: true,
       ...(input.entity !== undefined ? { entity: input.entity } : {}),
       ...(input.kind !== undefined ? { kind: input.kind } : {}),
     };
@@ -286,7 +290,14 @@ to prevent: re-derivation of already-solved problems, contradicting prior decisi
 re-litigating resolved open questions, ignoring the user's accumulated context.
 
 Returns ranked session digests (id, label, summary, entities, decisions, open
-questions). Call get_session for the full body when a digest looks relevant.
+questions, status, superseded_by). Call get_session for the full body when a
+digest looks relevant.
+
+Superseded sessions ARE included here, down-ranked below active matches and
+flagged with status="superseded" and a superseded_by pointer to the session
+that corrected them. A superseded hit is overturned reasoning: read it for
+history, but prefer the successor in superseded_by for the current state — do
+NOT repeat a superseded decision as if it still holds.
 
 Skip ONLY when the request is purely forward-looking with no plausible prior
 context — drafting wholly new content, naming something new, brainstorming

@@ -374,6 +374,7 @@ program
   .option("-k, --kind <kind>", "filter by marker kind (decision|open)")
   .option("-m, --mode <mode>", "recall mode: keyword, semantic, or hybrid (default: keyword)", "keyword")
   .option("-l, --limit <n>", "max results", (v) => Number.parseInt(v, 10), 10)
+  .option("--json", "emit the raw JSON result instead of rendered lines")
   .action(async (query, opts) => {
     const { storage, recall } = await buildStack();
     try {
@@ -381,10 +382,24 @@ program
         query,
         mode: opts.mode,
         limit: opts.limit,
+        // Investigative surface: surface superseded sessions down-ranked and
+        // badged with their successor. The hooks keep strict exclusion.
+        includeSuperseded: true,
         ...(opts.entity ? { entity: opts.entity } : {}),
         ...(opts.kind ? { kind: opts.kind } : {}),
       });
-      process.stdout.write(JSON.stringify(result, null, 2) + "\n");
+      if (opts.json) {
+        process.stdout.write(JSON.stringify(result, null, 2) + "\n");
+      } else {
+        for (const r of result.results) {
+          const badge =
+            r.status === "superseded" ? ` [SUPERSEDED -> ${r.supersededBy ?? "?"}]` : "";
+          process.stdout.write(
+            `${r.matchScore.toFixed(4)}  ${r.id}  ${r.label}${badge}\n`,
+          );
+        }
+        if (result.results.length === 0) process.stdout.write("(no matches)\n");
+      }
     } finally {
       await storage.close();
     }

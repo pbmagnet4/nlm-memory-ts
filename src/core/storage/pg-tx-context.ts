@@ -142,6 +142,7 @@ export class PgTxBoundSessionStore implements SessionStore {
   getByIds(_ids: ReadonlyArray<string>): Promise<ReadonlyArray<Session>> { return noRead("SessionStore.getByIds"); }
   semanticSearch(_v: Float32Array, _n: number): Promise<ReadonlyArray<SemanticNeighbor>> { return noRead("SessionStore.semanticSearch"); }
   keywordSearch(_q: string, _n: number): Promise<ReadonlyArray<KeywordNeighbor>> { return noRead("SessionStore.keywordSearch"); }
+  resolveSuccessors(_ids: ReadonlyArray<string>): Promise<Map<string, string>> { return noRead("SessionStore.resolveSuccessors"); }
 }
 
 function insertFactOp(f: Fact): QueuedOp {

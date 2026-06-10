@@ -83,6 +83,16 @@ export interface RecallQuery {
    * via NLM_HOOK_INJECT_FACTS=false. Spec G.2.
    */
   readonly withRelatedFacts?: boolean;
+  /**
+   * If true, superseded sessions are included in recall results, down-ranked
+   * and carrying a `supersededBy` pointer to their successor. Replaced
+   * sessions (mechanical re-ingest noise) are excluded regardless. Off by
+   * default — the hot-path hooks rely on strict exclusion. Investigative
+   * surfaces (CLI `nlm recall`, MCP `recall_sessions`) set this true so a user
+   * chasing a decision sees the overturned session badged with its successor.
+   * Task #303.
+   */
+  readonly includeSuperseded?: boolean;
 }
 
 export interface RecallHit {
@@ -98,6 +108,12 @@ export interface RecallHit {
   readonly matchedIn: ReadonlyArray<MatchField>;
   readonly keywordScore?: number;
   readonly semanticScore?: number;
+  /**
+   * Successor session id when this hit's `status` is `superseded`; null when
+   * the hit is active. Lets a consumer point at the corrected reasoning
+   * without a second round-trip. Task #303.
+   */
+  readonly supersededBy: string | null;
 }
 
 export type MatchField = "label" | "decisions" | "open" | "summary" | "semantic";

@@ -500,6 +500,13 @@ function registerRecallRoutes(app: Hono, deps: HttpDeps): void {
       withRelatedFacts = true;
     }
 
+    // Task #303: superseded sessions are opt-in over HTTP and DEFAULT OFF.
+    // The prompt + session-start hooks call this endpoint and pass no
+    // `include_superseded`, so their strict exclusion (d9ee06b) is preserved.
+    const supersededParam = c.req.query("include_superseded");
+    const includeSuperseded =
+      supersededParam === "true" || supersededParam === "1" ? true : undefined;
+
     const query: RecallQuery = {
       query: q,
       mode: mode as RecallMode,
@@ -508,6 +515,7 @@ function registerRecallRoutes(app: Hono, deps: HttpDeps): void {
       ...(kind !== undefined ? { kind: kind as RecallKindFilter } : {}),
       ...(rewrite !== undefined ? { rewrite } : {}),
       ...(withRelatedFacts !== undefined ? { withRelatedFacts } : {}),
+      ...(includeSuperseded !== undefined ? { includeSuperseded } : {}),
     };
     const result = await deps.recall.search(query);
 

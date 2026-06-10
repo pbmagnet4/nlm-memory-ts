@@ -50,6 +50,12 @@ const RRF_K = 60;
 const SEMANTIC_OVERFETCH = 3;
 const KEYWORD_OVERFETCH = 3;
 
+// Down-rank factor for superseded hits in investigative recall. Applied once
+// in finalize() after the recency multiplier so a superseded session can never
+// outrank an equally-matching active one. Keyed on status, so it only ever
+// touches the superseded hits that includeSuperseded let through. Task #303.
+const SUPERSEDED_SCORE_MULTIPLIER = 0.7;
+
 export interface RecallServiceDeps {
   readonly store: SessionStore;
   readonly llm: LLMClient;
@@ -109,9 +115,10 @@ export class RecallService {
     }
 
     // 1. Search legs — ranked neighbor IDs only. No session bodies loaded.
+    const searchOpts = input.includeSuperseded === true ? { includeSuperseded: true } : undefined;
     const kwNeighbors: ReadonlyArray<KeywordNeighbor> =
       (mode === "keyword" || mode === "hybrid") && keywordQuery
-        ? await this.deps.store.keywordSearch(keywordQuery, limit * KEYWORD_OVERFETCH)
+        ? await this.deps.store.keywordSearch(keywordQuery, limit * KEYWORD_OVERFETCH, searchOpts)
         : [];
 
     let semNeighbors: ReadonlyArray<SemanticNeighbor> = [];
@@ -122,6 +129,7 @@ export class RecallService {
         semNeighbors = await this.deps.store.semanticSearch(
           embedding.vector,
           limit * SEMANTIC_OVERFETCH,
+          searchOpts,
         );
       } catch (err) {
         if (err instanceof LLMUnreachableError) {
@@ -213,6 +221,25 @@ export class RecallService {
       if (relatedFacts.length > 0) {
         result = { ...result, relatedFacts };
       }
+    }
+
+    // 7. Resolve successor ids for any superseded hits that survived to the
+    //    final result set (only possible when includeSuperseded was set).
+    //    Edge-only lookup over the small returned hit set — never joined into
+    //    the ranking query. Task #303.
+    const supersededIds = result.results
+      .filter((r) => r.status === "superseded")
+      .map((r) => r.id);
+    if (supersededIds.length > 0) {
+      const successors = await this.deps.store.resolveSuccessors(supersededIds);
+      result = {
+        ...result,
+        results: result.results.map((r) =>
+          r.status === "superseded"
+            ? { ...r, supersededBy: successors.get(r.id) ?? null }
+            : r,
+        ),
+      };
     }
 
     return result;
@@ -341,6 +368,7 @@ function sessionHitFields(s: Session) {
     decisions: s.decisions,
     open: s.open,
     status: s.status,
+    supersededBy: null,
   } as const;
 }
 
@@ -359,10 +387,13 @@ function finalize(
   // ranking when ages are similar and skews recent when ages diverge.
   // Disable per-deployment with NLM_RECALL_DECAY_HALF_LIFE_DAYS=0.
   const now = Date.now();
-  const adjusted: RecallHit[] = hits.map((h) => ({
-    ...h,
-    matchScore: round4(h.matchScore * recencyMultiplier(h.startedAt, now)),
-  }));
+  const adjusted: RecallHit[] = hits.map((h) => {
+    const supersededFactor = h.status === "superseded" ? SUPERSEDED_SCORE_MULTIPLIER : 1;
+    return {
+      ...h,
+      matchScore: round4(h.matchScore * recencyMultiplier(h.startedAt, now) * supersededFactor),
+    };
+  });
   adjusted.sort((a, b) => b.matchScore - a.matchScore);
   return {
     query,

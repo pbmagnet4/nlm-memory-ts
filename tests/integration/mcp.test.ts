@@ -148,6 +148,23 @@ describe("MCP adapter", () => {
     expect(body.results.every((r) => r.id === "sess_b")).toBe(true);
   });
 
+  it("recall_sessions includes superseded hits with status + supersededBy (#303)", async () => {
+    // Supersede sess_b ("pgvector") by sess_a. recall_sessions defaults to
+    // includeSuperseded, so the overturned session must still surface, badged.
+    await store.markSuperseded("sess_b", "sess_a");
+    const result = await recallSessionsHandler(
+      { recall, store },
+      { query: "pgvector", mode: "keyword" },
+    );
+    const body = parsePayload(result) as {
+      results: { id: string; status: string; supersededBy: string | null }[];
+    };
+    const hit = body.results.find((r) => r.id === "sess_b");
+    expect(hit).toBeDefined();
+    expect(hit!.status).toBe("superseded");
+    expect(hit!.supersededBy).toBe("sess_a");
+  });
+
   it("get_session returns the full session for a known id", async () => {
     const result = await getSessionHandler({ recall, store }, { id: "sess_a" });
     expect(result.isError).toBeUndefined();
