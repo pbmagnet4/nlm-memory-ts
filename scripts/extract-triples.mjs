@@ -142,7 +142,7 @@ if (rawTriples.length === 0) {
   console.error(
     `extract-triples: no triples found. ` +
     `Checked ${goldConversations.size} gold conversations in the last ${days}d. ` +
-    `Run nlm useful-scan and ensure tool_use citations exist in citation-log.jsonl.`,
+    `Ensure tool_use citations exist in citation-log.jsonl (Stop hook + cite_session populate it).`,
   );
   process.exit(0);
 }

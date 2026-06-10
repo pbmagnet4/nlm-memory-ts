@@ -445,36 +445,58 @@ program
   .option("--json", "emit JSON instead of human-readable output")
   .option("--verbose", "show per-conversation breakdown")
   .action(async (opts) => {
-    const { computePrecision } = await import("../core/recall/precision.js");
+    const { computePrecision, computePerSourcePrecision } = await import(
+      "../core/recall/precision.js"
+    );
+    const { readHookRecallLog } = await import("../core/recall/hook-recall-log.js");
     const { readQueryLog } = await import("../core/recall/query-log.js");
     const { readCitationLog } = await import("../core/recall/citation-log.js");
 
-    const [queryEntries, citationEntries] = await Promise.all([
+    const [recallEntries, queryEntries, citationEntries] = await Promise.all([
+      readHookRecallLog(opts.days),
       readQueryLog(opts.days),
       readCitationLog(opts.days),
     ]);
 
-    const result = computePrecision(queryEntries, citationEntries);
+    const result = computePrecision(recallEntries, citationEntries);
+    const { perSource, unmeasurable } = computePerSourcePrecision(
+      queryEntries,
+      citationEntries,
+    );
 
     if (opts.json) {
-      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+      process.stdout.write(
+        `${JSON.stringify({ ...result, perSource, unmeasurableSources: unmeasurable }, null, 2)}\n`,
+      );
       return;
     }
 
     if (result.precisionAtK === null) {
       console.log("No scoreable conversations in the last " + opts.days + " day(s).");
       console.log(
-        "  Precision requires both recall queries (query_log.jsonl) and explicit citations",
+        "  Precision joins hook-surfaced sessions (hook-log.jsonl) against explicit",
       );
       console.log(
-        "  (citation_log.jsonl). If citations are empty, run: nlm help close-loop",
+        "  citations (citation-log.jsonl). If citations are empty, run: nlm help close-loop",
       );
       return;
     }
 
     const pct = (result.precisionAtK * 100).toFixed(1);
     console.log(`Recall precision@k — last ${opts.days} day(s)`);
-    console.log(`  Precision: ${pct}%  (${result.conversationCount} conversations scored)`);
+    console.log(`  Blended: ${pct}%  (${result.conversationCount} conversations scored)`);
+
+    if (perSource.length > 0) {
+      console.log("\n  Per source:");
+      for (const row of perSource) {
+        const p = (row.precision * 100).toFixed(1).padStart(5);
+        const convs = `${row.conversationCount} conv${row.conversationCount === 1 ? "" : "s"}`;
+        console.log(`    ${row.source.padEnd(20)} ${p}%  (${convs})`);
+      }
+    }
+    if (unmeasurable.length > 0) {
+      console.log(`  Unmeasurable (no conversation id captured): ${unmeasurable.join(", ")}`);
+    }
 
     if (opts.verbose && result.perConversation.length > 0) {
       console.log("\nPer-conversation breakdown (worst first):");

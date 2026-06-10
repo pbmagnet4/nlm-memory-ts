@@ -1,79 +1,32 @@
-# useful_hit_rate — design
+# recall precision (useful-hit) — design
 
 ## Why
 
-`hit_rate` reports the fraction of recall calls that returned ≥1 row. With the MCP default now hybrid, that number is structurally close to 100% — semantic always returns *something*. `hit_rate` no longer separates "found stuff" from "found stuff that mattered." `useful_hit_rate` is the metric we actually want: the fraction of recall calls whose returned results were referenced in the next assistant turn.
+`hit_rate` reports the fraction of recall calls that returned ≥1 row. With the MCP default now hybrid, that number is structurally close to 100% — semantic always returns *something*. `hit_rate` no longer separates "found stuff" from "found stuff that mattered." The metric we actually want is **precision**: the fraction of *surfaced* sessions that the agent then *cited* in the same conversation. A surfaced session is useful when it is later cited.
 
-This is the signal that lets us answer "is NLM serving its intended purpose" with evidence instead of opinion, and it's an input to the headline re-derivation rate metric (see [re-derivation-rate.md](re-derivation-rate.md) — pending).
+## Derived, not written
 
-## Definitions
+There is no separate `useful-hit-log.jsonl` writer. An earlier V1 (`src/core/recall/useful-scan.ts`, removed in `4f8fb66`, May 31 2026) tried to detect usefulness by scanning assistant transcripts for surfaced session ids. It was structurally stuck at 0%: NLM injects sessions as silent context, so the assistant never echoes ids back into prose and the substring scan never fired.
 
-**A recall event** is one of:
-- A hook fire (logged in `~/.nlm/hook-log.jsonl` with `wouldInject` ids)
-- An MCP `recall_sessions` / `recall_facts` call (logged in `~/.nlm/query-log.jsonl`)
-- An HTTP `/api/recall` call (logged in `~/.nlm/query-log.jsonl`)
+The metric is now **derived at read time** by `nlm precision` from two append-only logs that the running system already produces:
 
-**A useful recall** is a recall event where:
-- At least one of the returned session ids OR session labels appears in the next assistant message in the same conversation transcript, AND
-- The match occurs within 3 assistant turns of the recall, AND
-- The recall is not a probe (excluded query patterns: `concurrency probe`, `test probe`, `path test`, `recall test`, smoke/cutover patterns)
+- **Surfaced set** — `~/.nlm/hook-log.jsonl`. Each prompt-recall fire (`recall` entry) records `conversationId` + `wouldInject` (the injected session ids). This is the join substrate because it reliably carries the real Claude Code `session_id`.
+- **Cited set** — `~/.nlm/citation-log.jsonl`. The Stop hook (prose + tool-use detection) and the `cite_session` MCP tool both append `(conversation_id, cited_id)` rows.
 
-**`useful_hit_rate`** = (useful recalls) / (real recalls) over the reporting window.
+Join by `conversationId`: a surfaced id that also appears in the cited set is a hit. Precision per conversation = hits / surfaced; the blended number averages over conversations.
 
-## Detection algorithm
+`query_log.jsonl` is **not** the surfaced substrate for the blended number — it almost never captured `conversation_id` historically, so joining on it collapsed every recall into a single `"unknown"` bucket and produced a meaningless score. `query_log` is used only for the per-source breakdown below, because it is the only recall log carrying a `source` field.
 
-```
-for each real recall event in window:
-    transcript = find_transcript(event.conversationId)
-    if transcript is None:
-        mark useful = null (unmeasurable)
-        continue
-    next_assistant_msgs = transcript.messages_after(event.ts, role="assistant", limit=3)
-    haystack = " ".join(m.content for m in next_assistant_msgs)
-    for hit_id in event.returnedIds:
-        if hit_id in haystack or session_label(hit_id) in haystack:
-            mark useful = true; break
-    else:
-        mark useful = false
-```
+## Per-source precision
 
-## Data flow
+`nlm precision` also reports precision per recall source (`hook`, `session-start-hook`, `mcp`, `http`) from `query_log` ⋈ `citation-log`. A source is only scored when at least one of its entries carries a real `conversation_id` and ≥1 returned id. Sources that never capture a `conversation_id` (currently `mcp`, `http`, and test probes) are listed as **unmeasurable** rather than reported at a fabricated 0%. As `conversation_id` capture rolls out to more lanes, more sources become measurable with no code change.
 
-1. **Hook recalls** have `conversationId` directly. Transcript path: `~/.claude/projects/<sanitized-project>/<conversationId>.jsonl`.
-2. **MCP recalls** currently have no conversation context in `query-log.jsonl`. Adding `x-claude-session-id` capture to the MCP server is a prerequisite for measuring MCP useful_hit_rate.
-3. **HTTP recalls** are operator-driven (UI browsing) and excluded from this metric — `useful_hit_rate` measures agent recall usefulness, not UI search satisfaction.
+## Why blended precision is low and that is fine
 
-## Storage
+The hook lane surfaces "possibly relevant" sessions on nearly every prompt; most are never cited, which is correct behaviour, so blended precision is structurally low. The signal worth tracking is **per-source** precision and its trend — the deliberate lanes (mcp, session-start) are where precision is meaningful — not the blended figure in isolation.
 
-- New log file `~/.nlm/useful-hit-log.jsonl`, one entry per scanned recall:
-  ```json
-  {"ts": "...", "source": "hook|mcp", "conversationId": "...", "returnedIds": [...], "useful": true|false|null, "matchedId": "...", "scannedAt": "..."}
-  ```
-- New CLI: `nlm useful-scan` — scans the last 24h of recalls, joins against transcripts, appends to the log
-- New endpoint field: `/api/recall/stats` includes `useful_hit_rate` and `useful_hit_count` over the same window as `hit_rate`
+## Output
 
-## Out of scope (V1)
-
-- MCP useful_hit_rate (blocked on conversation-id capture; track as follow-up)
-- Real-time useful-hit detection (V1 is batch-scan, run on the daily digest cron)
-- Distinguishing "agent quoted the recall" vs "agent acted on it" (the former is a proxy for the latter; V2 could refine)
-- HTTP UI click-through (different metric — would live under a separate `ui_click_rate`)
-
-## V1 scope (shipping now)
-
-- Ship the daily digest cron consuming existing `hit_rate` (this doc justifies the upgrade path)
-- Add stub field `useful_hit_rate: null` to `/api/recall/stats` so the digest schema is forward-compatible
-- Implement the scanner + CLI in a follow-up commit (target: within 7 days)
-
-## Why batch-scan vs hook-vs-hook real-time
-
-A second Claude Code hook (`Stop` or `PostToolUse`) could compute usefulness in real time. Rejected because:
-- Doubles installation surface (two hooks per agent runtime)
-- Adds per-turn latency for a metric the user reads once/day
-- Doesn't generalize to Hermes, pi, Codex, Gemini, Aider (no equivalent post-turn hook on most)
-- Batch-scan reads the same transcript files the daemon already polls
-
-## Open questions
-
-- Hit-label heuristic: substring match is cheap but noisy. Worth fuzzy matching session label tokens? Defer until V1 data shows the false-positive rate.
-- Window for scan: hour-bucket vs day-bucket? Daily-bucket for now to match the digest cadence; revisit if cron interval changes.
+- `nlm precision [--days N] [--verbose] [--json]`
+- Human: blended line + per-source table + unmeasurable-source list; `--verbose` adds the per-conversation breakdown (worst first).
+- `--json`: `{ precisionAtK, conversationCount, perConversation, perSource, unmeasurableSources }`.
