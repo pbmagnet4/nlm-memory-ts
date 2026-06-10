@@ -372,7 +372,7 @@ program
   .argument("<query>", "search query")
   .option("-e, --entity <name>", "filter by entity")
   .option("-k, --kind <kind>", "filter by marker kind (decision|open)")
-  .option("-m, --mode <mode>", "keyword|semantic|hybrid", "keyword")
+  .option("-m, --mode <mode>", "recall mode: keyword, semantic, or hybrid (default: keyword)", "keyword")
   .option("-l, --limit <n>", "max results", (v) => Number.parseInt(v, 10), 10)
   .action(async (query, opts) => {
     const { storage, recall } = await buildStack();
@@ -911,6 +911,19 @@ config
     writeFileSync(envPath, after, { mode: 0o600 });
     console.error(`nlm config ui-auth: set to ${value === null ? "off" : "on"} in ${envPath}`);
     console.error("  Restart the daemon to pick up the change: nlm restart");
+  });
+
+config
+  .command("get <key>")
+  .description("Read a configuration key from ~/.nlm/.env")
+  .action((key: string) => {
+    autoloadEnv();
+    const value = process.env[key];
+    if (value === undefined) {
+      console.error(`nlm config get: ${key} is not set`);
+      process.exit(1);
+    }
+    process.stdout.write(value);
   });
 
 program

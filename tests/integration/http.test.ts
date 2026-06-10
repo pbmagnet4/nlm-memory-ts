@@ -1049,3 +1049,190 @@ describe("HTTP gate — misconfig (NLM_UI_AUTH=cookie without NLM_MCP_TOKEN)", (
     expect(res.status).toBe(500);
   });
 });
+
+describe("POST /api/cite with Bearer token", () => {
+  let tmp: string;
+  let storage: SqliteStorage;
+  let app: Hono;
+
+  beforeEach(async () => {
+    tmp = mkdtempSync(join(tmpdir(), "nlm-cite-"));
+    storage = SqliteStorage.create({
+      dbPath: join(tmp, "canonical.sqlite"),
+      migrationsDir: MIGRATIONS_DIR,
+    });
+    await storage.init();
+    const store = storage.sessions;
+    // Seed with test sessions
+    for (const { session, embedding } of seed) {
+      store.insertSessionForTest(session);
+      store.insertEmbeddingForTest(session.id, embedding);
+    }
+    process.env["NLM_MCP_TOKEN"] = "test-token-secret";
+    process.env["NLM_CITATION_LOG"] = join(tmp, "citation-log.jsonl");
+    const recall = new RecallService({
+      store,
+      llm: new FixedEmbedder(unit([0, 1, 0])),
+    });
+    app = createApp({ recall, store, liveStore: store });
+  });
+
+  afterEach(async () => {
+    await storage.close();
+    rmSync(tmp, { recursive: true, force: true });
+    delete process.env["NLM_MCP_TOKEN"];
+    delete process.env["NLM_CITATION_LOG"];
+  });
+
+  it("logs a citation with valid Bearer token", async () => {
+    const res = await app.request("/api/cite", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: "Bearer test-token-secret",
+      },
+      body: JSON.stringify({ id: "sess_a", reason: "referenced in response" }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { logged: boolean; id: string };
+    expect(body.logged).toBe(true);
+    expect(body.id).toBe("sess_a");
+  });
+
+  it("401s with missing Bearer token", async () => {
+    const res = await app.request("/api/cite", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ id: "sess_a" }),
+    });
+    expect(res.status).toBe(401);
+  });
+
+  it("401s with invalid Bearer token", async () => {
+    const res = await app.request("/api/cite", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: "Bearer wrong-token",
+      },
+      body: JSON.stringify({ id: "sess_a" }),
+    });
+    expect(res.status).toBe(401);
+  });
+
+  it("400s when id is missing", async () => {
+    const res = await app.request("/api/cite", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: "Bearer test-token-secret",
+      },
+      body: JSON.stringify({}),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toContain("id");
+  });
+
+  it("400s when body is not JSON", async () => {
+    const res = await app.request("/api/cite", {
+      method: "POST",
+      headers: {
+        authorization: "Bearer test-token-secret",
+      },
+      body: "not json",
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toContain("JSON");
+  });
+});
+
+describe("GET /api/recall/facts empty hint", () => {
+  let tmp: string;
+  let storage: SqliteStorage;
+
+  beforeEach(async () => {
+    tmp = mkdtempSync(join(tmpdir(), "nlm-facts-"));
+    storage = SqliteStorage.create({
+      dbPath: join(tmp, "canonical.sqlite"),
+      migrationsDir: MIGRATIONS_DIR,
+    });
+    await storage.init();
+    const store = storage.sessions;
+    // Seed with test sessions
+    for (const { session, embedding } of seed) {
+      store.insertSessionForTest(session);
+      store.insertEmbeddingForTest(session.id, embedding);
+    }
+  });
+
+  afterEach(async () => {
+    await storage.close();
+    rmSync(tmp, { recursive: true, force: true });
+  });
+
+  it("includes hint field when fact store is empty", async () => {
+    const app = createApp({
+      recall: new RecallService({
+        store: storage.sessions,
+        llm: new FixedEmbedder(unit([0, 1, 0])),
+      }),
+      store: storage.sessions,
+      liveStore: storage.sessions,
+      factRecall: new FactRecallService({
+        factStore: storage.facts,
+        llm: new FixedEmbedder(unit([0, 1, 0])),
+      }),
+      factStore: storage.facts as SqliteFactStore,
+      factQueryLogPath: join(tmp, "fact_query_log.jsonl"),
+      queryLogPath: join(tmp, "query_log.jsonl"),
+    });
+
+    const res = await app.request("/api/recall/facts?q=anything");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { total: number; hint?: string };
+    expect(body.total).toBe(0);
+    expect(body.hint).toBe("fact store empty - run nlm backfill-facts to populate");
+  });
+
+  it("omits hint field when facts exist", async () => {
+    const factStore = storage.facts as SqliteFactStore;
+    // Insert a fact
+    await factStore.insert({
+      id: "fact_test",
+      kind: "decision",
+      subject: "TestEntity",
+      predicate: "framework",
+      value: "chose postgres",
+      sourceSessionId: "sess_a",
+      sourceQuote: null,
+      createdAt: new Date().toISOString(),
+      supersededBy: null,
+      confidence: 0.9,
+    });
+
+    const app = createApp({
+      recall: new RecallService({
+        store: storage.sessions,
+        llm: new FixedEmbedder(unit([0, 1, 0])),
+      }),
+      store: storage.sessions,
+      liveStore: storage.sessions,
+      factRecall: new FactRecallService({
+        factStore,
+        llm: new FixedEmbedder(unit([0, 1, 0])),
+      }),
+      factStore,
+      factQueryLogPath: join(tmp, "fact_query_log.jsonl"),
+      queryLogPath: join(tmp, "query_log.jsonl"),
+    });
+
+    // Query by subject to find the fact
+    const res = await app.request("/api/recall/facts?subject=TestEntity");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { total: number; hint?: string };
+    expect(body.total).toBeGreaterThan(0);
+    expect(body.hint).toBeUndefined();
+  });
+});
