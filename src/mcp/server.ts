@@ -16,7 +16,7 @@ import { z } from "zod";
 import { logQuery } from "@core/recall/query-log.js";
 import { logFactQuery } from "@core/recall-facts/fact-query-log.js";
 import { appendCitation } from "@core/recall/citation-log.js";
-import { appendSupersedence } from "@core/storage/supersedence-log.js";
+import { appendSupersedence, readSupersedenceLog } from "@core/storage/supersedence-log.js";
 import type { FactRecallService } from "@core/recall-facts/fact-recall-service.js";
 import type { RecallService } from "@core/recall/recall-service.js";
 import type { FactStore } from "@ports/fact-store.js";
@@ -159,6 +159,12 @@ export async function getSessionHandler(
       linkedIds.length > 0 ? await deps.store.getByIds(linkedIds) : [];
     const byId = new Map(linked.map((s) => [s.id, s]));
 
+    // Load supersedence log once so we can join reason + recordedBy onto supersededBy
+    const supersedenceLog = session.supersededBy
+      ? await readSupersedenceLog()
+      : [];
+    const supersedenceMap = new Map(supersedenceLog.map((e) => [e.predecessorId, e]));
+
     const supersedes = (session.supersedes ?? []).map((id) => {
       const s = byId.get(id);
       return s ? { id, label: s.label, summary: s.summary } : { id, label: "", summary: "" };
@@ -166,9 +172,15 @@ export async function getSessionHandler(
     const supersededBy = session.supersededBy
       ? (() => {
           const s = byId.get(session.supersededBy);
-          return s
+          const logEntry = supersedenceMap.get(session.id);
+          const base = s
             ? { id: session.supersededBy, label: s.label, summary: s.summary }
             : { id: session.supersededBy, label: "", summary: "" };
+          return {
+            ...base,
+            reason: logEntry?.reason,
+            recordedBy: logEntry?.source,
+          };
         })()
       : null;
 
