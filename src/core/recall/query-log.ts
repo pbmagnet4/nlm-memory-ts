@@ -26,6 +26,7 @@ export interface LogEntry {
   readonly limit: number;
   readonly nResults: number;
   readonly returnedIds: ReadonlyArray<string>;
+  readonly conversationId?: string;
 }
 
 export interface StatsResult {
@@ -50,6 +51,7 @@ export async function logQuery(
     await mkdir(dirname(logPath), { recursive: true });
     const payload = {
       ts: new Date().toISOString(),
+      ...(entry.conversationId !== undefined ? { conversation_id: entry.conversationId } : {}),
       source: entry.source,
       runtime: entry.runtime,
       query: entry.query,

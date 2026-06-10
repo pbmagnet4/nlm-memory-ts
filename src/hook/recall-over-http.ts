@@ -26,13 +26,15 @@ export interface RecallOverHttpResult {
 export async function recallOverHttp(
   prompt: string,
   runtime?: string,
+  conversationId?: string,
 ): Promise<RecallOverHttpResult> {
   const query = extractRecallQuery(prompt);
   if (query === null) return { hits: [], facts: [] };
   const portValue = process.env["NLM_PORT"] ?? "3940";
   const url =
     `http://localhost:${portValue}/api/recall` +
-    `?q=${encodeURIComponent(query)}&mode=keyword&limit=${RECALL_LIMIT}&withFacts=true`;
+    `?q=${encodeURIComponent(query)}&mode=keyword&limit=${RECALL_LIMIT}&withFacts=true` +
+    (conversationId ? `&conversation_id=${encodeURIComponent(conversationId)}` : "");
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), RECALL_TIMEOUT_MS);
   try {

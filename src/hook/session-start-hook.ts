@@ -35,7 +35,7 @@ export interface SessionStartInput {
 
 export interface RunSessionStartDeps {
   readonly mode: HookMode;
-  readonly recall: (query: string) => Promise<ReadonlyArray<RecallHitInput>>;
+  readonly recall: (query: string, conversationId?: string) => Promise<ReadonlyArray<RecallHitInput>>;
 }
 
 /** Orchestration. Returns the text to emit on stdout ("" for nothing). */
@@ -45,7 +45,7 @@ export async function runHook(
 ): Promise<string> {
   let hits: ReadonlyArray<RecallHitInput> = [];
   try {
-    hits = await deps.recall(input.query);
+    hits = await deps.recall(input.query, input.conversationId);
   } catch {
     hits = [];
   }
@@ -122,11 +122,12 @@ function readStdin(): Promise<string> {
   });
 }
 
-async function recallOverHttp(query: string): Promise<ReadonlyArray<RecallHitInput>> {
+async function recallOverHttp(query: string, conversationId?: string): Promise<ReadonlyArray<RecallHitInput>> {
   const portValue = process.env["NLM_PORT"] ?? "3940";
   const url =
     `http://localhost:${portValue}/api/recall` +
-    `?q=${encodeURIComponent(query)}&mode=hybrid&limit=${RECALL_LIMIT}`;
+    `?q=${encodeURIComponent(query)}&mode=hybrid&limit=${RECALL_LIMIT}` +
+    (conversationId ? `&conversation_id=${encodeURIComponent(conversationId)}` : "");
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), RECALL_TIMEOUT_MS);
   try {
@@ -187,7 +188,7 @@ async function main(): Promise<void> {
       typeof payload.project_name === "string" ? payload.project_name : "";
     const query = buildQuery(workingDirectory, projectName);
     const mode: HookMode = process.env["NLM_HOOK_MODE"] === "live" ? "live" : "shadow";
-    const out = await runHook({ conversationId, query }, { mode, recall: recallOverHttp });
+    const out = await runHook({ conversationId, query }, { mode, recall: (q, cid) => recallOverHttp(q, cid === "unknown" ? undefined : cid) });
     const failureModes = mode === "live" ? await fetchFailureModeBlock(workingDirectory) : "";
     const combined = composeSessionStartOutput(failureModes, out);
     if (combined) process.stdout.write(combined);

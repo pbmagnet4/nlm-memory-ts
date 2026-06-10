@@ -460,6 +460,7 @@ function registerRecallRoutes(app: Hono, deps: HttpDeps): void {
     const kind = c.req.query("kind");
     const mode = (c.req.query("mode") ?? "keyword") as string;
     const limitStr = c.req.query("limit");
+    const conversationIdParam = c.req.query("conversation_id");
 
     if (kind !== undefined && !VALID_KINDS.includes(kind as RecallKindFilter)) {
       return c.json({ error: "kind must be 'decision', 'open', or omitted" }, 400);
@@ -522,6 +523,7 @@ function registerRecallRoutes(app: Hono, deps: HttpDeps): void {
         limit,
         nResults: result.total,
         returnedIds: result.results.map((r) => r.id),
+        ...(conversationIdParam !== undefined ? { conversationId: conversationIdParam } : {}),
       },
       ...(deps.queryLogPath !== undefined ? [deps.queryLogPath] : []),
     );
