@@ -66,6 +66,44 @@ export async function logQuery(
   }
 }
 
+export async function readQueryLog(
+  days: number,
+  logPath: string = defaultLogPath(),
+): Promise<Array<{ conversationId: string; entry: LogEntry }>> {
+  let raw: string;
+  try {
+    raw = await readFile(logPath, "utf8");
+  } catch {
+    return [];
+  }
+  const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
+  const results: Array<{ conversationId: string; entry: LogEntry }> = [];
+  for (const line of raw.split("\n")) {
+    if (!line.trim()) continue;
+    try {
+      const obj = JSON.parse(line) as Record<string, unknown>;
+      if (typeof obj["ts"] !== "string") continue;
+      if (Date.parse(obj["ts"]) < cutoff) continue;
+      const convId = typeof obj["conversation_id"] === "string" ? obj["conversation_id"] : "unknown";
+      const entry: LogEntry = {
+        source: typeof obj["source"] === "string" ? obj["source"] : "",
+        runtime: typeof obj["runtime"] === "string" ? obj["runtime"] : null,
+        query: typeof obj["query"] === "string" ? obj["query"] : null,
+        entity: typeof obj["entity"] === "string" ? obj["entity"] : null,
+        kind: (obj["kind"] as LogEntry["kind"]) ?? null,
+        mode: (obj["mode"] as LogEntry["mode"]) ?? "keyword",
+        limit: Number(obj["limit"] ?? 5),
+        nResults: Number(obj["n_results"] ?? 0),
+        returnedIds: (obj["returned_ids"] as unknown[]).filter((x): x is string => typeof x === "string"),
+      };
+      results.push({ conversationId: convId, entry });
+    } catch {
+      continue;
+    }
+  }
+  return results;
+}
+
 export async function recallStats(
   days: number,
   logPath: string = defaultLogPath(),

@@ -13,6 +13,7 @@
 import type { RecallHitInput } from "@core/hook/select.js";
 import type { PointerFact } from "@core/hook/pointer-block.js";
 import { hookAuthHeaders } from "./hook-auth.js";
+import { extractRecallQuery } from "@core/hook/query-extract.js";
 
 export const RECALL_LIMIT = 5;
 export const RECALL_TIMEOUT_MS = 2000;
@@ -26,10 +27,12 @@ export async function recallOverHttp(
   prompt: string,
   runtime?: string,
 ): Promise<RecallOverHttpResult> {
+  const query = extractRecallQuery(prompt);
+  if (query === null) return { hits: [], facts: [] };
   const portValue = process.env["NLM_PORT"] ?? "3940";
   const url =
     `http://localhost:${portValue}/api/recall` +
-    `?q=${encodeURIComponent(prompt)}&mode=keyword&limit=${RECALL_LIMIT}&withFacts=true`;
+    `?q=${encodeURIComponent(query)}&mode=keyword&limit=${RECALL_LIMIT}&withFacts=true`;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), RECALL_TIMEOUT_MS);
   try {

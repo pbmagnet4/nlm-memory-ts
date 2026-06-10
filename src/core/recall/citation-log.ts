@@ -33,6 +33,41 @@ function defaultLogPath(): string {
   return process.env["NLM_CITATION_LOG"] ?? join(homedir(), ".nlm", "citation-log.jsonl");
 }
 
+export async function readCitationLog(
+  days: number,
+  logPath: string = defaultLogPath(),
+): Promise<CitationEntry[]> {
+  let raw: string;
+  try {
+    raw = await readFile(logPath, "utf8");
+  } catch {
+    return [];
+  }
+  const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
+  const results: CitationEntry[] = [];
+  for (const line of raw.split("\n")) {
+    if (!line.trim()) continue;
+    try {
+      const obj = JSON.parse(line) as Record<string, unknown>;
+      if (typeof obj["ts"] !== "string") continue;
+      if (Date.parse(obj["ts"]) < cutoff) continue;
+      if (typeof obj["conversation_id"] !== "string" || typeof obj["cited_id"] !== "string") continue;
+      const kind = obj["kind"] === "tool_use" || obj["kind"] === "prose" ? obj["kind"] : undefined;
+      const responsePreview = typeof obj["response_preview"] === "string" ? obj["response_preview"] : undefined;
+      const entry: CitationEntry = {
+        conversationId: obj["conversation_id"],
+        citedId: obj["cited_id"],
+        ...(kind !== undefined ? { kind } : {}),
+        ...(responsePreview !== undefined ? { responsePreview } : {}),
+      };
+      results.push(entry);
+    } catch {
+      continue;
+    }
+  }
+  return results;
+}
+
 export async function appendCitation(
   entry: CitationEntry,
   logPath: string = defaultLogPath(),

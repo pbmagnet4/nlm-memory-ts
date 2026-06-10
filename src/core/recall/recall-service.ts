@@ -29,9 +29,12 @@ import { recencyMultiplier } from "./recency.js";
 import { pickRelatedFacts } from "./related-facts.js";
 import { RewriteCache } from "./rewrite-cache.js";
 import { tokenSet } from "./tokenize.js";
+import { buildCitationBoosts, applyBoosts } from "./reranker.js";
+import { readCitationLog } from "./citation-log.js";
 
 const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 100;
+const CITATION_LOOKBACK_DAYS = 90;
 
 function isFactInjectionEnabled(): boolean {
   const raw = process.env["NLM_HOOK_INJECT_FACTS"];
@@ -186,9 +189,25 @@ export class RecallService {
       if (semError) result = { ...result, modeUnavailable: semError };
     }
 
-    // 5. Spec G.2: optionally attach high-confidence facts about top entities.
+    // 5. Apply citation-frequency reranker. Sessions cited frequently in past
+    //    conversations receive a small log-scaled score boost on top of FTS5/RRF
+    //    scores. Failures gracefully no-op so recall never breaks because of
+    //    missing or unreadable citation log.
+    try {
+      const citations = await readCitationLog(CITATION_LOOKBACK_DAYS);
+      const boosts = buildCitationBoosts(citations);
+      if (boosts.size > 0) {
+        const reranked = applyBoosts(result.results, boosts);
+        result = { ...result, results: reranked.slice(0, limit) };
+      }
+    } catch {
+      // Gracefully ignore citation log read failures.
+    }
+
+    // 6. Spec G.2: optionally attach high-confidence facts about top entities.
     //    Only runs when the caller opts in AND a FactStore is wired. Failures
     //    silently no-op so recall never breaks because of fact lookup.
+    //    (Note: citation boost in step 5 may have re-sorted results)
     if (input.withRelatedFacts === true && this.deps.factStore && isFactInjectionEnabled()) {
       const relatedFacts = await pickRelatedFacts(result.results, this.deps.factStore);
       if (relatedFacts.length > 0) {
