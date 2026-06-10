@@ -171,28 +171,27 @@ export class PgSessionStore implements SessionStore {
         [predecessorId],
       );
 
-      // Cascade supersedence to facts
-      const { rows: predecessorFacts } = await client.query<{
-        id: string;
-        subject: string;
-        predicate: string;
-      }>(
-        "SELECT id, subject, predicate FROM facts WHERE source_session_id = $1",
-        [predecessorId]
-      );
-
-      for (const pFact of predecessorFacts) {
-        const { rows } = await client.query<{ id: string }>(
-          "SELECT id FROM facts WHERE source_session_id = $1 AND subject = $2 AND predicate = $3 AND superseded_by IS NULL LIMIT 1",
-          [successorId, pFact.subject, pFact.predicate]
-        );
-        if (rows[0]) {
-          await client.query(
-            "UPDATE facts SET superseded_by = $1 WHERE id = $2",
-            [rows[0].id, pFact.id]
-          );
-        }
-      }
+      // Cascade supersedence to facts in a single correlated UPDATE
+      const cascadeSQL = `
+        UPDATE facts AS p
+        SET superseded_by = (
+          SELECT s.id FROM facts s
+          WHERE s.source_session_id = $2
+            AND s.subject = p.subject
+            AND s.predicate = p.predicate
+            AND s.superseded_by IS NULL
+          LIMIT 1
+        )
+        WHERE p.source_session_id = $1
+          AND EXISTS (
+            SELECT 1 FROM facts s
+            WHERE s.source_session_id = $2
+              AND s.subject = p.subject
+              AND s.predicate = p.predicate
+              AND s.superseded_by IS NULL
+          )
+      `;
+      await client.query(cascadeSQL, [predecessorId, successorId]);
 
       await client.query("COMMIT");
     } catch (err) {
