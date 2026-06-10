@@ -54,7 +54,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json",
     "bench:longmemeval": "tsx scripts/longmemeval/run-harness.ts",
     "bench:classifier": "tsx scripts/longmemeval/run-harness.ts --classifier",
-    "bench:compare": "tsx scripts/longmemeval/compare-classifiers.ts"
+    "bench:compare": "tsx scripts/longmemeval/compare-classifiers.ts",
+    "eval:signals": "tsx scripts/eval/signals-eval.ts"
   },
   "dependencies": {
     "@clack/prompts": "^1.4.0",
