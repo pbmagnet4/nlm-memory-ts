@@ -72,17 +72,15 @@ const SQL_I4_MISSING_TO = `
   LIMIT 6
 `;
 
+// One row per conflicting (subject, predicate) group — the count is the number
+// of conflicts to resolve, not the number of facts involved. MIN(id) keeps the
+// projection aggregate-only so PostgreSQL's GROUP BY strictness accepts it.
 const SQL_I5_DUPLICATE_FACTS = `
-  SELECT f.id AS bad_id
-  FROM facts f
-  INNER JOIN (
-    SELECT subject, predicate
-    FROM facts
-    WHERE superseded_by IS NULL
-    GROUP BY subject, predicate
-    HAVING COUNT(*) > 1
-  ) dups ON f.subject = dups.subject AND f.predicate = dups.predicate
-  WHERE f.superseded_by IS NULL
+  SELECT MIN(id) AS bad_id
+  FROM facts
+  WHERE superseded_by IS NULL
+  GROUP BY subject, predicate
+  HAVING COUNT(*) > 1
   LIMIT 6
 `;
 
