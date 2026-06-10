@@ -7,12 +7,12 @@ describe("extractRecallQuery", () => {
     expect(extractRecallQuery("ok")).toBeNull();
     expect(extractRecallQuery("sounds good")).toBeNull();
     expect(extractRecallQuery("yes")).toBeNull();
-    expect(extractRecallQuery("   ")).toBeNull();
   });
 
   it("returns null when fewer than 2 content words remain after stopword removal", () => {
     expect(extractRecallQuery("can you")).toBeNull();
     expect(extractRecallQuery("what is the")).toBeNull();
+    expect(extractRecallQuery("   ")).toBeNull();
   });
 
   it("extracts content words from a technical message", () => {
@@ -53,5 +53,11 @@ describe("extractRecallQuery", () => {
     const q = extractRecallQuery("better-sqlite3 native rebuild node22");
     expect(q).not.toBeNull();
     expect(q).toContain("better-sqlite3");
+  });
+
+  it("filters tokens shorter than 3 characters including short numbers", () => {
+    // "node" (4 chars) survives, "19" (2 chars) is filtered by MIN_WORD_LEN
+    const q = extractRecallQuery("node 19");
+    expect(q).toBeNull(); // only 1 content word after filtering "19"
   });
 });

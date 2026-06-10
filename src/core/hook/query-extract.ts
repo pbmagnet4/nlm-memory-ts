@@ -21,7 +21,6 @@ const MIN_CONTENT_WORDS = 2;
 const MIN_WORD_LEN = 3;
 
 /**
- * Extract content words from a prompt for use as an FTS5 recall query.
  * Returns null when the message is too conversational to produce a useful
  * query — the caller should skip recall entirely in that case.
  */
