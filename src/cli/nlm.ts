@@ -421,6 +421,55 @@ program
   });
 
 program
+  .command("precision")
+  .description(
+    "Compute real-world recall precision: fraction of surfaced sessions that were later cited.",
+  )
+  .option("--days <n>", "lookback window in days", (v) => Number.parseInt(v, 10), 30)
+  .option("--json", "emit JSON instead of human-readable output")
+  .option("--verbose", "show per-conversation breakdown")
+  .action(async (opts: { days: number; json: boolean; verbose: boolean }) => {
+    const { computePrecision } = await import("../core/recall/precision.js");
+    const { readQueryLog } = await import("../core/recall/query-log.js");
+    const { readCitationLog } = await import("../core/recall/citation-log.js");
+
+    const [queryEntries, citationEntries] = await Promise.all([
+      readQueryLog(opts.days).catch(() => []),
+      readCitationLog(opts.days).catch(() => []),
+    ]);
+
+    const result = computePrecision(queryEntries, citationEntries);
+
+    if (opts.json) {
+      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+      return;
+    }
+
+    if (result.precisionAtK === null) {
+      console.log("No scoreable conversations in the last " + opts.days + " day(s).");
+      console.log(
+        "  Precision requires both recall queries (query_log.jsonl) and explicit citations",
+      );
+      console.log(
+        "  (citation_log.jsonl). If citations are empty, run: nlm help close-loop",
+      );
+      return;
+    }
+
+    const pct = (result.precisionAtK * 100).toFixed(1);
+    console.log(`Recall precision@k — last ${opts.days} day(s)`);
+    console.log(`  Precision: ${pct}%  (${result.conversationCount} conversations scored)`);
+
+    if (opts.verbose && result.perConversation.length > 0) {
+      console.log("\nPer-conversation breakdown (worst first):");
+      for (const row of result.perConversation) {
+        const p = (row.precision * 100).toFixed(0).padStart(3);
+        console.log(`  ${p}%  surfaced=${row.surfaced}  cited=${row.cited}  ${row.conversationId}`);
+      }
+    }
+  });
+
+program
   .command("supersede")
   .description("Retroactively mark a session as superseded by a newer one")
   .argument("[predecessor]", "predecessor session id (omit for interactive search)")
