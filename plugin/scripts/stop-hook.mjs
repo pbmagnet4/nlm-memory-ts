@@ -3,8 +3,8 @@
 // src/hook/stop-hook.ts
 import { pathToFileURL } from "node:url";
 import { appendFileSync, mkdirSync as mkdirSync3 } from "node:fs";
-import { homedir as homedir4 } from "node:os";
-import { dirname, join as join3 } from "node:path";
+import { homedir as homedir5 } from "node:os";
+import { dirname as dirname2, join as join4 } from "node:path";
 
 // src/core/hook/citation-detect.ts
 var MIN_ID_LEN = 6;
@@ -56,6 +56,43 @@ function safeStringify(value) {
   } catch {
     return "";
   }
+}
+
+// src/core/hook/miss-detect.ts
+var MIN_ID_LEN2 = 6;
+function detectMisses(input) {
+  const surfaced = /* @__PURE__ */ new Set();
+  for (const id of input.surfacedIds) {
+    if (id.length >= MIN_ID_LEN2) surfaced.add(id);
+  }
+  const seenMissed = /* @__PURE__ */ new Set();
+  const misses = [];
+  for (const tu of input.toolUses) {
+    if (!isNlmTool2(tu.name)) continue;
+    const kind = explicitIdKind(tu.name);
+    if (!kind) continue;
+    const id = extractId(tu.input);
+    if (!id || id.length < MIN_ID_LEN2) continue;
+    if (surfaced.has(id)) continue;
+    if (seenMissed.has(id)) continue;
+    seenMissed.add(id);
+    misses.push({ id, kind });
+  }
+  return misses;
+}
+function isNlmTool2(name) {
+  return /^mcp__[^_]*nlm[^_]*__/.test(name);
+}
+function explicitIdKind(name) {
+  if (name.endsWith("__get_session")) return "get_session";
+  if (name.endsWith("__cite_session")) return "cite_session";
+  return null;
+}
+function extractId(input) {
+  if (input === null || typeof input !== "object") return null;
+  const obj = input;
+  const candidate = obj["id"];
+  return typeof candidate === "string" ? candidate : null;
 }
 
 // src/core/hook/memo.ts
@@ -114,6 +151,32 @@ function recordCited(conversationId, ids) {
   }
 }
 
+// src/core/recall/miss-log.ts
+import { appendFile, mkdir, readFile, stat } from "node:fs/promises";
+import { dirname, join as join3 } from "node:path";
+import { homedir as homedir3 } from "node:os";
+function defaultLogPath() {
+  return process.env["NLM_MISS_LOG"] ?? join3(homedir3(), ".nlm", "miss-log.jsonl");
+}
+function isEnabled() {
+  const raw = process.env["NLM_MISS_LOG_ENABLED"];
+  if (raw === void 0) return true;
+  return raw !== "0" && raw.toLowerCase() !== "false";
+}
+async function appendMisses(entries, logPath2) {
+  if (!isEnabled()) return;
+  if (entries.length === 0) return;
+  const path = logPath2 ?? defaultLogPath();
+  try {
+    await mkdir(dirname(path), { recursive: true });
+    const ts = (/* @__PURE__ */ new Date()).toISOString();
+    const block = entries.map((e) => `${JSON.stringify({ ts, ...e })}
+`).join("");
+    await appendFile(path, block, "utf8");
+  } catch {
+  }
+}
+
 // src/core/hook/transcript.ts
 import { existsSync as existsSync3, readFileSync as readFileSync3 } from "node:fs";
 function parseTurn(parsed) {
@@ -164,7 +227,7 @@ function readAllAssistantTurns(transcriptPath) {
 
 // src/llm/env-autoload.ts
 import { readFileSync as readFileSync4, existsSync as existsSync4 } from "node:fs";
-import { homedir as homedir3 } from "node:os";
+import { homedir as homedir4 } from "node:os";
 import { resolve } from "node:path";
 var DEFAULT_SEARCH_PATHS = [
   "~/.nlm/.env",
@@ -173,7 +236,7 @@ var DEFAULT_SEARCH_PATHS = [
   "../../.env"
 ];
 function expandHome(p) {
-  if (p.startsWith("~/")) return resolve(homedir3(), p.slice(2));
+  if (p.startsWith("~/")) return resolve(homedir4(), p.slice(2));
   return p;
 }
 function autoloadEnv(extraPaths = []) {
@@ -259,6 +322,17 @@ async function runStopHook(input, deps) {
   });
   const alreadyCited = loadCited(input.conversationId);
   const fresh = detected.filter((c) => !alreadyCited.has(c.id));
+  const misses = detectMisses({ toolUses: allToolUses, surfacedIds: surfaced });
+  if (misses.length > 0) {
+    void appendMisses(
+      misses.map((m) => ({
+        conversationId: input.conversationId,
+        missedId: m.id,
+        kind: m.kind,
+        surfacedCount: surfaced.size
+      }))
+    );
+  }
   const lastText = turns[turns.length - 1]?.text ?? "";
   const preview = lastText.slice(0, RESPONSE_PREVIEW_CHARS);
   for (const c of fresh) {
@@ -279,12 +353,12 @@ async function runStopHook(input, deps) {
   };
 }
 function logPath() {
-  return process.env["NLM_HOOK_LOG"] ?? join3(homedir4(), ".nlm", "hook-log.jsonl");
+  return process.env["NLM_HOOK_LOG"] ?? join4(homedir5(), ".nlm", "hook-log.jsonl");
 }
 function logStopResult(result) {
   try {
     const path = logPath();
-    mkdirSync3(dirname(path), { recursive: true });
+    mkdirSync3(dirname2(path), { recursive: true });
     appendFileSync(
       path,
       `${JSON.stringify({
