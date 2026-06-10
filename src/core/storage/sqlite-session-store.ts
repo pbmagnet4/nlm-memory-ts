@@ -25,6 +25,7 @@ import type {
 import type {
   Session,
   SessionStatus,
+  SessionEdgeKind,
 } from "@shared/types.js";
 import { liveSessionStatus } from "./live-status.js";
 import { loadActionOverlay, openQuestionId } from "@core/actions/overlay.js";
@@ -62,6 +63,19 @@ export interface IngestRecord {
   readonly openQuestions: ReadonlyArray<string>;
 }
 
+/**
+ * Supersedence target for insertSession. `kind` selects the relation:
+ * `replaces` (mechanical re-ingest of a grown transcript → predecessor
+ * status `replaced`) or `supersedes` (operator overturn → status
+ * `superseded`). The scheduler ingest path passes `replaces`; operator
+ * overturn goes through markSuperseded, not here. See
+ * docs/plans/2026-06-10-supersedence-split.md.
+ */
+export interface Supersedes {
+  readonly priorSessionId: string;
+  readonly kind: SessionEdgeKind;
+}
+
 type SessionRow = {
   id: string;
   runtime: string;
@@ -71,7 +85,7 @@ type SessionRow = {
   duration_min: number | null;
   label: string;
   summary: string;
-  status: "active" | "closed" | "superseded";
+  status: "active" | "closed" | "superseded" | "replaced";
   transcript_kind: string | null;
   transcript_path: string | null;
   body: string | null;
@@ -203,7 +217,7 @@ export class SqliteSessionStore implements SessionStore {
   async insertSession(
     record: IngestRecord,
     embedder: import("@ports/llm-client.js").LLMClient | null = null,
-    supersedes: string | null = null,
+    supersedes: Supersedes | null = null,
     factSink: { factStore: SqliteFactStore; facts: ReadonlyArray<Fact> } | null = null,
   ): Promise<void> {
     const db = this.db;
@@ -269,14 +283,15 @@ export class SqliteSessionStore implements SessionStore {
         linkEnt.run(record.id, name);
       }
 
-      if (supersedes && supersedes !== record.id) {
+      if (supersedes && supersedes.priorSessionId !== record.id) {
+        const predecessorStatus = supersedes.kind === "replaces" ? "replaced" : "superseded";
         db.prepare(
           `INSERT OR IGNORE INTO session_edges (from_session, to_session, kind)
-           VALUES (?, ?, 'supersedes')`,
-        ).run(record.id, supersedes);
+           VALUES (?, ?, ?)`,
+        ).run(record.id, supersedes.priorSessionId, supersedes.kind);
         db.prepare(
-          "UPDATE sessions SET status = 'superseded', updated_at = datetime('now') WHERE id = ?",
-        ).run(supersedes);
+          "UPDATE sessions SET status = ?, updated_at = datetime('now') WHERE id = ?",
+        ).run(predecessorStatus, supersedes.priorSessionId);
       }
 
       // Facts ingest is part of the session txn — either both commit or both
@@ -579,9 +594,9 @@ export class SqliteSessionStore implements SessionStore {
       .all(blob, chunkK);
 
     // Max-pool: keep the smallest distance (highest cosine) per session,
-    // filtering out sessions with superseded status.
+    // filtering out superseded and replaced sessions.
     const best = new Map<string, number>();
-    const supersededSessionIds = new Set<string>();
+    const excludedSessionIds = new Set<string>();
     // First pass: collect all unique session IDs to check their status
     const uniqueSessionIds = [...new Set(rows.map((r) => r.session_id))];
     if (uniqueSessionIds.length > 0) {
@@ -592,14 +607,14 @@ export class SqliteSessionStore implements SessionStore {
         )
         .all(...uniqueSessionIds);
       for (const sr of statusRows) {
-        if (sr.status === "superseded") {
-          supersededSessionIds.add(sr.id);
+        if (sr.status === "superseded" || sr.status === "replaced") {
+          excludedSessionIds.add(sr.id);
         }
       }
     }
-    // Second pass: max-pool, excluding superseded sessions
+    // Second pass: max-pool, excluding superseded/replaced sessions
     for (const r of rows) {
-      if (supersededSessionIds.has(r.session_id)) continue;
+      if (excludedSessionIds.has(r.session_id)) continue;
       const cur = best.get(r.session_id);
       if (cur === undefined || r.distance < cur) {
         best.set(r.session_id, r.distance);
@@ -632,7 +647,7 @@ export class SqliteSessionStore implements SessionStore {
         FROM sessions_fts
         JOIN sessions s ON s.rowid = sessions_fts.rowid
         WHERE sessions_fts MATCH ?
-          AND s.status != 'superseded'
+          AND s.status NOT IN ('superseded', 'replaced')
         ORDER BY score DESC
         LIMIT ?
       `)
@@ -670,12 +685,13 @@ export class SqliteSessionStore implements SessionStore {
       if (!succExists) {
         throw new Error(`successor session ${successorId} not found`);
       }
-      // Cycle guard. Edges read (from, to) = "from supersedes to". We are about
-      // to insert (successor, predecessor). A cycle closes if the predecessor
-      // can already reach the successor by following supersedes edges — then
-      // the new edge would loop back. Walk from→to starting at the predecessor.
+      // Cycle guard. Edges read (from, to) = "from supersedes/replaces to". We
+      // are about to insert (successor, predecessor). A cycle closes if the
+      // predecessor can already reach the successor by following either edge
+      // kind — then the new edge would loop back. Walk from→to over the union
+      // of both supersedence relations starting at the predecessor.
       const childrenStmt = this.db.prepare<[string], { to_session: string }>(
-        "SELECT to_session FROM session_edges WHERE from_session = ? AND kind = 'supersedes'",
+        "SELECT to_session FROM session_edges WHERE from_session = ? AND kind IN ('supersedes', 'replaces')",
       );
       const seen = new Set<string>([predecessorId]);
       let frontier = [predecessorId];

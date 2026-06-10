@@ -6,12 +6,17 @@
 /**
  * Session status as exposed to UI / recall consumers.
  *
- * Persisted values in `sessions.status` CHECK: 'active' | 'closed' | 'superseded'.
- * `idle` is a derived state computed from transcript mtime, returned by the
- * storage layer alongside the persisted value. `superseded` always wins over
- * mtime-derived state.
+ * Persisted values in `sessions.status` CHECK: 'active' | 'closed' |
+ * 'superseded' | 'replaced'. `idle` is a derived state computed from
+ * transcript mtime, returned by the storage layer alongside the persisted
+ * value. `superseded`/`replaced` always win over mtime-derived state.
+ *
+ * `superseded` = operator-asserted epistemic overturn (markSuperseded).
+ * `replaced` = mechanical re-ingest of a grown transcript (supersede-on-resume);
+ * the predecessor is a strict subset of the successor. See
+ * docs/plans/2026-06-10-supersedence-split.md.
  */
-export type SessionStatus = "active" | "idle" | "closed" | "superseded";
+export type SessionStatus = "active" | "idle" | "closed" | "superseded" | "replaced";
 
 export interface Session {
   readonly id: string;
@@ -34,6 +39,21 @@ export interface Session {
   /** ID of the session that superseded this one, if any. Populated by getById; absent on bulk reads. */
   readonly supersededBy?: string | null;
 }
+
+/**
+ * Supersedence-relation edge kinds in `session_edges.kind`.
+ *
+ * `supersedes` = operator-asserted overturn (markSuperseded); paired with
+ * predecessor status `superseded`. `replaces` = mechanical re-ingest of a
+ * grown transcript; paired with predecessor status `replaced`. Both are
+ * traversed together for cycle detection and the supersedence graph; only
+ * `supersedes` counts toward the provenance-integrity KPI. See
+ * docs/plans/2026-06-10-supersedence-split.md.
+ *
+ * `session_edges` also stores `continues` (and the schema CHECK permits
+ * `branched_from`/`merged_from`); those are not supersedence relations.
+ */
+export type SessionEdgeKind = "supersedes" | "replaces";
 
 export type RecallMode = "keyword" | "semantic" | "hybrid";
 

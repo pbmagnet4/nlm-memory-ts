@@ -197,7 +197,7 @@ describe("ScanScheduler.tick", () => {
     expect(messages.some((m) => m.includes("classifier"))).toBe(true);
   });
 
-  it("supersedence wires the edge + flips prior status when a file grows", async () => {
+  it("mechanical re-ingest wires a 'replaces' edge + flips prior status to 'replaced' when a file grows", async () => {
     const adapter = new ClaudeCodeAdapter({ projectsPath: projects, idleMinutes: 15 });
     const classifier = new StubClassifier();
     const scheduler = new ScanScheduler({
@@ -229,13 +229,13 @@ describe("ScanScheduler.tick", () => {
       "SELECT from_session, to_session, kind FROM session_edges",
     ).all();
     expect(edges).toHaveLength(1);
-    expect(edges[0]?.kind).toBe("supersedes");
+    expect(edges[0]?.kind).toBe("replaces");
     expect(edges[0]?.to_session).toBe(firstId);
 
-    const supersededStatus = db.prepare<[string], { status: string }>(
+    const priorStatus = db.prepare<[string], { status: string }>(
       "SELECT status FROM sessions WHERE id = ?",
     ).get(firstId);
-    expect(supersededStatus?.status).toBe("superseded");
+    expect(priorStatus?.status).toBe("replaced");
   });
 
   it("a grown transcript re-ingested under the same id does not supersede itself", async () => {

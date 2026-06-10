@@ -1,8 +1,10 @@
 /**
  * live-status — derive the three-tier session status (active / idle / closed)
  * from a transcript file's mtime. Mirrors the Python daemon's
- * live_session_status(): explicit supersedence wins; missing file → closed;
- * otherwise bucketed by age.
+ * live_session_status(): explicit supersedence/replacement wins; missing
+ * file → closed; otherwise bucketed by age. A replaced session still has a
+ * live transcript (it was re-ingested under a new id), so its persisted
+ * status must short-circuit mtime bucketing the same way superseded does.
  *
  * Thresholds match Python exactly:
  *   < 15 min       → active
@@ -27,10 +29,11 @@ function expandHome(path: string): string {
 
 export function liveSessionStatus(
   transcriptPath: string | null,
-  persistedStatus: SessionStatus | "active" | "closed" | "superseded",
+  persistedStatus: SessionStatus,
   now: number = Date.now(),
 ): SessionStatus {
   if (persistedStatus === "superseded") return "superseded";
+  if (persistedStatus === "replaced") return "replaced";
   if (!transcriptPath) return "closed";
   try {
     const expanded = expandHome(transcriptPath);

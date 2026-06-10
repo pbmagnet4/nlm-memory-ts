@@ -253,7 +253,7 @@ export class ScanScheduler {
           await this.opts.store.insertSession(
             record,
             this.opts.embedder,
-            supersedes,
+            supersedes ? { priorSessionId: supersedes, kind: "replaces" } : null,
             factSink,
           );
           if (_pgPool) {

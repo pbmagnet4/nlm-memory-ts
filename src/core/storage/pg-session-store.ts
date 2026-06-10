@@ -14,7 +14,7 @@ import type {
   SessionStore,
 } from "@ports/session-store.js";
 import type { Session, SessionStatus } from "@shared/types.js";
-import type { IngestRecord, RecentMarker, RecentWrite } from "./sqlite-session-store.js";
+import type { IngestRecord, RecentMarker, RecentWrite, Supersedes } from "./sqlite-session-store.js";
 import { chunkSessionText } from "@core/embedding/chunk-body.js";
 
 type SessionRow = {
@@ -26,7 +26,7 @@ type SessionRow = {
   duration_min: number | null;
   label: string;
   summary: string;
-  status: "active" | "closed" | "superseded";
+  status: "active" | "closed" | "superseded" | "replaced";
   transcript_kind: string | null;
   transcript_path: string | null;
   body: string | null;
@@ -107,7 +107,7 @@ export class PgSessionStore implements SessionStore {
        FROM session_embedding_chunks sec
        JOIN sessions s ON s.id = sec.session_id
        GROUP BY sec.session_id, s.status
-       HAVING s.status != 'superseded'
+       HAVING s.status NOT IN ('superseded', 'replaced')
        ORDER BY distance
        LIMIT $2`,
       [vecStr, k],
@@ -126,7 +126,7 @@ export class PgSessionStore implements SessionStore {
               ts_rank_cd(fts_vector, websearch_to_tsquery('english', $1)) AS score
        FROM sessions
        WHERE fts_vector @@ websearch_to_tsquery('english', $1)
-         AND status != 'superseded'
+         AND status NOT IN ('superseded', 'replaced')
        ORDER BY score DESC
        LIMIT $2`,
       [query, k],
@@ -163,15 +163,16 @@ export class PgSessionStore implements SessionStore {
       if (Number(succExists.rows[0]?.c) === 0) {
         throw new Error(`successor session ${successorId} not found`);
       }
-      // Cycle guard. Edges read (from, to) = "from supersedes to". We are about
-      // to insert (successor, predecessor). A cycle closes if the predecessor
-      // can already reach the successor by following supersedes edges — then
-      // the new edge would loop back. Walk from→to starting at the predecessor.
+      // Cycle guard. Edges read (from, to) = "from supersedes/replaces to". We
+      // are about to insert (successor, predecessor). A cycle closes if the
+      // predecessor can already reach the successor by following either edge
+      // kind — then the new edge would loop back. Walk from→to over the union
+      // of both supersedence relations starting at the predecessor.
       const seen = new Set<string>([predecessorId]);
       let frontier = [predecessorId];
       for (let depth = 0; depth < 100 && frontier.length > 0; depth++) {
         const children = await client.query<{ to_session: string }>(
-          `SELECT to_session FROM session_edges WHERE from_session = ANY($1) AND kind = 'supersedes'`,
+          `SELECT to_session FROM session_edges WHERE from_session = ANY($1) AND kind IN ('supersedes', 'replaces')`,
           [frontier],
         );
         const next: string[] = [];
@@ -273,7 +274,7 @@ export class PgSessionStore implements SessionStore {
   async insertSession(
     record: IngestRecord,
     embedder: import("@ports/llm-client.js").LLMClient | null = null,
-    supersedes: string | null = null,
+    supersedes: Supersedes | null = null,
   ): Promise<void> {
     const client = await this.pool.connect();
     try {
@@ -331,15 +332,16 @@ export class PgSessionStore implements SessionStore {
           [record.id, name],
         );
       }
-      if (supersedes && supersedes !== record.id) {
+      if (supersedes && supersedes.priorSessionId !== record.id) {
+        const predecessorStatus = supersedes.kind === "replaces" ? "replaced" : "superseded";
         await client.query(
           `INSERT INTO session_edges (from_session, to_session, kind)
-           VALUES ($1, $2, 'supersedes') ON CONFLICT DO NOTHING`,
-          [record.id, supersedes],
+           VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
+          [record.id, supersedes.priorSessionId, supersedes.kind],
         );
         await client.query(
-          "UPDATE sessions SET status = 'superseded', updated_at = NOW() WHERE id = $1",
-          [supersedes],
+          "UPDATE sessions SET status = $1, updated_at = NOW() WHERE id = $2",
+          [predecessorStatus, supersedes.priorSessionId],
         );
       }
       await client.query("COMMIT");

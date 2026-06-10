@@ -87,6 +87,50 @@ describe("check-invariants (SQLite)", () => {
       const violations = runChecksOnSqlite(store.rawDb());
       expect(violations.find((v) => v.id === "I2")).toBeUndefined();
     });
+
+    it("I2 matches kind: superseded with only a replaces edge is a violation", () => {
+      store.insertSessionForTest(makeSession({ id: "s1", status: "superseded" }));
+      store.insertSessionForTest(makeSession({ id: "s2" }));
+      store.rawDb()
+        .prepare("INSERT INTO session_edges (from_session, to_session, kind) VALUES (?, ?, 'replaces')")
+        .run("s2", "s1");
+      const violations = runChecksOnSqlite(store.rawDb());
+      const i2 = violations.find((v) => v.id === "I2");
+      expect(i2).toBeDefined();
+      expect(i2!.sampleIds).toContain("s1");
+    });
+  });
+
+  describe("I2r — orphaned replaced sessions", () => {
+    it("detects replaced session with no incoming replaces edge", () => {
+      store.insertSessionForTest(makeSession({ id: "s1", status: "replaced" }));
+      const violations = runChecksOnSqlite(store.rawDb());
+      const i2r = violations.find((v) => v.id === "I2r");
+      expect(i2r).toBeDefined();
+      expect(i2r!.sampleIds).toContain("s1");
+    });
+
+    it("does not flag replaced session with real incoming replaces edge", () => {
+      store.insertSessionForTest(makeSession({ id: "s1", status: "replaced" }));
+      store.insertSessionForTest(makeSession({ id: "s2" }));
+      store.rawDb()
+        .prepare("INSERT INTO session_edges (from_session, to_session, kind) VALUES (?, ?, 'replaces')")
+        .run("s2", "s1");
+      const violations = runChecksOnSqlite(store.rawDb());
+      expect(violations.find((v) => v.id === "I2r")).toBeUndefined();
+    });
+
+    it("I2r matches kind: replaced with only a supersedes edge is a violation", () => {
+      store.insertSessionForTest(makeSession({ id: "s1", status: "replaced" }));
+      store.insertSessionForTest(makeSession({ id: "s2" }));
+      store.rawDb()
+        .prepare("INSERT INTO session_edges (from_session, to_session, kind) VALUES (?, ?, 'supersedes')")
+        .run("s2", "s1");
+      const violations = runChecksOnSqlite(store.rawDb());
+      const i2r = violations.find((v) => v.id === "I2r");
+      expect(i2r).toBeDefined();
+      expect(i2r!.sampleIds).toContain("s1");
+    });
   });
 
   describe("I3 — cycle detection", () => {
@@ -111,6 +155,18 @@ describe("check-invariants (SQLite)", () => {
       db.prepare("INSERT INTO session_edges (from_session, to_session, kind) VALUES (?, ?, 'supersedes')").run("s3", "s2");
       const violations = runChecksOnSqlite(store.rawDb());
       expect(violations.find((v) => v.id === "I3")).toBeUndefined();
+    });
+
+    it("detects cycle across mixed supersedes/replaces edges", () => {
+      store.insertSessionForTest(makeSession({ id: "s1" }));
+      store.insertSessionForTest(makeSession({ id: "s2" }));
+      store.insertSessionForTest(makeSession({ id: "s3" }));
+      const db = store.rawDb();
+      db.prepare("INSERT INTO session_edges (from_session, to_session, kind) VALUES (?, ?, 'supersedes')").run("s2", "s1");
+      db.prepare("INSERT INTO session_edges (from_session, to_session, kind) VALUES (?, ?, 'replaces')").run("s3", "s2");
+      db.prepare("INSERT INTO session_edges (from_session, to_session, kind) VALUES (?, ?, 'supersedes')").run("s1", "s3");
+      const violations = runChecksOnSqlite(store.rawDb());
+      expect(violations.find((v) => v.id === "I3")).toBeDefined();
     });
   });
 
@@ -220,6 +276,30 @@ describe("check-invariants (SQLite)", () => {
         .prepare<[], { status: string }>("SELECT status FROM sessions WHERE id = 's1'")
         .get();
       expect(row?.status).toBe("closed");
+    });
+
+    it("restores orphaned replaced sessions to closed (I2r repair)", () => {
+      store.insertSessionForTest(makeSession({ id: "s1", status: "replaced" }));
+      const report = applyFixOnSqlite(store.rawDb());
+      expect(report.restoredToClosed).toBe(1);
+      const row = store.rawDb()
+        .prepare<[], { status: string }>("SELECT status FROM sessions WHERE id = 's1'")
+        .get();
+      expect(row?.status).toBe("closed");
+    });
+
+    it("does not restore replaced session with real incoming replaces edge", () => {
+      store.insertSessionForTest(makeSession({ id: "s1", status: "replaced" }));
+      store.insertSessionForTest(makeSession({ id: "s2" }));
+      store.rawDb()
+        .prepare("INSERT INTO session_edges (from_session, to_session, kind) VALUES (?, ?, 'replaces')")
+        .run("s2", "s1");
+      const report = applyFixOnSqlite(store.rawDb());
+      expect(report.restoredToClosed).toBe(0);
+      const row = store.rawDb()
+        .prepare<[], { status: string }>("SELECT status FROM sessions WHERE id = 's1'")
+        .get();
+      expect(row?.status).toBe("replaced");
     });
 
     it("does not restore session with real incoming supersedes edge", () => {

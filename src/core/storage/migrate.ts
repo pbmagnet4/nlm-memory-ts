@@ -5,6 +5,11 @@
  * is a no-op. Each migration file is expected to end with its own
  * `INSERT OR IGNORE INTO schema_migrations (...) VALUES (...)`; the runner
  * also defensively upserts the row in case a file forgets.
+ *
+ * A migration whose first line is `-- nlm:no-wrap` is executed without the
+ * runner's BEGIN/COMMIT wrapper — it manages its own transaction(s). Required
+ * for CHECK-constraint changes, which need a table rebuild under
+ * `PRAGMA foreign_keys=OFF` (the pragma is a no-op inside a transaction).
  */
 
 import { readFileSync, readdirSync } from "node:fs";
@@ -54,16 +59,27 @@ export function runMigrations(
     if (applied.has(version)) continue;
 
     const sql = readFileSync(join(migrationsDir, file), "utf8");
-    db.exec("BEGIN");
-    try {
-      db.exec(sql);
-      upsert.run(version, name);
-      db.exec("COMMIT");
-    } catch (err) {
-      db.exec("ROLLBACK");
-      throw new Error(
-        `Migration ${file} failed: ${err instanceof Error ? err.message : String(err)}`,
-      );
+    if (sql.startsWith("-- nlm:no-wrap")) {
+      try {
+        db.exec(sql);
+        upsert.run(version, name);
+      } catch (err) {
+        throw new Error(
+          `Migration ${file} failed: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    } else {
+      db.exec("BEGIN");
+      try {
+        db.exec(sql);
+        upsert.run(version, name);
+        db.exec("COMMIT");
+      } catch (err) {
+        db.exec("ROLLBACK");
+        throw new Error(
+          `Migration ${file} failed: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
     }
     newlyApplied.push({ version, name });
   }

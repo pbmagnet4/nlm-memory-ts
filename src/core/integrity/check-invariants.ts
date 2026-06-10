@@ -7,9 +7,10 @@
  *
  * Checks:
  *   I1  no self-loop edges in session_edges for any 'kind'
- *   I2  every sessions row with status='superseded' has at least one incoming
- *       supersedes edge
- *   I3  supersedes graph is acyclic (BFS, depth-capped at 100)
+ *   I2  status matches incoming edge kind: status='superseded' has an incoming
+ *       'supersedes' edge; status='replaced' has an incoming 'replaces' edge
+ *   I3  supersedence graph is acyclic over the union of 'supersedes' and
+ *       'replaces' edges (BFS, depth-capped at 100)
  *   I4  every session_edges endpoint exists in sessions
  *   I5  at most one active fact per (subject, predicate); every superseded_by
  *       references an existing facts.id
@@ -42,6 +43,17 @@ const SQL_I2_ORPHANED = `
     AND NOT EXISTS (
       SELECT 1 FROM session_edges e
       WHERE e.to_session = s.id AND e.kind = 'supersedes'
+    )
+  LIMIT 6
+`;
+
+const SQL_I2_ORPHANED_REPLACED = `
+  SELECT s.id AS bad_id
+  FROM sessions s
+  WHERE s.status = 'replaced'
+    AND NOT EXISTS (
+      SELECT 1 FROM session_edges e
+      WHERE e.to_session = s.id AND e.kind = 'replaces'
     )
   LIMIT 6
 `;
@@ -126,7 +138,7 @@ export function detectCycles(loadEdges: EdgeLoader): Violation | null {
   if (cycleNodes.length === 0) return null;
   return {
     id: "I3",
-    description: "supersedes graph contains cycles",
+    description: "supersedence graph contains cycles",
     count: cycleNodes.length,
     sampleIds: cycleNodes.slice(0, 5),
   };
@@ -166,12 +178,17 @@ export function runChecksOnSqlite(db: Database.Database): ReadonlyArray<Violatio
     const count = sqliteCount(db, SQL_I2_ORPHANED);
     violations.push(buildViolation("I2", "sessions marked superseded with no incoming supersedes edge", i2Samples, count));
   }
+  const i2ReplacedSamples = sqliteRows(db, SQL_I2_ORPHANED_REPLACED);
+  if (i2ReplacedSamples.length > 0) {
+    const count = sqliteCount(db, SQL_I2_ORPHANED_REPLACED);
+    violations.push(buildViolation("I2r", "sessions marked replaced with no incoming replaces edge", i2ReplacedSamples, count));
+  }
 
   // I3
   const i3 = detectCycles(() =>
     db
       .prepare<[], { from_session: string; to_session: string }>(
-        "SELECT from_session, to_session FROM session_edges WHERE kind = 'supersedes'",
+        "SELECT from_session, to_session FROM session_edges WHERE kind IN ('supersedes', 'replaces')",
       )
       .all(),
   );
@@ -239,10 +256,15 @@ export async function runChecksOnPg(pool: Pool): Promise<ReadonlyArray<Violation
     const count = await pgCount(pool, SQL_I2_ORPHANED);
     violations.push(buildViolation("I2", "sessions marked superseded with no incoming supersedes edge", i2Samples, count));
   }
+  const i2ReplacedSamples = await pgRows(pool, SQL_I2_ORPHANED_REPLACED);
+  if (i2ReplacedSamples.length > 0) {
+    const count = await pgCount(pool, SQL_I2_ORPHANED_REPLACED);
+    violations.push(buildViolation("I2r", "sessions marked replaced with no incoming replaces edge", i2ReplacedSamples, count));
+  }
 
   // I3
   const edgeResult = await pool.query<{ from_session: string; to_session: string }>(
-    "SELECT from_session, to_session FROM session_edges WHERE kind = 'supersedes'",
+    "SELECT from_session, to_session FROM session_edges WHERE kind IN ('supersedes', 'replaces')",
   );
   const i3 = detectCycles(() => edgeResult.rows);
   if (i3) violations.push(i3);
@@ -299,6 +321,10 @@ export function runCheapChecksOnSqlite(db: Database.Database): ReadonlyArray<Vio
   if (i2Samples.length > 0) {
     violations.push(buildViolation("I2", "sessions marked superseded with no incoming supersedes edge", i2Samples, sqliteCount(db, SQL_I2_ORPHANED)));
   }
+  const i2ReplacedSamples = sqliteRows(db, SQL_I2_ORPHANED_REPLACED);
+  if (i2ReplacedSamples.length > 0) {
+    violations.push(buildViolation("I2r", "sessions marked replaced with no incoming replaces edge", i2ReplacedSamples, sqliteCount(db, SQL_I2_ORPHANED_REPLACED)));
+  }
 
   const i6Samples = sqliteRows(db, SQL_I6);
   if (i6Samples.length > 0) {
@@ -311,9 +337,10 @@ export function runCheapChecksOnSqlite(db: Database.Database): ReadonlyArray<Vio
 export async function runCheapChecksOnPg(pool: Pool): Promise<ReadonlyArray<Violation>> {
   const violations: Violation[] = [];
 
-  const [i1, i2, i6] = await Promise.all([
+  const [i1, i2, i2r, i6] = await Promise.all([
     pgRows(pool, SQL_I1),
     pgRows(pool, SQL_I2_ORPHANED),
+    pgRows(pool, SQL_I2_ORPHANED_REPLACED),
     pgRows(pool, SQL_I6),
   ]);
 
@@ -322,6 +349,9 @@ export async function runCheapChecksOnPg(pool: Pool): Promise<ReadonlyArray<Viol
   }
   if (i2.length > 0) {
     violations.push(buildViolation("I2", "sessions marked superseded with no incoming supersedes edge", i2, await pgCount(pool, SQL_I2_ORPHANED)));
+  }
+  if (i2r.length > 0) {
+    violations.push(buildViolation("I2r", "sessions marked replaced with no incoming replaces edge", i2r, await pgCount(pool, SQL_I2_ORPHANED_REPLACED)));
   }
   if (i6.length > 0) {
     violations.push(buildViolation("I6", "adapter_state.session_id references non-existent sessions.id", i6, await pgCount(pool, SQL_I6)));
@@ -342,7 +372,7 @@ export function applyFixOnSqlite(db: Database.Database): FixReport {
     .prepare("DELETE FROM session_edges WHERE from_session = to_session")
     .run();
 
-  const updateResult = db
+  const updateSuperseded = db
     .prepare(`
       UPDATE sessions
       SET status = 'closed', updated_at = datetime('now')
@@ -351,9 +381,18 @@ export function applyFixOnSqlite(db: Database.Database): FixReport {
     `)
     .run();
 
+  const updateReplaced = db
+    .prepare(`
+      UPDATE sessions
+      SET status = 'closed', updated_at = datetime('now')
+      WHERE status = 'replaced'
+        AND id NOT IN (SELECT to_session FROM session_edges WHERE kind = 'replaces')
+    `)
+    .run();
+
   return {
     deletedSelfLoops: deleteResult.changes,
-    restoredToClosed: updateResult.changes,
+    restoredToClosed: updateSuperseded.changes + updateReplaced.changes,
   };
 }
 
@@ -362,15 +401,22 @@ export async function applyFixOnPg(pool: Pool): Promise<FixReport> {
     "DELETE FROM session_edges WHERE from_session = to_session",
   );
 
-  const updateResult = await pool.query(`
+  const updateSuperseded = await pool.query(`
     UPDATE sessions
     SET status = 'closed', updated_at = NOW()
     WHERE status = 'superseded'
       AND id NOT IN (SELECT to_session FROM session_edges WHERE kind = 'supersedes')
   `);
 
+  const updateReplaced = await pool.query(`
+    UPDATE sessions
+    SET status = 'closed', updated_at = NOW()
+    WHERE status = 'replaced'
+      AND id NOT IN (SELECT to_session FROM session_edges WHERE kind = 'replaces')
+  `);
+
   return {
     deletedSelfLoops: deleteResult.rowCount ?? 0,
-    restoredToClosed: updateResult.rowCount ?? 0,
+    restoredToClosed: (updateSuperseded.rowCount ?? 0) + (updateReplaced.rowCount ?? 0),
   };
 }

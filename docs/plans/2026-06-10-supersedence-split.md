@@ -1,6 +1,7 @@
 # Supersedence split: `replaces` vs `supersedes`
 
 **Status:** approved 2026-06-10 (Edward). Tracked as NLM Tasks #298 (core) and #299 (Thread UI).
+**#298 landed 2026-06-10:** types, both stores (`insertSession` kind-aware `Supersedes`), scheduler call site (`replaces`), recall predicates (`NOT IN ('superseded','replaced')`), cycle detection over the union, `nlm doctor` I2 split (added `I2r`) + I3 union, dataset (`replaced` status + `replaces`/`replaced_by` edges), `liveSessionStatus` short-circuit, SQLite migration 019 (table-rebuild CHECK widen via a new `-- nlm:no-wrap` runner directive) + PG one-shot `migrations/pg/019_split_replaces.sql`. `markSuperseded` semantics unchanged. Migration sanity-checked on a /tmp copy of `~/.nlm/canonical.sqlite` (018 then 019): before 2765 closed / 187 superseded / 196 supersedes edges (183 self-loops) → after 018+019 2939 closed / 13 replaced / 0 superseded / 13 replaces edges; `integrity_check ok`, zero orphans. The 13 surviving real edges all shared a transcript_path, so all reclassified as `replaces` (none were operator supersedences). #299 owns the Thread/status-chip UI affordance.
 **Prerequisites:** commits c4834f0..d9ee06b pushed and daemon restarted (repair migration 018 applied); `nlm doctor` (#297) landed.
 
 ## Problem

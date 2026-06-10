@@ -19,11 +19,16 @@ export interface DatasetSession {
   decision_ids: string[];
   open: string[];
   open_questions: { id: string; text: string; resolved: boolean }[];
-  status: "active" | "idle" | "closed" | "superseded";
+  status: "active" | "idle" | "closed" | "superseded" | "replaced";
   duration_min: number;
   runtime: string;
   supersedes?: string;
   superseded_by?: string;
+  /** Mechanical re-ingest relation. Distinct from supersedes; the Thread UI
+   *  (#299) collapses replaced predecessors behind an "earlier versions"
+   *  affordance. Carried through here so the data is available. */
+  replaces?: string;
+  replaced_by?: string;
 }
 
 export type TopicCoherence = "active" | "sparse" | "stale";

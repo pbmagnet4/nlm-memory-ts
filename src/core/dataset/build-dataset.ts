@@ -36,6 +36,12 @@ export interface DatasetSession {
   readonly runtime: string;
   readonly supersedes?: string;
   readonly superseded_by?: string;
+  /** Mechanical re-ingest relation (predecessor was re-parsed into this one).
+   *  Distinct from supersedes so the Thread UI (#299) can collapse replaced
+   *  predecessors behind an "earlier versions" affordance rather than dimming
+   *  them as operator-rejected. */
+  readonly replaces?: string;
+  readonly replaced_by?: string;
 }
 
 export type TopicCoherence = "active" | "sparse" | "stale";
@@ -118,7 +124,7 @@ interface SessionRow {
   duration_min: number | null;
   label: string;
   summary: string;
-  status: "active" | "closed" | "superseded";
+  status: "active" | "closed" | "superseded" | "replaced";
   transcript_path: string | null;
   runtime: string;
 }
@@ -138,7 +144,7 @@ interface MarkerRow {
 interface EdgeRow {
   from_session: string;
   to_session: string;
-  kind: "supersedes" | "continues";
+  kind: "supersedes" | "replaces" | "continues";
 }
 
 interface EntityCatalogRow {
@@ -254,6 +260,8 @@ function projectFromDb(db: Database.Database, dbPath: string, includePaths: bool
 
   const supersedesBy = new Map<string, string>();
   const supersededByBy = new Map<string, string>();
+  const replacesBy = new Map<string, string>();
+  const replacedByBy = new Map<string, string>();
   const continuesBy = new Map<string, string>();
   for (const r of db
     .prepare<[], EdgeRow>("SELECT from_session, to_session, kind FROM session_edges")
@@ -261,6 +269,9 @@ function projectFromDb(db: Database.Database, dbPath: string, includePaths: bool
     if (r.kind === "supersedes") {
       supersedesBy.set(r.from_session, r.to_session);
       supersededByBy.set(r.to_session, r.from_session);
+    } else if (r.kind === "replaces") {
+      replacesBy.set(r.from_session, r.to_session);
+      replacedByBy.set(r.to_session, r.from_session);
     } else if (r.kind === "continues") {
       continuesBy.set(r.from_session, r.to_session);
     }
@@ -311,6 +322,8 @@ function projectFromDb(db: Database.Database, dbPath: string, includePaths: bool
     const rawOpen = openBySession.get(s.id) ?? [];
     const supersedes = supersedesBy.get(s.id);
     const supersededBy = supersededByBy.get(s.id);
+    const replaces = replacesBy.get(s.id);
+    const replacedBy = replacedByBy.get(s.id);
     const rawEntities = entitiesBySession.get(s.id) ?? [];
     const activeOpen = rawOpen.filter(
       (o) => !overlay.resolvedOpens.has(o.id) && !overlay.promotedOpens.has(o.id),
@@ -354,6 +367,8 @@ function projectFromDb(db: Database.Database, dbPath: string, includePaths: bool
       runtime: s.runtime,
       ...(supersedes !== undefined ? { supersedes } : {}),
       ...(supersededBy !== undefined ? { superseded_by: supersededBy } : {}),
+      ...(replaces !== undefined ? { replaces } : {}),
+      ...(replacedBy !== undefined ? { replaced_by: replacedBy } : {}),
     };
   });
 
@@ -478,7 +493,7 @@ function computeMetrics(
     else sparse += 1;
   }
   const closedDecisions = sessions.reduce(
-    (sum, s) => sum + (s.status === "superseded" ? 0 : s.decisions.length),
+    (sum, s) => sum + (s.status === "superseded" || s.status === "replaced" ? 0 : s.decisions.length),
     0,
   );
   return { this_week: thisWeek, last_week: lastWeek, sparkline, healthy, sparse, stale, closed_decisions: closedDecisions };

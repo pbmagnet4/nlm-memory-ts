@@ -1542,7 +1542,7 @@ program
 program
   .command("doctor")
   .description("Check database integrity invariants and optionally repair safe violations")
-  .option("--fix", "repair mechanically safe violations: delete self-loop edges (I1), restore orphaned superseded sessions to closed (I2)")
+  .option("--fix", "repair mechanically safe violations: delete self-loop edges (I1), restore orphaned superseded/replaced sessions to closed (I2)")
   .action(async (opts) => {
     const storage = await buildStorage(dbPath());
     let violations;
