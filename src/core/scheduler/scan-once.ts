@@ -159,7 +159,7 @@ export async function scanOncePg(
   const idleMs = idleMinutes * 60 * 1000;
   const stateRows = await pool.query<{
     source_path: string;
-    file_size: number | null;
+    file_size: string | null;
     session_id: string | null;
     failure_count: number;
   }>(
@@ -167,10 +167,16 @@ export async function scanOncePg(
      FROM adapter_state WHERE adapter_name = $1`,
     [adapter.name],
   );
+  // pg returns BIGINT (file_size) as a string; coerce to number so the
+  // unchanged-size check compares against statSync's numeric size.
   const stateMap = new Map(
     stateRows.rows.map((r) => [
       r.source_path,
-      { fileSize: r.file_size, sessionId: r.session_id, failureCount: r.failure_count },
+      {
+        fileSize: r.file_size === null ? null : Number(r.file_size),
+        sessionId: r.session_id,
+        failureCount: r.failure_count,
+      },
     ]),
   );
 
@@ -206,23 +212,32 @@ export async function scanOncePg(
     const chunk = await adapter.parseSession(sourcePath);
     if (!chunk) continue;
 
-    const prior = stateMap.get(sourcePath);
-    const supersedes = prior?.sessionId !== chunk.id ? (prior?.sessionId ?? null) : null;
+    const supersedes =
+      state?.sessionId && state.sessionId !== chunk.id ? state.sessionId : null;
     results.push({ chunk, supersedes });
-
-    await pool.query(
-      `INSERT INTO adapter_state (adapter_name, source_path, last_offset, file_size, session_id, failure_count)
-       VALUES ($1, $2, 0, $3, $4, 0)
-       ON CONFLICT (adapter_name, source_path) DO UPDATE SET
-         file_size = EXCLUDED.file_size,
-         session_id = EXCLUDED.session_id,
-         failure_count = 0,
-         last_processed_at = NOW()`,
-      [adapter.name, sourcePath, getFileSize(sourcePath), chunk.id],
-    );
   }
 
   return results;
+}
+
+export async function recordClassifiedPg(
+  pool: Pool,
+  adapterName: string,
+  sourcePath: string,
+  sessionId: string,
+): Promise<void> {
+  const size = getFileSize(sourcePath);
+  if (size === null) return;
+  await pool.query(
+    `INSERT INTO adapter_state (adapter_name, source_path, last_offset, file_size, session_id, failure_count, last_processed_at)
+     VALUES ($1, $2, 0, $3, $4, 0, NOW())
+     ON CONFLICT (adapter_name, source_path) DO UPDATE SET
+       file_size = EXCLUDED.file_size,
+       session_id = EXCLUDED.session_id,
+       failure_count = 0,
+       last_processed_at = NOW()`,
+    [adapterName, sourcePath, size, sessionId],
+  );
 }
 
 export async function recordFailedPg(
@@ -230,14 +245,16 @@ export async function recordFailedPg(
   adapterName: string,
   sourcePath: string,
   fileSize: number | null,
-): Promise<void> {
-  await pool.query(
+): Promise<number> {
+  const res = await pool.query<{ failure_count: number }>(
     `INSERT INTO adapter_state (adapter_name, source_path, last_offset, failure_count, file_size)
      VALUES ($1, $2, 0, 1, $3)
      ON CONFLICT (adapter_name, source_path) DO UPDATE SET
        failure_count = adapter_state.failure_count + 1,
        file_size = $3,
-       last_processed_at = NOW()`,
+       last_processed_at = NOW()
+     RETURNING failure_count`,
     [adapterName, sourcePath, fileSize],
   );
+  return res.rows[0]?.failure_count ?? 1;
 }
