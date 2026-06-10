@@ -28,6 +28,7 @@
   ],
   "files": [
     "dist",
+    "migrations",
     "plugin",
     "plugin-hermes-agent",
     "nlm",
