@@ -227,6 +227,9 @@ The pi `quality-gate` extension (in the `pi-sandbox` repo) is a ~10-line integra
 | `recall_facts` | Search structured facts: decisions, open questions, project state. Filterable by entity and kind. |
 | `get_fact_history` | Full version history of one fact — how a decision evolved over time. |
 | `cite_session` | Mark a session as explicitly referenced. Drives the `useful_hit_rate` metric and the future learned reranker. |
+
+**When to call `cite_session`:** Call it when a surfaced session actually changes what you say — you referenced it explicitly, it corrected a decision, or you called `get_session` to read the full body. Do not call it for sessions you scanned and discarded. The Stop hook auto-detects citation when a session ID appears verbatim in your response; `cite_session` covers the deliberate case where the session influenced your reasoning without being quoted directly. Both paths feed the same signal loop.
+
 | `mark_superseded` | Retroactively retire a stale session and point it at the newer one that replaces it. The editable-timeline write path — see [docs/supersedence.md](docs/supersedence.md). |
 
 ---
