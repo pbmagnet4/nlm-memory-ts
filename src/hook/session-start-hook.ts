@@ -188,7 +188,7 @@ async function main(): Promise<void> {
       typeof payload.project_name === "string" ? payload.project_name : "";
     const query = buildQuery(workingDirectory, projectName);
     const mode: HookMode = process.env["NLM_HOOK_MODE"] === "live" ? "live" : "shadow";
-    const out = await runHook({ conversationId, query }, { mode, recall: (q, cid) => recallOverHttp(q, cid) });
+    const out = await runHook({ conversationId, query }, { mode, recall: (q, cid) => recallOverHttp(q, cid === "unknown" ? undefined : cid) });
     const failureModes = mode === "live" ? await fetchFailureModeBlock(workingDirectory) : "";
     const combined = composeSessionStartOutput(failureModes, out);
     if (combined) process.stdout.write(combined);
