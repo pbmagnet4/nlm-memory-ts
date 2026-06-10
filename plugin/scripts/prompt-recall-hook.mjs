@@ -64,16 +64,27 @@ function recordSurfaced(conversationId, ids) {
 }
 
 // src/core/hook/pointer-block.ts
-function formatPointerBlock(hits) {
-  if (hits.length === 0) return "";
-  const lines = hits.map(
-    (h) => `- ${h.id} \xB7 ${h.label} (${h.startedAt.slice(0, 10)})`
-  );
-  return [
-    "## Possibly-relevant prior sessions (nlm-memory)",
-    ...lines,
+function formatPointerBlock(hits, facts = []) {
+  if (hits.length === 0 && facts.length === 0) return "";
+  const out = [];
+  if (hits.length > 0) {
+    out.push("## Possibly-relevant prior sessions (nlm-memory)");
+    for (const h of hits) {
+      out.push(`- ${h.id} \xB7 ${h.label} (${h.startedAt.slice(0, 10)})`);
+    }
+  }
+  if (facts.length > 0) {
+    if (out.length > 0) out.push("");
+    out.push("## Known facts about top entities");
+    for (const f of facts) {
+      const tag = f.corroborationCount > 1 ? ` [${f.corroborationCount} sessions]` : "";
+      out.push(`- ${f.subject} ${f.predicate}: ${f.value}${tag}`);
+    }
+  }
+  out.push(
     "NLM tools: recall_sessions (search), get_session (full transcript), recall_facts (prior decisions), get_fact_history (how a decision evolved)."
-  ].join("\n");
+  );
+  return out.join("\n");
 }
 
 // src/core/hook/select.ts
@@ -142,7 +153,7 @@ var RECALL_LIMIT = 5;
 var RECALL_TIMEOUT_MS = 2e3;
 async function recallOverHttp(prompt, runtime) {
   const portValue = process.env["NLM_PORT"] ?? "3940";
-  const url = `http://localhost:${portValue}/api/recall?q=${encodeURIComponent(prompt)}&mode=keyword&limit=${RECALL_LIMIT}`;
+  const url = `http://localhost:${portValue}/api/recall?q=${encodeURIComponent(prompt)}&mode=keyword&limit=${RECALL_LIMIT}&withFacts=true`;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), RECALL_TIMEOUT_MS);
   try {
@@ -152,19 +163,26 @@ async function recallOverHttp(prompt, runtime) {
       headers: hookAuthHeaders(extra),
       signal: controller.signal
     });
-    if (!res.ok) return [];
+    if (!res.ok) return { hits: [], facts: [] };
     let body;
     try {
       body = await res.json();
     } catch {
-      return [];
+      return { hits: [], facts: [] };
     }
-    return (body.results ?? []).map((r) => ({
+    const hits = (body.results ?? []).map((r) => ({
       id: r.id,
       label: r.label,
       startedAt: r.startedAt,
       matchScore: r.matchScore
     }));
+    const facts = (body.relatedFacts ?? []).map((f) => ({
+      subject: f.subject,
+      predicate: f.predicate,
+      value: f.value,
+      corroborationCount: f.corroborationCount
+    }));
+    return { hits, facts };
   } finally {
     clearTimeout(timer);
   }
@@ -175,6 +193,10 @@ var SCORE_THRESHOLD = 0;
 var PER_FIRE_CAP = 3;
 var PER_CONVERSATION_CAP = 10;
 var PROMPT_PREVIEW_CHARS = 200;
+function normalizeRecall(raw) {
+  if (Array.isArray(raw)) return { hits: raw, facts: [] };
+  return raw;
+}
 async function runHook(input, deps) {
   const gate = classifyPrompt(input.prompt);
   const preview = input.prompt.slice(0, PROMPT_PREVIEW_CHARS);
@@ -191,12 +213,13 @@ async function runHook(input, deps) {
     });
     return "";
   }
-  let hits = [];
+  let fetched = { hits: [], facts: [] };
   try {
-    hits = await deps.recall(input.prompt);
+    fetched = normalizeRecall(await deps.recall(input.prompt));
   } catch {
-    hits = [];
+    fetched = { hits: [], facts: [] };
   }
+  const hits = fetched.hits;
   const surfaced = loadSurfaced(input.conversationId);
   const selected = selectHits({
     hits,
@@ -205,7 +228,7 @@ async function runHook(input, deps) {
     perFireCap: PER_FIRE_CAP,
     perConversationCap: PER_CONVERSATION_CAP
   });
-  const block = formatPointerBlock(selected);
+  const block = formatPointerBlock(selected, fetched.facts);
   const estTokens = Math.ceil(block.length / 4);
   appendHookLog({
     ts: (/* @__PURE__ */ new Date()).toISOString(),
