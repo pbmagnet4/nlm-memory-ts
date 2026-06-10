@@ -7,7 +7,7 @@
 
 ## Setup
 
-- **Corpus:** 20 stratified sessions from the maintainer's `~/.claude/projects/.../Whtnxt Agent` archive, ranging from 156 KB to 7.6 MB raw transcripts, truncated to ≤16K characters each before classification (matches the production `MAX_TRANSCRIPT_CHARS` ingest path).
+- **Corpus:** 20 stratified sessions from the maintainer's `~/.claude/projects/.../<workspace>` archive, ranging from 156 KB to 7.6 MB raw transcripts, truncated to ≤16K characters each before classification (matches the production `MAX_TRANSCRIPT_CHARS` ingest path).
 - **Prompt:** The shipped `CLASSIFIER_SYSTEM_PROMPT` from `src/core/classifier/prompt.ts` verbatim. No tuning per model.
 - **Parameters:** `temperature=0`, `format=json` (Ollama) / `response_format=json_object` (DeepSeek).
 - **Hardware:** Mac (M-series), Ollama 0.24.0 for qwen3.
@@ -90,7 +90,7 @@ DeepSeek (and other cloud providers) remain opt-in via Settings → Providers fo
 
 1. **N=20.** Directional finding is robust; specific numbers are point estimates.
 2. **Single-corpus (Claude Code coding sessions).** Other session types (customer-support transcripts, research-paper conversations, personal-life chat) may differ — LongMemEval-S already demonstrated qwen3 has a 33% schema-failure rate on personal-life conversation, where the prompt expects coding-session structure that isn't present.
-3. **Classifier output quality only, not end-to-end R@5.** This compares the inputs into the retriever, not retrieval scores. The Whtnxt-bench harness (in progress) will close that loop.
+3. **Classifier output quality only, not end-to-end R@5.** This compares the inputs into the retriever, not retrieval scores. The bench harness (in progress) will close that loop.
 4. **Open-question coverage advantage for qwen3 could be either better extraction or over-extraction.** Spot-checks of qwen3's open questions on 5 sessions found them all legitimate, but a larger sample with adversarial review is needed before claiming "qwen3 finds more open questions" as a strict win.
 
 ## Reproducing this

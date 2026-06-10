@@ -11,7 +11,7 @@
  * `index.js` is the bundled extension; `package.json` declares `type: module`.
  * Pi's interactive UI strips `index.{ts,js}` from the display path, so the
  * extension surfaces as `nlm` in the [Extensions] list — matching the
- * naming convention used by pi-mcp-adapter, whtnxt-tasks, etc.
+ * naming convention used by pi-mcp-adapter, my-tasks, etc.
  *
  * `connect` appends the absolute path to that directory into `packages` if
  * not already present. `disconnect` strips any matching entry.

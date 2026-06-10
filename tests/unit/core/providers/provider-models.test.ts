@@ -78,7 +78,7 @@ describe("listModels", () => {
   it("openai-compatible omits Authorization when no key", async () => {
     const fetchImpl = vi.fn().mockResolvedValue(jsonResponse({ data: [{ id: "local-model" }] }));
     await listModels(
-      row({ kind: "openai-compatible", baseUrl: "http://192.168.1.50:8000/v1" }),
+      row({ kind: "openai-compatible", baseUrl: "http://192.0.2.1:8000/v1" }),
       { fetchImpl, apiKey: null },
     );
     const init = fetchImpl.mock.calls[0]?.[1] as RequestInit;

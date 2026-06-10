@@ -50,7 +50,7 @@ The key design constraint from `src/ports/storage.ts`: `withTransaction` callbac
 - [x] **Step 1: Install dependencies**
 
 ```bash
-cd "/Users/echalupa/Documents/Coding Projects/nlm-memory-ts"
+cd "~/nlm-memory"
 npm install pg pgvector
 npm install --save-dev @types/pg
 ```
@@ -284,7 +284,7 @@ INSERT INTO schema_migrations (version, name) VALUES (1, '001_initial')
 - [x] **Step 2: Verify the file exists**
 
 ```bash
-ls -la "/Users/echalupa/Documents/Coding Projects/nlm-memory-ts/migrations/pg/001_initial.sql"
+ls -la "~/nlm-memory/migrations/pg/001_initial.sql"
 ```
 
 Expected: file visible, non-zero size.
@@ -469,7 +469,7 @@ function insertFactOp(f: Fact): QueuedOp {
 - [x] **Step 2: Typecheck**
 
 ```bash
-cd "/Users/echalupa/Documents/Coding Projects/nlm-memory-ts" && npx tsc -p tsconfig.json --noEmit 2>&1 | head -20
+cd "~/nlm-memory" && npx tsc -p tsconfig.json --noEmit 2>&1 | head -20
 ```
 
 Expected: no errors in `pg-tx-context.ts`.
@@ -788,7 +788,7 @@ function rowToFact(row: FactRow): Fact {
 - [x] **Step 2: Typecheck**
 
 ```bash
-cd "/Users/echalupa/Documents/Coding Projects/nlm-memory-ts" && npx tsc -p tsconfig.json --noEmit 2>&1 | grep "pg-fact-store"
+cd "~/nlm-memory" && npx tsc -p tsconfig.json --noEmit 2>&1 | grep "pg-fact-store"
 ```
 
 Expected: no output (no errors in that file).
@@ -1268,7 +1268,7 @@ function rowToSession(
 - [x] **Step 2: Typecheck**
 
 ```bash
-cd "/Users/echalupa/Documents/Coding Projects/nlm-memory-ts" && npx tsc -p tsconfig.json --noEmit 2>&1 | grep "pg-session-store"
+cd "~/nlm-memory" && npx tsc -p tsconfig.json --noEmit 2>&1 | grep "pg-session-store"
 ```
 
 Expected: no output.
@@ -1388,7 +1388,7 @@ export class PgStorage implements Storage {
 - [x] **Step 2: Typecheck the whole server**
 
 ```bash
-cd "/Users/echalupa/Documents/Coding Projects/nlm-memory-ts" && npx tsc -p tsconfig.json --noEmit 2>&1 | head -30
+cd "~/nlm-memory" && npx tsc -p tsconfig.json --noEmit 2>&1 | head -30
 ```
 
 Expected: no errors in pg-storage.ts, pg-fact-store.ts, pg-session-store.ts, or pg-tx-context.ts. (Other unrelated errors are okay at this stage; they get fixed in later tasks.)
@@ -1479,7 +1479,7 @@ If you have a local PG instance:
 
 ```bash
 export NLM_PG_TEST_URL="postgresql://nlm_test:nlm_test@localhost:5432/nlm_test"
-cd "/Users/echalupa/Documents/Coding Projects/nlm-memory-ts"
+cd "~/nlm-memory"
 npm run test:integration -- --reporter=verbose 2>&1 | grep -A2 "PgStorage"
 ```
 
@@ -1488,7 +1488,7 @@ Expected: all `FactStore contract: PgStorage` tests pass. If `NLM_PG_TEST_URL` i
 - [x] **Step 3: Run the full test suite to verify nothing regressed**
 
 ```bash
-cd "/Users/echalupa/Documents/Coding Projects/nlm-memory-ts" && npm test 2>&1 | tail -5
+cd "~/nlm-memory" && npm test 2>&1 | tail -5
 ```
 
 Expected: same pass count as before this task.
@@ -1645,7 +1645,7 @@ describe.skipIf(!PG_TEST_URL)(
 - [x] **Step 3: Run storage contract against PG (if available)**
 
 ```bash
-cd "/Users/echalupa/Documents/Coding Projects/nlm-memory-ts"
+cd "~/nlm-memory"
 npm run test:integration -- --reporter=verbose 2>&1 | grep -A2 "storage contract"
 ```
 
@@ -1654,7 +1654,7 @@ Expected: `Storage contract: PgStorage` — 3 passing.
 - [x] **Step 4: Run the full test suite**
 
 ```bash
-cd "/Users/echalupa/Documents/Coding Projects/nlm-memory-ts" && npm test 2>&1 | tail -5
+cd "~/nlm-memory" && npm test 2>&1 | tail -5
 ```
 
 Expected: same pass count, plus however many new PG tests ran.
@@ -1662,7 +1662,7 @@ Expected: same pass count, plus however many new PG tests ran.
 - [x] **Step 5: Commit**
 
 ```bash
-cd "/Users/echalupa/Documents/Coding Projects/nlm-memory-ts"
+cd "~/nlm-memory"
 git add migrations/pg/001_initial.sql \
         src/core/storage/pg-tx-context.ts \
         src/core/storage/pg-fact-store.ts \
@@ -1817,7 +1817,7 @@ export class PgSourceRegistry {
 - [x] **Step 2: Typecheck**
 
 ```bash
-cd "/Users/echalupa/Documents/Coding Projects/nlm-memory-ts" && npx tsc -p tsconfig.json --noEmit 2>&1 | grep "source-registry"
+cd "~/nlm-memory" && npx tsc -p tsconfig.json --noEmit 2>&1 | grep "source-registry"
 ```
 
 Expected: no output.
@@ -1934,7 +1934,7 @@ Note: `ProviderInsert` and `ProviderUpdate` interfaces come from the existing fi
 - [x] **Step 3: Typecheck**
 
 ```bash
-cd "/Users/echalupa/Documents/Coding Projects/nlm-memory-ts" && npx tsc -p tsconfig.json --noEmit 2>&1 | grep "provider-registry"
+cd "~/nlm-memory" && npx tsc -p tsconfig.json --noEmit 2>&1 | grep "provider-registry"
 ```
 
 Expected: no output.
@@ -2056,7 +2056,7 @@ Note: `makeActionId` is a private function in actions-log.ts. If it's not export
 - [x] **Step 2: Typecheck**
 
 ```bash
-cd "/Users/echalupa/Documents/Coding Projects/nlm-memory-ts" && npx tsc -p tsconfig.json --noEmit 2>&1 | grep "actions-log"
+cd "~/nlm-memory" && npx tsc -p tsconfig.json --noEmit 2>&1 | grep "actions-log"
 ```
 
 Expected: no output.
@@ -2197,7 +2197,7 @@ Also do the same for the direct `rawDb().prepare(...)` failure_count query — r
 - [x] **Step 4: Typecheck**
 
 ```bash
-cd "/Users/echalupa/Documents/Coding Projects/nlm-memory-ts" && npx tsc -p tsconfig.json --noEmit 2>&1 | grep -E "scan-once|scheduler"
+cd "~/nlm-memory" && npx tsc -p tsconfig.json --noEmit 2>&1 | grep -E "scan-once|scheduler"
 ```
 
 Expected: no output.
@@ -2296,7 +2296,7 @@ if (pool) {
 - [x] **Step 6: Typecheck the full project**
 
 ```bash
-cd "/Users/echalupa/Documents/Coding Projects/nlm-memory-ts" && npx tsc -p tsconfig.json --noEmit 2>&1 | head -30
+cd "~/nlm-memory" && npx tsc -p tsconfig.json --noEmit 2>&1 | head -30
 ```
 
 Expected: no errors.
@@ -2304,7 +2304,7 @@ Expected: no errors.
 - [x] **Step 7: Run the full test suite**
 
 ```bash
-cd "/Users/echalupa/Documents/Coding Projects/nlm-memory-ts" && npm test
+cd "~/nlm-memory" && npm test
 ```
 
 Expected: all existing tests pass. PG contract tests pass if `NLM_PG_TEST_URL` is set.
@@ -2313,7 +2313,7 @@ Expected: all existing tests pass. PG contract tests pass if `NLM_PG_TEST_URL` i
 
 ```bash
 export NLM_PG_URL="postgresql://nlm_test:nlm_test@localhost:5432/nlm_test"
-cd "/Users/echalupa/Documents/Coding Projects/nlm-memory-ts"
+cd "~/nlm-memory"
 node dist/cli/nlm.js start --port 3941 &
 sleep 2
 curl -s http://localhost:3941/api/recall/stats | python3 -m json.tool
@@ -2325,7 +2325,7 @@ Expected: JSON with `{ "total": 0, "hit_rate": 0, ... }` — daemon started, res
 - [x] **Step 9: Commit**
 
 ```bash
-cd "/Users/echalupa/Documents/Coding Projects/nlm-memory-ts"
+cd "~/nlm-memory"
 git add \
   src/core/sources/source-registry.ts \
   src/core/providers/provider-registry.ts \

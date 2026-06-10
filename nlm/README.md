@@ -7,7 +7,7 @@ the prompt-recall hook.
 
 Pi's interactive UI strips `index.{ts,js}` from the load path, so this
 extension surfaces in pi's `[Extensions]` list as `nlm` — matching the
-naming convention used by `pi-mcp-adapter`, `whtnxt-tasks`, etc.
+naming convention used by `pi-mcp-adapter`, `my-tasks`, etc.
 
 ## Install
 

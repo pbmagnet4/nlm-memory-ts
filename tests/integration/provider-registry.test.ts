@@ -65,11 +65,11 @@ describe("ProviderRegistry", () => {
     const row = registry.insert({
       kind: "openai-compatible",
       name: "vLLM box",
-      baseUrl: "http://192.168.1.50:8000/v1",
+      baseUrl: "http://192.0.2.1:8000/v1",
       defaultModel: "llama-3.1-70b",
       apiKey: "secret-token",
     });
-    expect(row.baseUrl).toBe("http://192.168.1.50:8000/v1");
+    expect(row.baseUrl).toBe("http://192.0.2.1:8000/v1");
     expect(row.hasApiKey).toBe(true);
     expect(row.apiKey).toBeNull();
   });
