@@ -49,6 +49,7 @@ export async function recallOverHttp(
         label: string;
         startedAt: string;
         matchScore: number;
+        summary?: string;
       }>;
       relatedFacts?: ReadonlyArray<{
         subject: string;
@@ -68,6 +69,7 @@ export async function recallOverHttp(
       label: r.label,
       startedAt: r.startedAt,
       matchScore: r.matchScore,
+      ...(r.summary !== undefined ? { summary: r.summary } : {}),
     }));
     const facts = (body.relatedFacts ?? []).map((f) => ({
       subject: f.subject,

@@ -54,4 +54,35 @@ describe("formatPointerBlock", () => {
   it("Spec G.2: empty hits AND empty facts still returns empty string", () => {
     expect(formatPointerBlock([], [])).toBe("");
   });
+
+  it("includes summary in pointer line when present", () => {
+    const block = formatPointerBlock([
+      {
+        id: "sess_a",
+        label: "NLM architecture discussion",
+        startedAt: "2026-06-09T10:00:00.000Z",
+        summary: "Decided to use FTS5 for keyword recall and sqlite-vec for semantic.",
+      },
+    ]);
+    expect(block).toContain(
+      "- sess_a · NLM architecture discussion (2026-06-09) — Decided to use FTS5 for keyword recall and sqlite-vec for semantic.",
+    );
+  });
+
+  it("omits summary suffix when summary is absent", () => {
+    const block = formatPointerBlock([
+      { id: "sess_b", label: "No summary session", startedAt: "2026-06-09T10:00:00.000Z" },
+    ]);
+    expect(block).toContain("- sess_b · No summary session (2026-06-09)");
+    expect(block).not.toContain(" — ");
+  });
+
+  it("truncates summary at 120 characters", () => {
+    const longSummary = "A".repeat(150);
+    const block = formatPointerBlock([
+      { id: "sess_c", label: "Long summary", startedAt: "2026-06-09T10:00:00.000Z", summary: longSummary },
+    ]);
+    expect(block).toContain(`— ${"A".repeat(120)}`);
+    expect(block).not.toContain("A".repeat(121));
+  });
 });

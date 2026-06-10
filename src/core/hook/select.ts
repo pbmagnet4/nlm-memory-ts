@@ -11,6 +11,7 @@ export interface RecallHitInput {
   readonly label: string;
   readonly startedAt: string;
   readonly matchScore: number;
+  readonly summary?: string;
 }
 
 export interface SelectParams {
