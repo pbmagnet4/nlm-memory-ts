@@ -1351,7 +1351,10 @@ function registerSessionRoute(app: Hono, deps: HttpDeps): void {
       await deps.store.markSuperseded(predecessorId, successorId);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      const status = msg.includes("not found") || msg.includes("itself") ? 400 : 500;
+      const status =
+        msg.includes("not found") || msg.includes("itself") || msg.includes("cycle")
+          ? 400
+          : 500;
       return c.json({ error: msg }, status);
     }
     void appendSupersedence({

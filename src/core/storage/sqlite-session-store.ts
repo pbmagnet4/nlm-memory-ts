@@ -650,6 +650,32 @@ export class SqliteSessionStore implements SessionStore {
       if (!succExists) {
         throw new Error(`successor session ${successorId} not found`);
       }
+      // Cycle guard. Edges read (from, to) = "from supersedes to". We are about
+      // to insert (successor, predecessor). A cycle closes if the predecessor
+      // can already reach the successor by following supersedes edges — then
+      // the new edge would loop back. Walk from→to starting at the predecessor.
+      const childrenStmt = this.db.prepare<[string], { to_session: string }>(
+        "SELECT to_session FROM session_edges WHERE from_session = ? AND kind = 'supersedes'",
+      );
+      const seen = new Set<string>([predecessorId]);
+      let frontier = [predecessorId];
+      for (let depth = 0; depth < 100 && frontier.length > 0; depth++) {
+        const next: string[] = [];
+        for (const node of frontier) {
+          for (const { to_session } of childrenStmt.all(node)) {
+            if (to_session === successorId) {
+              throw new Error(
+                `supersedence cycle: ${successorId} is already (transitively) superseded by ${predecessorId}`,
+              );
+            }
+            if (!seen.has(to_session)) {
+              seen.add(to_session);
+              next.push(to_session);
+            }
+          }
+        }
+        frontier = next;
+      }
       // Remove any prior `supersedes` edges pointing at this predecessor
       // *except* the one we're about to assert. Without this, an overwrite
       // (predecessor was previously marked superseded by some other session)
