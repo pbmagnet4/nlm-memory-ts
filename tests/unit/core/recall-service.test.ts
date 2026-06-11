@@ -106,6 +106,39 @@ describe("RecallService.search", () => {
     expect(result.results[0]?.matchScore).toBe(9.2);
   });
 
+  it("metadata tiebreaker (#308) reorders a BM25 near-tie toward decision overlap", async () => {
+    // Two sessions essentially tied on BM25; the lower-scored one ("dec") has
+    // both query tokens in its decision marker, the higher-scored one has
+    // none. The capped decision bonus lifts "dec" above "raw".
+    const sessions: Session[] = [
+      makeSession({ id: "raw", label: "pgvector qdrant pgvector", decisions: [] }),
+      makeSession({ id: "dec", label: "pgvector qdrant", decisions: ["chose pgvector over qdrant"] }),
+    ];
+    const store = new InMemoryStore(sessions, [], [
+      { sessionId: "raw", score: 10.0 },
+      { sessionId: "dec", score: 9.2 }, // 9.2 * 1.13 = 10.396 > 10.0
+    ]);
+    const svc = new RecallService({ store, llm: new StubEmbedder() });
+    const result = await svc.search({ query: "pgvector qdrant", mode: "keyword" });
+    expect(result.results.map((r) => r.id)).toEqual(["dec", "raw"]);
+  });
+
+  it("metadata tiebreaker cannot invert a clearly stronger BM25 match", async () => {
+    // The bonus is capped at +15%; a 2x-stronger raw hit keeps its lead even
+    // when the weaker hit has full decision overlap.
+    const sessions: Session[] = [
+      makeSession({ id: "strong", label: "pgvector qdrant pgvector qdrant", decisions: [] }),
+      makeSession({ id: "weak", label: "pgvector", decisions: ["chose pgvector over qdrant"] }),
+    ];
+    const store = new InMemoryStore(sessions, [], [
+      { sessionId: "strong", score: 20.0 },
+      { sessionId: "weak", score: 10.0 }, // 10 * 1.15 = 11.5 < 20.0
+    ]);
+    const svc = new RecallService({ store, llm: new StubEmbedder() });
+    const result = await svc.search({ query: "pgvector qdrant", mode: "keyword" });
+    expect(result.results.map((r) => r.id)).toEqual(["strong", "weak"]);
+  });
+
   it("keyword mode populates matchedIn from the resolved session", async () => {
     const store = new InMemoryStore(corpus, [], [{ sessionId: "b", score: 5 }]);
     const svc = new RecallService({ store, llm: new StubEmbedder() });
@@ -305,9 +338,13 @@ describe("RecallService.search", () => {
       const s2 = result.results.find((r) => r.id === "s2")!;
       expect(s2.status).toBe("superseded");
       expect(s2.supersededBy).toBe("s5");
-      // 12 * 0.7 = 8.4 still beats 4 here — down-rank does not flip this pair,
-      // but the badge + successor pointer is what the stranger needed.
-      expect(s2.matchScore).toBeCloseTo(12 * 0.7, 4);
+      // Score composition: raw BM25 12, superseded down-rank ×0.7, and the
+      // #308 metadata tiebreaker. Both query tokens ("pgvector", "qdrant")
+      // appear in s2's decision marker ("pgvector over qdrant"), so the
+      // decision-overlap fraction is 1.0 → tiebreak ×(1 + 0.13). The
+      // down-rank still does not flip this pair (s2 ≫ s5's 4); the badge +
+      // successor pointer is what the stranger needed.
+      expect(s2.matchScore).toBeCloseTo(12 * 0.7 * 1.13, 4);
     });
   });
 });

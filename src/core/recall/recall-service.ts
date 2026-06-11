@@ -31,6 +31,7 @@ import { RewriteCache } from "./rewrite-cache.js";
 import { tokenSet } from "./tokenize.js";
 import { buildCitationBoosts, applyBoosts } from "./reranker.js";
 import { readCitationLog } from "./citation-log.js";
+import { tiebreakFactor } from "./metadata-tiebreaker.js";
 
 const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 100;
@@ -184,7 +185,7 @@ export class RecallService {
     // 4. Finalize per mode.
     let result: RecallResult;
     if (mode === "keyword") {
-      result = finalize(input.query, entity, kind, mode, limit, kwHits.map(toKeywordHit));
+      result = finalize(input.query, entity, kind, mode, limit, kwHits.map(toKeywordHit), queryTokens);
     } else if (mode === "semantic") {
       result = finalize(input.query, entity, kind, mode, limit, semHits.map(toSemanticHit));
     } else {
@@ -379,6 +380,7 @@ function finalize(
   mode: RecallMode,
   limit: number,
   hits: ReadonlyArray<RecallHit>,
+  queryTokens?: ReadonlySet<string>,
 ): RecallResult {
   // Apply recency decay to every hit, then re-sort by adjusted score so
   // newer sessions surface ahead of equally-relevant older ones. The decay
@@ -386,12 +388,21 @@ function finalize(
   // (BM25, similarity, or RRF) so the multiplier preserves intra-mode
   // ranking when ages are similar and skews recent when ages diverge.
   // Disable per-deployment with NLM_RECALL_DECAY_HALF_LIFE_DAYS=0.
+  //
+  // The metadata tiebreaker (#308) is applied in the same multiplicative
+  // step for keyword recall: a capped bonus for query tokens matching the
+  // hit's decision markers / entity canonicals, reordering near-ties so a
+  // strong decision-overlap session can pass a marginally-higher BM25
+  // neighbour. queryTokens is only passed for the keyword leg.
   const now = Date.now();
   const adjusted: RecallHit[] = hits.map((h) => {
     const supersededFactor = h.status === "superseded" ? SUPERSEDED_SCORE_MULTIPLIER : 1;
+    const tiebreak = queryTokens ? tiebreakFactor(queryTokens, h) : 1;
     return {
       ...h,
-      matchScore: round4(h.matchScore * recencyMultiplier(h.startedAt, now) * supersededFactor),
+      matchScore: round4(
+        h.matchScore * recencyMultiplier(h.startedAt, now) * supersededFactor * tiebreak,
+      ),
     };
   });
   adjusted.sort((a, b) => b.matchScore - a.matchScore);
