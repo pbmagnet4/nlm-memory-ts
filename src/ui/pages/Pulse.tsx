@@ -563,7 +563,7 @@ function MergePicker({
       aria-label={`Merge ${sourceLabel} into another topic`}
       aria-modal="false"
     >
-      <p className="drawer-paragraph" style={{ marginBottom: 8 }}>
+      <p className="drawer-paragraph merge-picker-paragraph">
         Merge <strong>{sourceLabel}</strong> into:
       </p>
       <input
@@ -595,7 +595,7 @@ function MergePicker({
           <li className="muted empty-row">No topics match.</li>
         )}
       </ul>
-      <div className="filter-group" style={{ marginTop: 8 }}>
+      <div className="filter-group merge-picker-filter-group">
         <button type="button" className="chip" onClick={onCancel}>Cancel</button>
         <button
           type="button"

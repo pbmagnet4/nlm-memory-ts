@@ -9,6 +9,7 @@ import { readViewSettings, type ThreadSort } from "../lib/view-settings.js";
 import { postAction } from "../lib/actions.js";
 import { groupByReplaceChain } from "../lib/thread-groups.js";
 import { fmt } from "../lib/format.js";
+import { rowProps } from "../lib/rowProps.js";
 
 export function ThreadPage() {
   const { data, loading, error, refetch } = useDataset();
@@ -87,7 +88,7 @@ export function ThreadPage() {
   if (loading && !data) return (
     <div className="page-pad">
       <Skeleton h={22} w={220} />
-      <div style={{ marginTop: 16 }}><SessionListSkeleton rows={8} /></div>
+      <div className="thread-sessions-head-mt"><SessionListSkeleton rows={8} /></div>
     </div>
   );
   if (error && !data) return <div className="page-pad"><div className="muted error">{error}</div></div>;
@@ -430,7 +431,7 @@ function ThreadSessionList({
           if (item.kind === "orphan") {
             const s = item.session;
             return (
-              <li key={s.id} className="session-row session-row-detail clickable" onClick={() => onOpenSession(s.id)}>
+              <li key={s.id} className="session-row session-row-detail clickable" {...rowProps(() => onOpenSession(s.id))}>
                 <span className={`chip-inline status-${s.status}`}>{s.status}</span>
                 <div className="session-row-main">
                   <span className="session-label">{s.label}</span>
@@ -446,7 +447,7 @@ function ThreadSessionList({
 
           return (
             <li key={live.id}>
-              <div className="session-row session-row-detail clickable" onClick={() => onOpenSession(live.id)}>
+              <div className="session-row session-row-detail clickable" {...rowProps(() => onOpenSession(live.id))}>
                 <span className={`chip-inline status-${live.status}`}>{live.status}</span>
                 <div className="session-row-main">
                   <span className="session-label">{live.label}</span>
@@ -473,7 +474,7 @@ function ThreadSessionList({
                     <li
                       key={s.id}
                       className="session-row session-row-detail clickable is-replaced"
-                      onClick={() => onOpenSession(s.id)}
+                      {...rowProps(() => onOpenSession(s.id))}
                     >
                       <span className="chip-inline status-replaced">replaced</span>
                       <div className="session-row-main">
@@ -582,8 +583,8 @@ function EntityPicker({ data }: { data: Dataset }) {
     <div className="page-pad">
       <h2 className="page-title">Thread</h2>
       <p className="muted">Pick a topic to view its reasoning history.</p>
-      <div className="thread-sessions-head" style={{ marginTop: 16 }}>
-        <div className="search-wrap" style={{ maxWidth: 320 }}>
+      <div className="thread-sessions-head thread-sessions-head-mt">
+        <div className="search-wrap search-wrap-compact">
           <input
             className="search-input"
             placeholder="search topics…"
@@ -644,7 +645,7 @@ function EntityPicker({ data }: { data: Dataset }) {
           </li>
         ))}
         {slice.length === 0 && (
-          <li style={{ gridColumn: "1 / -1" }} className="muted empty-row">No topics match.</li>
+          <li className="empty-row-full-width muted empty-row">No topics match.</li>
         )}
       </ul>
       {filtered.length > pageSize && (

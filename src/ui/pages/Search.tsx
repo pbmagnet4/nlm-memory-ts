@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useDataset, relativeAge } from "../lib/dataset.js";
 import { SessionDrawer } from "../components/SessionDrawer.js";
+import { rowProps } from "../lib/rowProps.js";
 
 type MatchedField = "label" | "entity" | "decision" | "open" | "summary";
 type SortMode = "relevance" | "recent";
@@ -205,7 +206,7 @@ export function SearchPage() {
     <div className="page-pad">
       <div className="search-header">
         <form onSubmit={(e) => e.preventDefault()} className="search-bar">
-          <div className="search-wrap" style={{ flex: 1 }}>
+          <div className="search-wrap search-wrap-full">
             <input
               className="search-input search-big"
               placeholder="search sessions, decisions, open questions…"
@@ -262,7 +263,7 @@ export function SearchPage() {
           )}
 
           {topEntities.length > 0 && (
-            <div className="filter-group" role="group" aria-label="Topic filter" style={{ flexWrap: "wrap" }}>
+            <div className="filter-group thread-filters-wrap" role="group" aria-label="Topic filter">
               <button type="button" className={`chip${entityFilter === "" ? " active" : ""}`} onClick={() => setEntityFilter("")}>all topics</button>
               {topEntities.slice(0, 12).map((e) => (
                 <button key={e} type="button" className={`chip${entityFilter === e ? " active" : ""}`} onClick={() => setEntityFilter(entityFilter === e ? "" : e)} title={data?.entity_display[e] ? `Original: ${e}` : undefined}>{data?.entity_display[e] ?? e}</button>
@@ -292,7 +293,7 @@ export function SearchPage() {
       <div className="muted small search-meta">
         {results.length} result{results.length === 1 ? "" : "s"}
         {anyFilterActive && (
-          <button type="button" className="link-button" style={{ marginLeft: 8 }} onClick={clearAllFilters}>
+          <button type="button" className="link-button search-meta-clear" onClick={clearAllFilters}>
             clear filters
           </button>
         )}
@@ -313,14 +314,14 @@ export function SearchPage() {
             <li
               key={s.id}
               className={`session-row session-row-detail clickable${drawerSid === s.id ? " is-selected" : ""}`}
-              onClick={() => openSession(s.id)}
+              {...rowProps(() => openSession(s.id))}
             >
               <span className={`chip-inline status-${s.status}`}>{s.status}</span>
               <div className="session-row-main">
                 <span className="session-label">{s.label}</span>
                 <span className="session-meta">
                   {s.entities.slice(0, 4).map((e) => (
-                    <span key={e} className="chip-inline" style={{ marginRight: 4 }}>{e}</span>
+                    <span key={e} className="chip-inline session-meta-entity">{e}</span>
                   ))}
                 </span>
                 {tokens.length > 0 && (
@@ -333,7 +334,7 @@ export function SearchPage() {
                   </>
                 )}
               </div>
-              <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
+              <div className="session-row-end-col">
                 <span className="muted small mono">{relativeAge(s.started_at)}</span>
                 <span className="chip-inline">{s.runtime}</span>
               </div>

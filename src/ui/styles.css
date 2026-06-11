@@ -2617,3 +2617,45 @@ a.session-label:hover { color: var(--accent); }
 
 .match-snippet { color: var(--text-2); font-size: var(--text-xs); line-height: var(--lh-base); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; margin-top: 4px; }
 .match-snippet mark { background: rgba(232,255,110,0.15); color: var(--accent); padding: 0 2px; border-radius: 2px; }
+
+.empty-row-full-width { grid-column: 1 / -1; }
+.card-wide-input input { min-width: 28rem; }
+.section-title-xs { font-size: 0.875rem; }
+
+/* ── Inline style migrations ─────────────────────────────────────────────── */
+/* Layout utilities migrated from inline styles */
+
+/* Pulse merge-picker */
+.merge-picker p { margin-bottom: 8px; }
+.merge-picker .filter-group { margin-top: 8px; }
+
+/* River */
+.river-row-skeleton { margin-bottom: 3px; }
+.river-card-skeleton { padding: 12px; }
+
+/* Search */
+.search-wrap-full { flex: 1; }
+.thread-filters-wrap { flex-wrap: wrap; }
+.search-meta-clear { margin-left: 8px; }
+.session-meta-entity { margin-right: 4px; }
+.session-row-end-col { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+
+/* Thread */
+.thread-sessions-head-mt { margin-top: 16px; }
+.search-wrap-compact { max-width: 320px; }
+
+/* Skeleton */
+.skeleton-display-contents { display: contents; }
+.skeleton-column-gap { display: flex; flex-direction: column; gap: 8px; }
+
+/* Settings - Sources */
+.card-accent { border-color: var(--accent); padding: 1rem; margin-top: 1rem; }
+.card-accent-padded { padding: 0.5rem; overflow: auto; }
+.section-title-no-mt { margin-top: 0; }
+
+/* Settings - Providers */
+.card-wide-input input { min-width: 28rem; }
+
+/* Data */
+.card-data-validated { border-color: var(--accent); padding: 0.75rem 1rem; margin-top: 0.75rem; }
+.data-validated-text { margin: 0; }

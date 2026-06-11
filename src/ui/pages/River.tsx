@@ -160,9 +160,9 @@ export function RiverPage() {
   if (loading && !data) return (
     <div className="page-pad">
       <div className="river-toolbar"><Skeleton h={22} w={80} /></div>
-      <div className="card" style={{ padding: 12 }}>
+      <div className="card river-card-skeleton">
         {Array.from({ length: 8 }).map((_, i) => (
-          <div key={i} className="river-row" style={{ marginBottom: 3 }}>
+          <div key={i} className="river-row river-row-skeleton">
             <Skeleton h={14} w={160} />
             <Skeleton h={20} />
           </div>

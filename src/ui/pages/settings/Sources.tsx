@@ -159,13 +159,13 @@ export function SettingsSourcesPage() {
 
 function TokenBanner({ name, token, onDismiss }: { name: string; token: string; onDismiss: () => void }) {
   return (
-    <div className="card" style={{ borderColor: "var(--accent)", padding: "1rem", marginTop: "1rem" }}>
-      <h3 className="section-title" style={{ marginTop: 0 }}>One-time token for "{name}"</h3>
+    <div className="card card-accent">
+      <h3 className="section-title section-title-no-mt">One-time token for "{name}"</h3>
       <p className="muted small">
         Copy this now. It's stored hashed on the daemon and won't be shown again. Send sessions with{" "}
         <code>Authorization: Bearer &lt;token&gt;</code> to <code>POST /api/ingest</code>.
       </p>
-      <pre className="mono" style={{ padding: "0.5rem", overflow: "auto" }}>{token}</pre>
+      <pre className="mono card-accent-padded">{token}</pre>
       <div className="form-row">
         <button type="button" className="btn" onClick={() => void navigator.clipboard.writeText(token)}>
           Copy
@@ -248,8 +248,8 @@ function AddSourceWizard({
     (!needsPath || pathOrUrl.length > 0);
 
   return (
-    <div className="card" style={{ padding: "1rem", marginTop: "1rem" }}>
-      <h3 className="section-title" style={{ marginTop: 0 }}>Add source</h3>
+    <div className="card card-wide-input">
+      <h3 className="section-title section-title-no-mt">Add source</h3>
 
       <div className="form-row">
         <label className="form-label">Kind</label>
@@ -289,8 +289,7 @@ function AddSourceWizard({
           <label className="form-label">{kind === "jsonl-generic" ? "Directory" : "Path"}</label>
           <input
             className="form-input form-input-inline"
-            style={{ minWidth: "32rem" }}
-            value={pathOrUrl}
+                        value={pathOrUrl}
             onChange={(e) => setPathOrUrl(e.target.value)}
             placeholder="absolute or ~/ path to JSONL directory"
             disabled={busy}
@@ -300,7 +299,7 @@ function AddSourceWizard({
 
       {isCustomJsonl && (
         <>
-          <h4 className="section-title" style={{ fontSize: "0.875rem" }}>JSONL field mapping</h4>
+          <h4 className="section-title section-title-xs">JSONL field mapping</h4>
           <p className="muted small">
             How to read your JSONL files. Each row should be one session. Use dot.notation for nested fields.
           </p>

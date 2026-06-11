@@ -228,8 +228,8 @@ function AddProviderWizard({
   const canSubmit = !busy && name.length > 0 && (!keyRequired || apiKey.length > 0);
 
   return (
-    <div className="card" style={{ padding: "1rem", marginTop: "1rem" }}>
-      <h3 className="section-title" style={{ marginTop: 0 }}>Add provider</h3>
+    <div className="card card-wide-input">
+      <h3 className="section-title section-title-no-mt">Add provider</h3>
 
       <div className="form-row">
         <label className="form-label">Kind</label>
@@ -257,7 +257,6 @@ function AddProviderWizard({
         <label className="form-label">Base URL</label>
         <input
           className="form-input form-input-inline"
-          style={{ minWidth: "28rem" }}
           value={baseUrl}
           onChange={(e) => setBaseUrl(e.target.value)}
           placeholder={kind === "openai-compatible" ? "https://your-endpoint/v1" : ""}
@@ -270,7 +269,6 @@ function AddProviderWizard({
         <input
           type="password"
           className="form-input form-input-inline"
-          style={{ minWidth: "28rem" }}
           value={apiKey}
           onChange={(e) => setApiKey(e.target.value)}
           autoComplete="off"

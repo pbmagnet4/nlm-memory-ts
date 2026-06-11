@@ -97,14 +97,14 @@ export function SessionDrawerSkeleton() {
     <div className="drawer-body">
       <dl className="kv-list">
         {Array.from({ length: 5 }).map((_, i) => (
-          <div key={i} style={{ display: "contents" }}>
+          <div key={i} className="skeleton-display-contents">
             <dt className="kv-label"><Skeleton h={10} w={70} /></dt>
             <dd className="kv-value"><Skeleton h={12} w={`${40 + ((i * 13) % 50)}%`} /></dd>
           </div>
         ))}
       </dl>
       <h4 className="drawer-section"><Skeleton h={12} w={100} /></h4>
-      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      <div className="skeleton-column-gap">
         {Array.from({ length: 4 }).map((_, i) => (
           <Skeleton key={i} h={12} w={`${55 + ((i * 7) % 35)}%`} />
         ))}

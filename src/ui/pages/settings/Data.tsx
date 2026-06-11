@@ -179,8 +179,8 @@ export function SettingsDataPage() {
             >{restoring ? "Validating…" : "Restore from backup"}</button>
           </div>
           {restore?.staged && (
-            <div className="card" style={{ borderColor: "var(--accent)", padding: "0.75rem 1rem", marginTop: "0.75rem" }}>
-              <p className="small" style={{ margin: 0 }}>
+            <div className="card card-data-validated">
+              <p className="small data-validated-text">
                 Backup validated and staged ({restore.sessions?.toLocaleString()} sessions, schema v{restore.schemaVersion}).
                 <strong> Restart the daemon</strong> to apply it. Your current database will be archived automatically.
               </p>
