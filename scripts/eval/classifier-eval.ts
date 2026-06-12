@@ -116,11 +116,17 @@ const DECISION_RECALL_SYSTEM = `You compare decisions for semantic equivalence. 
 
 const ENTITY_PRECISION_SYSTEM = `You are a strict fact-checker. You are given a TRANSCRIPT and ONE entity (a named tool, project, service, person, or technology) that a classifier extracted. Decide whether that entity is actually present and relevant in the transcript (not hallucinated, not a generic noun). Output ONLY this JSON object, nothing else: {"verdict": "supported" | "unsupported"}`;
 
+const MISSED_DECISIONS_SYSTEM = `You are a strict fact-checker measuring recall. You are given a TRANSCRIPT of a coding session and a LIST of decisions a classifier extracted. Count how many DISTINCT decisions are clearly made or committed to in the transcript but captured by NONE of the extracted decisions (paraphrases count as captured; an extracted decision covering the same commitment means it is NOT missed). Count only real committed decisions, not discussion of options. Output ONLY this JSON object, nothing else: {"missed": <non-negative integer>}`;
+
 function asVerdict(o: Record<string, unknown>): Verdict {
   return o["verdict"] === "supported" ? "supported" : "unsupported";
 }
 function asMatch(o: Record<string, unknown>): MatchVerdict {
   return o["verdict"] === "matched" ? "matched" : "unmatched";
+}
+function asMissedCount(o: Record<string, unknown>): number {
+  const n = o["missed"];
+  return typeof n === "number" && Number.isFinite(n) && n >= 0 ? Math.trunc(n) : 0;
 }
 
 /**
@@ -204,7 +210,17 @@ async function judgeCandidateSession(
     entityPrecision.push(o ? asVerdict(o) : "unsupported");
   }
 
-  return { decisionPrecision, decisionRecall, entityPrecision };
+  // Transcript-grounded recall denominator: how many real decisions the
+  // candidate missed. Reference-free, so immune to the reference's opening-arc
+  // position bias. On judge abstention, missed=0 (counted in judgeAbstentions).
+  const missedO = await judgeOnce(
+    judge,
+    MISSED_DECISIONS_SYSTEM,
+    `TRANSCRIPT:\n${tx}\n\nEXTRACTED DECISIONS:\n${candList}`,
+  );
+  const missedDecisions = missedO ? asMissedCount(missedO) : 0;
+
+  return { decisionPrecision, decisionRecall, entityPrecision, missedDecisions };
 }
 
 interface CandidateRun {
@@ -241,6 +257,11 @@ function buildCandidates(): CandidateConfig[] {
       key: `ollama:${prodModel}`,
       label: `prod ollama ${prodModel}`,
       client: new OllamaClient({ baseUrl: ollamaUrl, classifyModel: prodModel }),
+    },
+    {
+      key: "ollama:qwen3.5:4b",
+      label: "audition ollama qwen3.5:4b",
+      client: new OllamaClient({ baseUrl: ollamaUrl, classifyModel: "qwen3.5:4b" }),
     },
     {
       key: "studio:Qwen3.5-9B-MLX-8bit",
@@ -305,7 +326,7 @@ async function main(): Promise<void> {
       if (!ref) throw new Error(`no reference for gold session ${g.id}`);
       const result = run.results.get(g.id) ?? null;
       if (!result) {
-        scores.push(scoreSession({ decisionPrecision: [], decisionRecall: [], entityPrecision: [] }, true));
+        scores.push(scoreSession({ decisionPrecision: [], decisionRecall: [], entityPrecision: [], missedDecisions: 0 }, true));
         process.stdout.write(`    ${i + 1}/${gold.length} ${g.id} SCHEMA-FAIL\n`);
         continue;
       }
@@ -385,12 +406,14 @@ interface OutShape {
 function renderTable(out: OutShape): string {
   const lines: string[] = [];
   lines.push("");
-  lines.push("| Candidate | Decision P | Decision R | Entity P | Schema fail | Latency/session |");
-  lines.push("| --- | --- | --- | --- | --- | --- |");
+  lines.push(
+    "| Candidate | Decision P | Decision R (ref) | Decision R (transcript) | Entity P | Schema fail | Latency/session |",
+  );
+  lines.push("| --- | --- | --- | --- | --- | --- | --- |");
   for (const c of Object.values(out.candidates)) {
     const a = c.aggregate;
     lines.push(
-      `| ${c.label} | ${pct(a.decisionPrecision)} (n=${a.decisionPrecisionN}) | ${pct(a.decisionRecall)} (n=${a.decisionRecallN}) | ${pct(a.entityPrecision)} (n=${a.entityPrecisionN}) | ${(c.schema_failure_rate * 100).toFixed(1)}% | ${c.mean_latency_ms ?? "?"}ms |`,
+      `| ${c.label} | ${pct(a.decisionPrecision)} (n=${a.decisionPrecisionN}) | ${pct(a.decisionRecall)} (n=${a.decisionRecallN}) | ${pct(a.decisionRecallTranscript)} (n=${a.decisionRecallTranscriptN}) | ${pct(a.entityPrecision)} (n=${a.entityPrecisionN}) | ${(c.schema_failure_rate * 100).toFixed(1)}% | ${c.mean_latency_ms ?? "?"}ms |`,
     );
   }
   return lines.join("\n");

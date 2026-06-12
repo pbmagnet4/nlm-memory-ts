@@ -17,6 +17,7 @@ describe("scoreSession", () => {
         decisionPrecision: ["supported", "supported", "unsupported"],
         decisionRecall: ["matched", "unmatched"],
         entityPrecision: ["supported", "unsupported", "supported", "supported"],
+        missedDecisions: 0,
       },
       false,
     );
@@ -28,7 +29,7 @@ describe("scoreSession", () => {
 
   it("returns null (not 0) for an empty surface so it does not drag the mean", () => {
     const s = scoreSession(
-      { decisionPrecision: [], decisionRecall: ["matched"], entityPrecision: [] },
+      { decisionPrecision: [], decisionRecall: ["matched"], entityPrecision: [], missedDecisions: 0 },
       false,
     );
     expect(s.decisionPrecision).toBeNull();
@@ -38,7 +39,7 @@ describe("scoreSession", () => {
 
   it("marks every surface null on schema failure", () => {
     const s = scoreSession(
-      { decisionPrecision: ["supported"], decisionRecall: ["matched"], entityPrecision: ["supported"] },
+      { decisionPrecision: ["supported"], decisionRecall: ["matched"], entityPrecision: ["supported"], missedDecisions: 0 },
       true,
     );
     expect(s.schemaFailed).toBe(true);
@@ -51,9 +52,9 @@ describe("scoreSession", () => {
 describe("aggregateExtraction", () => {
   it("macro-averages across sessions, dropping null surfaces", () => {
     const scores: SessionScore[] = [
-      { decisionPrecision: 1.0, decisionRecall: 0.5, entityPrecision: 1.0, schemaFailed: false },
-      { decisionPrecision: 0.5, decisionRecall: null, entityPrecision: 0.0, schemaFailed: false },
-      { decisionPrecision: null, decisionRecall: 1.0, entityPrecision: null, schemaFailed: false },
+      { decisionPrecision: 1.0, decisionRecall: 0.5, decisionRecallTranscript: 0.5, entityPrecision: 1.0, schemaFailed: false },
+      { decisionPrecision: 0.5, decisionRecall: null, decisionRecallTranscript: null, entityPrecision: 0.0, schemaFailed: false },
+      { decisionPrecision: null, decisionRecall: 1.0, decisionRecallTranscript: 1.0, entityPrecision: null, schemaFailed: false },
     ];
     const a = aggregateExtraction(scores);
     expect(a.n).toBe(3);
@@ -72,9 +73,9 @@ describe("aggregateExtraction", () => {
 
   it("counts schema failures and excludes them from surface means", () => {
     const scores: SessionScore[] = [
-      { decisionPrecision: 1.0, decisionRecall: 1.0, entityPrecision: 1.0, schemaFailed: false },
-      { decisionPrecision: null, decisionRecall: null, entityPrecision: null, schemaFailed: true },
-      { decisionPrecision: null, decisionRecall: null, entityPrecision: null, schemaFailed: true },
+      { decisionPrecision: 1.0, decisionRecall: 1.0, decisionRecallTranscript: 1.0, entityPrecision: 1.0, schemaFailed: false },
+      { decisionPrecision: null, decisionRecall: null, decisionRecallTranscript: null, entityPrecision: null, schemaFailed: true },
+      { decisionPrecision: null, decisionRecall: null, decisionRecallTranscript: null, entityPrecision: null, schemaFailed: true },
     ];
     const a = aggregateExtraction(scores);
     expect(a.n).toBe(3);
@@ -86,7 +87,7 @@ describe("aggregateExtraction", () => {
 
   it("yields null surface means when no session has items", () => {
     const a = aggregateExtraction([
-      { decisionPrecision: null, decisionRecall: null, entityPrecision: null, schemaFailed: false },
+      { decisionPrecision: null, decisionRecall: null, decisionRecallTranscript: null, entityPrecision: null, schemaFailed: false },
     ]);
     expect(a.decisionPrecision).toBeNull();
     expect(a.decisionPrecisionN).toBe(0);

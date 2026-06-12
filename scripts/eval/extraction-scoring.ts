@@ -25,11 +25,16 @@ export interface ExtractionVerdicts {
   readonly decisionRecall: ReadonlyArray<MatchVerdict>;
   /** One per candidate-extracted entity: present/relevant in transcript? */
   readonly entityPrecision: ReadonlyArray<Verdict>;
+  /** Distinct transcript decisions captured by no extracted decision (judge count). */
+  readonly missedDecisions: number;
 }
 
 export interface SessionScore {
   readonly decisionPrecision: number | null;
+  /** Reference-based recall: fraction of reference decisions matched. Position-biased. */
   readonly decisionRecall: number | null;
+  /** Transcript-grounded recall: supported / (supported + missedDecisions). Reference-free. */
+  readonly decisionRecallTranscript: number | null;
   readonly entityPrecision: number | null;
   /** True when the candidate produced no usable ClassifyResult for this session. */
   readonly schemaFailed: boolean;
@@ -48,13 +53,17 @@ export function scoreSession(
     return {
       decisionPrecision: null,
       decisionRecall: null,
+      decisionRecallTranscript: null,
       entityPrecision: null,
       schemaFailed: true,
     };
   }
+  const supported = verdicts.decisionPrecision.filter((v) => v === "supported").length;
+  const recallDenom = supported + verdicts.missedDecisions;
   return {
     decisionPrecision: rate(verdicts.decisionPrecision, (v) => v === "supported"),
     decisionRecall: rate(verdicts.decisionRecall, (v) => v === "matched"),
+    decisionRecallTranscript: recallDenom === 0 ? null : supported / recallDenom,
     entityPrecision: rate(verdicts.entityPrecision, (v) => v === "supported"),
     schemaFailed: false,
   };
@@ -75,10 +84,12 @@ export interface AggregateExtraction {
   /** Macro-average across sessions that had ≥1 item on the surface. */
   readonly decisionPrecision: number | null;
   readonly decisionRecall: number | null;
+  readonly decisionRecallTranscript: number | null;
   readonly entityPrecision: number | null;
   /** How many sessions contributed to each surface mean (had ≥1 item). */
   readonly decisionPrecisionN: number;
   readonly decisionRecallN: number;
+  readonly decisionRecallTranscriptN: number;
   readonly entityPrecisionN: number;
 }
 
@@ -89,6 +100,7 @@ export function aggregateExtraction(
   const schemaFailures = scores.filter((s) => s.schemaFailed).length;
   const dp = meanOfDefined(scores.map((s) => s.decisionPrecision));
   const dr = meanOfDefined(scores.map((s) => s.decisionRecall));
+  const drt = meanOfDefined(scores.map((s) => s.decisionRecallTranscript));
   const ep = meanOfDefined(scores.map((s) => s.entityPrecision));
   return {
     n: scores.length,
@@ -96,9 +108,11 @@ export function aggregateExtraction(
     schemaFailures,
     decisionPrecision: dp.mean,
     decisionRecall: dr.mean,
+    decisionRecallTranscript: drt.mean,
     entityPrecision: ep.mean,
     decisionPrecisionN: dp.count,
     decisionRecallN: dr.count,
+    decisionRecallTranscriptN: drt.count,
     entityPrecisionN: ep.count,
   };
 }
